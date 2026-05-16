@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lingoglass.app/schemas/ws-events.schema.json",
+  "title": "LingoGlass AR WebSocket Events",
+  "oneOf": [
+    { "$ref": "#/$defs/sessionStart" },
+    { "$ref": "#/$defs/audioChunk" },
+    { "$ref": "#/$defs/audioEnd" },
+    { "$ref": "#/$defs/metrics" },
+    { "$ref": "#/$defs/sessionOpened" },
+    { "$ref": "#/$defs/translationPartial" },
+    { "$ref": "#/$defs/translationFinal" },
+    { "$ref": "#/$defs/error" }
+  ],
+  "$defs": {
+    "lang": { "type": "string", "enum": ["ja", "en", "vi", "ko", "zh-CN"] },
+    "uuid": { "type": "string", "format": "uuid" },
+    "isoTs": { "type": "string", "format": "date-time" },
+    "sessionStart": {
+      "type": "object",
+      "required": ["type", "deviceId", "sourceLang", "targetLang", "retainText", "clientTs"],
+      "properties": {
+        "type": { "const": "session.start" },
+        "deviceId": { "$ref": "#/$defs/uuid" },
+        "sourceLang": { "$ref": "#/$defs/lang" },
+        "targetLang": { "$ref": "#/$defs/lang" },
+        "retainText": { "type": "boolean" },
+        "clientTs": { "$ref": "#/$defs/isoTs" }
+      },
+      "additionalProperties": false
+    },
+    "audioChunk": {
+      "type": "object",
+      "required": ["type", "sessionId", "seq", "codec", "dataBase64", "clientTs"],
+      "properties": {
+        "type": { "const": "audio.chunk" },
+        "sessionId": { "$ref": "#/$defs/uuid" },
+        "seq": { "type": "integer", "minimum": 0 },
+        "codec": { "const": "opus16k" },
+        "dataBase64": { "type": "string", "contentEncoding": "base64" },
+        "clientTs": { "$ref": "#/$defs/isoTs" }
+      },
+      "additionalProperties": false
+    },
+    "audioEnd": {
+      "type": "object",
+      "required": ["type", "sessionId", "seq", "clientTs"],
+      "properties": {
+        "type": { "const": "audio.end" },
+        "sessionId": { "$ref": "#/$defs/uuid" },
+        "seq": { "type": "integer", "minimum": 0 },
+        "clientTs": { "$ref": "#/$defs/isoTs" }
+      },
+      "additionalProperties": false
+    },
+    "metrics": {
+      "type": "object",
+      "required": ["type", "sessionId", "name", "valueMs", "clientTs"],
+      "properties": {
+        "type": { "const": "metrics" },
+        "sessionId": { "$ref": "#/$defs/uuid" },
+        "name": { "type": "string" },
+        "valueMs": { "type": "integer", "minimum": 0 },
+        "clientTs": { "$ref": "#/$defs/isoTs" }
+      },
+      "additionalProperties": false
+    },
+    "sessionOpened": {
+      "type": "object",
+      "required": ["type", "sessionId", "serverTs"],
+      "properties": {
+        "type": { "const": "session.opened" },
+        "sessionId": { "$ref": "#/$defs/uuid" },
+        "serverTs": { "$ref": "#/$defs/isoTs" }
+      },
+      "additionalProperties": false
+    },
+    "translationPartial": {
+      "type": "object",
+      "required": ["type", "sessionId", "text", "serverTs"],
+      "properties": {
+        "type": { "const": "translation.partial" },
+        "sessionId": { "$ref": "#/$defs/uuid" },
+        "text": { "type": "string", "maxLength": 300 },
+        "serverTs": { "$ref": "#/$defs/isoTs" }
+      },
+      "additionalProperties": false
+    },
+    "translationFinal": {
+      "type": "object",
+      "required": ["type", "sessionId", "translatedText", "durationMs", "serverTs"],
+      "properties": {
+        "type": { "const": "translation.final" },
+        "sessionId": { "$ref": "#/$defs/uuid" },
+        "sourceText": { "type": "string" },
+        "translatedText": { "type": "string", "maxLength": 300 },
+        "durationMs": { "type": "integer", "minimum": 0 },
+        "serverTs": { "$ref": "#/$defs/isoTs" }
+      },
+      "additionalProperties": false
+    },
+    "error": {
+      "type": "object",
+      "required": ["type", "code", "message", "retryable", "serverTs"],
+      "properties": {
+        "type": { "const": "error" },
+        "sessionId": { "$ref": "#/$defs/uuid" },
+        "code": { "type": "string" },
+        "message": { "type": "string" },
+        "retryable": { "type": "boolean" },
+        "serverTs": { "$ref": "#/$defs/isoTs" }
+      },
+      "additionalProperties": false
+    }
+  }
+}
+

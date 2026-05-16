@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ESPr Developer S3 Breadboard Pin Map</title>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --ink: #1f2933;
+      --muted: #52606d;
+      --line: #cbd2d9;
+      --board: #0b72a8;
+      --board-dark: #07577f;
+      --power: #d64545;
+      --ground: #111827;
+      --signal: #2563eb;
+      --i2c: #d97706;
+      --usb: #64748b;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+    }
+
+    main {
+      width: min(1120px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 24px 0 36px;
+    }
+
+    h1 {
+      margin: 0 0 6px;
+      font-size: 28px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      margin: 0 0 18px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 1fr 280px 1fr;
+      gap: 14px;
+      align-items: start;
+    }
+
+    .side {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .side h2 {
+      margin: 0;
+      padding: 10px 12px;
+      font-size: 16px;
+      line-height: 1.2;
+      background: #e5e7eb;
+      border-bottom: 1px solid var(--line);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th,
+    td {
+      padding: 8px 10px;
+      border-bottom: 1px solid #e5e7eb;
+      font-size: 14px;
+      line-height: 1.2;
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    th {
+      color: var(--muted);
+      font-weight: 700;
+      background: #f8fafc;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .row-num {
+      width: 76px;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .pin {
+      display: inline-flex;
+      min-width: 72px;
+      height: 28px;
+      align-items: center;
+      justify-content: center;
+      border-radius: 6px;
+      padding: 0 8px;
+      color: #fff;
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .ground { background: var(--ground); }
+    .power { background: var(--power); }
+    .signal { background: var(--signal); }
+    .i2c { background: var(--i2c); }
+    .usb { background: var(--usb); }
+
+    .board-wrap {
+      position: sticky;
+      top: 18px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+    }
+
+    .board {
+      position: relative;
+      height: 650px;
+      border-radius: 20px;
+      background: linear-gradient(180deg, var(--board), var(--board-dark));
+      box-shadow: inset 0 0 0 2px rgba(255,255,255,0.16);
+      color: #fff;
+      overflow: hidden;
+    }
+
+    .brand {
+      position: absolute;
+      top: 26px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 17px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .module {
+      position: absolute;
+      top: 178px;
+      left: 50%;
+      width: 92px;
+      height: 270px;
+      transform: translateX(-50%);
+      border: 2px solid rgba(255,255,255,0.8);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      font-size: 14px;
+      font-weight: 700;
+      writing-mode: vertical-rl;
+      text-orientation: mixed;
+    }
+
+    .usb-label {
+      position: absolute;
+      bottom: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: rgba(255,255,255,0.82);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .pin-col {
+      position: absolute;
+      top: 82px;
+      display: grid;
+      grid-template-rows: repeat(20, 24px);
+      gap: 4px;
+    }
+
+    .pin-col.left {
+      left: 10px;
+    }
+
+    .pin-col.right {
+      right: 10px;
+    }
+
+    .pin-dot {
+      width: 26px;
+      height: 24px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.92);
+      border: 2px solid rgba(0,0,0,0.2);
+    }
+
+    .note {
+      margin-top: 14px;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .note-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      min-height: 82px;
+    }
+
+    .note-card h3 {
+      margin: 0 0 6px;
+      font-size: 14px;
+    }
+
+    .note-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    @media (max-width: 900px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .board-wrap {
+        position: static;
+        order: -1;
+      }
+
+      .board {
+        height: 520px;
+      }
+
+      .pin-col {
+        top: 68px;
+        grid-template-rows: repeat(20, 19px);
+      }
+
+      .pin-dot {
+        width: 22px;
+        height: 19px;
+      }
+
+      .module {
+        top: 140px;
+        height: 220px;
+      }
+
+      .note {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>ESPr Developer S3 Type-C Breadboard Pin Map</h1>
+    <p class="subtitle">Assumption: the board spans breadboard rows 11 to 30. This view is corrected for the current board orientation from the photo: +3V3 / IO9 / IO8 are on the left column.</p>
+
+    <section class="layout" aria-label="ESPr Developer S3 pin map">
+      <div class="side">
+        <h2>Left Side</h2>
+        <table>
+          <thead><tr><th>Row</th><th>Pin</th></tr></thead>
+          <tbody>
+            <tr><td class="row-num">11</td><td><span class="pin power">+3V3</span></td></tr>
+            <tr><td class="row-num">12</td><td><span class="pin signal">EN</span></td></tr>
+            <tr><td class="row-num">13</td><td><span class="pin signal">IO17</span></td></tr>
+            <tr><td class="row-num">14</td><td><span class="pin signal">IO18</span></td></tr>
+            <tr><td class="row-num">15</td><td><span class="pin signal">IO47</span></td></tr>
+            <tr><td class="row-num">16</td><td><span class="pin signal">IO19</span></td></tr>
+            <tr><td class="row-num">17</td><td><span class="pin signal">IO20</span></td></tr>
+            <tr><td class="row-num">18</td><td><span class="pin i2c">IO9 / SCL</span></td></tr>
+            <tr><td class="row-num">19</td><td><span class="pin ground">GND</span></td></tr>
+            <tr><td class="row-num">20</td><td><span class="pin power">VIN</span></td></tr>
+            <tr><td class="row-num">21</td><td><span class="pin i2c">IO8 / SDA</span></td></tr>
+            <tr><td class="row-num">22</td><td><span class="pin signal">IO10</span></td></tr>
+            <tr><td class="row-num">23</td><td><span class="pin signal">IO11</span></td></tr>
+            <tr><td class="row-num">24</td><td><span class="pin signal">IO12</span></td></tr>
+            <tr><td class="row-num">25</td><td><span class="pin signal">IO13</span></td></tr>
+            <tr><td class="row-num">26</td><td><span class="pin signal">IO14</span></td></tr>
+            <tr><td class="row-num">27</td><td><span class="pin signal">IO21</span></td></tr>
+            <tr><td class="row-num">28</td><td><span class="pin signal">IO4</span></td></tr>
+            <tr><td class="row-num">29</td><td><span class="pin signal">IO5</span></td></tr>
+            <tr><td class="row-num">30</td><td><span class="pin ground">GND</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="board-wrap">
+        <div class="board" aria-label="Board illustration">
+          <div class="brand">SWITCHSCIENCE</div>
+          <div class="pin-col left">
+            <div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div>
+            <div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div>
+            <div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div>
+            <div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div>
+          </div>
+          <div class="module">ESPr Developer S3 Type-C</div>
+          <div class="pin-col right">
+            <div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div>
+            <div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div>
+            <div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div>
+            <div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div>
+          </div>
+          <div class="usb-label">USB Type-C side</div>
+        </div>
+      </div>
+
+      <div class="side">
+        <h2>Right Side</h2>
+        <table>
+          <thead><tr><th>Row</th><th>Pin</th></tr></thead>
+          <tbody>
+            <tr><td class="row-num">11</td><td><span class="pin ground">GND</span></td></tr>
+            <tr><td class="row-num">12</td><td><span class="pin signal">IO1</span></td></tr>
+            <tr><td class="row-num">13</td><td><span class="pin signal">IO42</span></td></tr>
+            <tr><td class="row-num">14</td><td><span class="pin signal">IO41</span></td></tr>
+            <tr><td class="row-num">15</td><td><span class="pin signal">IO35</span></td></tr>
+            <tr><td class="row-num">16</td><td><span class="pin usb">TXD0</span></td></tr>
+            <tr><td class="row-num">17</td><td><span class="pin usb">RXD0</span></td></tr>
+            <tr><td class="row-num">18</td><td><span class="pin signal">IO40</span></td></tr>
+            <tr><td class="row-num">19</td><td><span class="pin ground">GND</span></td></tr>
+            <tr><td class="row-num">20</td><td><span class="pin power">VOUT</span></td></tr>
+            <tr><td class="row-num">21</td><td><span class="pin signal">IO39</span></td></tr>
+            <tr><td class="row-num">22</td><td><span class="pin signal">IO38</span></td></tr>
+            <tr><td class="row-num">23</td><td><span class="pin signal">IO37</span></td></tr>
+            <tr><td class="row-num">24</td><td><span class="pin signal">IO36</span></td></tr>
+            <tr><td class="row-num">25</td><td><span class="pin signal">IO2</span></td></tr>
+            <tr><td class="row-num">26</td><td><span class="pin signal">IO0</span></td></tr>
+            <tr><td class="row-num">27</td><td><span class="pin signal">IO48</span></td></tr>
+            <tr><td class="row-num">28</td><td><span class="pin signal">IO7</span></td></tr>
+            <tr><td class="row-num">29</td><td><span class="pin signal">IO6</span></td></tr>
+            <tr><td class="row-num">30</td><td><span class="pin ground">GND</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="note" aria-label="OLED wiring notes">
+      <div class="note-card">
+        <h3>OLED VCC</h3>
+        <p>Connect to left row 11, +3V3. Do not use VIN for the first test.</p>
+      </div>
+      <div class="note-card">
+        <h3>OLED GND</h3>
+        <p>Connect to left row 19 or row 30 GND. Any GND pin is common.</p>
+      </div>
+      <div class="note-card">
+        <h3>OLED SCL</h3>
+        <p>Connect to left row 18, IO9. Code uses GPIO 9 for SCL.</p>
+      </div>
+      <div class="note-card">
+        <h3>OLED SDA</h3>
+        <p>Connect to left row 21, IO8. Code uses GPIO 8 for SDA.</p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

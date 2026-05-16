@@ -1,0 +1,11 @@
+{
+  "name": "ble_protocol",
+  "version": "0.1.0",
+  "description": "LingoGlass AR BLE subtitle packet encode, decode, CRC8, UTF-8 fragmentation.",
+  "frameworks": "*",
+  "platforms": "*",
+  "build": {
+    "srcDir": ".",
+    "includeDir": "."
+  }
+}

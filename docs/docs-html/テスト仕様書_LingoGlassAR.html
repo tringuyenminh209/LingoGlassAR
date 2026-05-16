@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>テスト仕様書 / LingoGlass AR</title>
+<style>
+  @page { size: A4; margin: 14mm 14mm 18mm 14mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Yu Gothic", "Meiryo", "Hiragino Kaku Gothic Pro", sans-serif;
+         font-size: 8.5px; color: #000; background: #fff; }
+
+  .page {
+    width: 210mm; min-height: 297mm; padding: 12mm 12mm 16mm 12mm;
+    page-break-after: always; break-after: page;
+    position: relative; overflow: hidden;
+  }
+  .page:last-of-type { page-break-after: auto; break-after: auto; }
+
+  .page-header {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    border-bottom: 2px solid #000; padding-bottom: 4px; margin-bottom: 8px;
+  }
+  .page-header .doc-title { font-size: 13px; font-weight: bold; }
+  .page-header .header-right { font-size: 7.5px; text-align: right; line-height: 1.6; }
+  .page-footer {
+    position: absolute; bottom: 6mm; left: 12mm; right: 12mm;
+    border-top: 1px solid #999; padding-top: 3px;
+    display: flex; justify-content: space-between; font-size: 7px; color: #555;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+
+  .sec-head {
+    font-size: 10px; font-weight: bold; padding: 4px 8px;
+    border-left: 4px solid #000; background: #f0f0f0;
+    margin: 8px 0 5px 0;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    page-break-after: avoid; break-after: avoid;
+  }
+  .sub-head {
+    font-size: 8.5px; font-weight: bold; border-left: 3px solid #555;
+    padding-left: 6px; margin: 6px 0 3px 0;
+    page-break-after: avoid; break-after: avoid;
+  }
+
+  table { border-collapse: collapse; width: 100%; margin-bottom: 6px; }
+  th, td { border: 1px solid #888; padding: 2.5px 5px; vertical-align: top; line-height: 1.45; font-size: 8px; }
+  thead th {
+    background: #e8e8e8; font-weight: bold; text-align: center;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  tr { page-break-inside: avoid !important; break-inside: avoid !important; }
+  table { page-break-inside: auto; }
+  thead { display: table-header-group; }
+
+  .tbl-label { background: #f0f0f0; font-weight: bold;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .center { text-align: center; }
+  .mono { font-family: "Consolas", "Menlo", "Courier New", monospace; font-size: 7.5px; }
+
+  .ok { background: #e8f5e8; color: #060; font-weight: bold; text-align: center;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .ng { background: #fbeaea; color: #900; font-weight: bold; text-align: center;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .pri-h { background: #333; color: #fff; font-weight: bold; text-align: center;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .pri-m { background: #888; color: #fff; font-weight: bold; text-align: center;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .pri-l { background: #ccc; text-align: center;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  .cover-title { font-size: 26px; font-weight: bold; text-align: center; margin: 26mm 0 5mm 0; letter-spacing: 4px; }
+  .cover-sub   { font-size: 14px; text-align: center; margin-bottom: 14mm; color: #333; }
+  .cover-meta  { width: 130mm; margin: 0 auto; }
+  .cover-meta table td { border: none; padding: 3px 10px; font-size: 9px; }
+
+  .toc-item { display: flex; justify-content: space-between; padding: 2px 0;
+              border-bottom: 1px dotted #ccc; font-size: 8.5px; }
+
+  pre.code { font-family: "Consolas", "Menlo", "Courier New", monospace; font-size: 7.5px;
+             border: 1px solid #ccc; background: #fafafa; padding: 6px 8px; line-height: 1.5;
+             page-break-inside: avoid; break-inside: avoid; white-space: pre; }
+
+  /* Review */
+  .review-box { border: 1.5px solid #000; padding: 8px; margin-top: 8px;
+                page-break-inside: avoid; break-inside: avoid; }
+  .review-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-top: 4px; }
+  .review-cell { border: 1px solid #888; padding: 5px; font-size: 7.5px; line-height: 1.8; }
+  .review-label { font-size: 7.5px; font-weight: bold; border-bottom: 1px solid #ccc;
+                  padding-bottom: 2px; margin-bottom: 3px; }
+
+  p { margin-bottom: 3px; line-height: 1.55; }
+  ul { margin: 2px 0 4px 14px; }
+  li { line-height: 1.65; font-size: 8px; }
+
+  pre.code, .review-box { page-break-inside: avoid; break-inside: avoid; }
+  .sec-head, .sub-head { page-break-after: avoid; break-after: avoid; }
+</style>
+</head>
+<body>
+
+<!-- ========== PAGE 1: COVER ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">テスト仕様書 / LingoGlass AR</div>
+    <div class="header-right">
+      DOC-ID: TS-LGA-001　Rev 1.0　2026-05-12<br>
+      作成者: NGUYEN MINH TRI
+    </div>
+  </div>
+
+  <div class="cover-title">テ ス ト 仕 様 書</div>
+  <div class="cover-sub">LingoGlass AR — 単体 / 結合 / 総合テスト + 障害管理</div>
+
+  <div class="cover-meta">
+    <table>
+      <tr><td class="tbl-label">プロジェクト名</td><td>LingoGlass AR</td></tr>
+      <tr><td class="tbl-label">ドキュメント ID</td><td>TS-LGA-001</td></tr>
+      <tr><td class="tbl-label">バージョン</td><td>Rev 1.0（S0実行承認版）</td></tr>
+      <tr><td class="tbl-label">作成日</td><td>2026-05-12</td></tr>
+      <tr><td class="tbl-label">対象フェーズ</td><td>テスト（単体 → 結合 → 総合）+ 受入評価（パイロット）</td></tr>
+      <tr><td class="tbl-label">前提ドキュメント</td><td>REQ-LGA-001 Rev 1.0 ／ BD-LGA-001 Rev 1.0 ／ DD-LGA-001 Rev 1.0</td></tr>
+      <tr><td class="tbl-label">テスト対象システム</td><td>Mobile (Flutter) ／ Backend (Node.js + WSS) ／ Firmware (ESP32-S3 / ESP-IDF) ／ BLE プロトコル</td></tr>
+    </table>
+  </div>
+
+  <div style="margin-top: 12mm;">
+    <div class="sec-head">■ 改訂履歴</div>
+    <table>
+      <thead><tr><th style="width:10%">Rev</th><th style="width:18%">日付</th><th style="width:22%">担当者</th><th>変更内容</th></tr></thead>
+      <tbody>
+        <tr><td class="center">1.0</td><td class="center">2026-05-12</td><td>NGUYEN MINH TRI</td><td>S0実行承認版。21 FR × 13 NFR をカバーするテストケース 63 件 + 障害管理運用ルールを確定。</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div style="margin-top: 8mm;">
+    <div class="sec-head">■ 目次</div>
+    <div class="toc-item"><span>§1　テスト方針・進入/退出基準</span><span>p.2</span></div>
+    <div class="toc-item"><span>§2　テスト環境</span><span>p.2</span></div>
+    <div class="toc-item"><span>§3　テスト範囲マトリクス（要件 × テストレベル）</span><span>p.2</span></div>
+    <div class="toc-item"><span>§4　単体テスト仕様書（Backend / Mobile）</span><span>p.3</span></div>
+    <div class="toc-item"><span>§5　単体テスト仕様書（Firmware）+ 境界値マトリクス</span><span>p.4</span></div>
+    <div class="toc-item"><span>§6　結合テスト仕様書</span><span>p.5</span></div>
+    <div class="toc-item"><span>§7　総合テスト仕様書（E2E + パフォーマンス）</span><span>p.6</span></div>
+    <div class="toc-item"><span>§8　受入基準（KPI 検証）+ パイロット評価</span><span>p.7</span></div>
+    <div class="toc-item"><span>§9　障害管理運用 + 障害一覧テンプレート</span><span>p.7</span></div>
+    <div class="toc-item"><span>　　　レビュー・承認欄</span><span>p.7</span></div>
+  </div>
+
+  <div class="page-footer">
+    <span>DOC-ID: TS-LGA-001　LingoGlass AR テスト仕様書</span><span>- 1 -</span>
+  </div>
+</div>
+
+
+<!-- ========== PAGE 2: §1 + §2 + §3 ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">テスト仕様書 / LingoGlass AR</div>
+    <div class="header-right">DOC-ID: TS-LGA-001　Rev 1.0　2026-05-12</div>
+  </div>
+
+  <div class="sec-head">■ §1　テスト方針・進入/退出基準</div>
+  <table>
+    <tr><td class="tbl-label" style="width:18%">テスト目的</td><td>LingoGlass AR MVP が REQ-LGA-001 の要件（特に KPI K-01〜K-09）を満たすことを段階的に検証し、Go/No-Go 判断に必要な客観的データを生成する。</td></tr>
+    <tr><td class="tbl-label">テストレベル</td><td>① 単体（UT）→ ② 結合（IT）→ ③ 総合（ST）→ ④ 受入（UAT）の 4 段階。各段階で <strong>退出基準</strong> を満たさない場合は前段階へ戻す。</td></tr>
+    <tr><td class="tbl-label">テスト戦略</td><td>
+      ・自動化：UT は <span class="mono">vitest</span>（Backend）/<span class="mono">flutter test</span>（Mobile）/<span class="mono">unity</span>（Firmware）<br>
+      ・契約：BLE プロトコルは TS 実装 / Dart 実装の <strong>fixtures 共有テスト</strong> で互換性検証<br>
+      ・正常系 + 異常系を必ず両方記述（境界値分析・マトリクス手法）<br>
+      ・パフォーマンス：診断ログ（FR-APP-10）の p50/p90/p95 を機械的に集計
+    </td></tr>
+    <tr><td class="tbl-label">進入基準</td><td>UT 開始：当該モジュールのコードが master へマージ済み。IT 開始：UT 通過率 100%（既知 NG は障害登録）。ST 開始：IT 主要シナリオ全て pass。UAT 開始：ST の Critical 障害ゼロ。</td></tr>
+    <tr><td class="tbl-label">退出基準</td><td>
+      ・UT：カバレッジ <strong>≥ 70%</strong>（コア層 Service/Provider ≥ 85%）、全 pass<br>
+      ・IT：プロトコル契約テスト 100%、主要 5 シナリオ pass、リグレッション NG ゼロ<br>
+      ・ST：KPI K-01〜K-07 を 1 回以上達成、Critical/重大 障害ゼロ<br>
+      ・UAT：パイロット n ≥ 5、K-08（継続意向 ≥ 40%）達成
+    </td></tr>
+  </table>
+
+  <div class="sec-head">■ §2　テスト環境</div>
+  <table>
+    <thead><tr><th style="width:14%">層</th><th style="width:20%">環境</th><th style="width:22%">バージョン</th><th>備考</th></tr></thead>
+    <tbody>
+      <tr><td>Mobile (UT)</td><td>Flutter test runner</td><td>Flutter 3.22 / Dart 3.4</td><td>iOS Simulator 17.4 + Android Emulator API 34</td></tr>
+      <tr><td>Mobile (IT/ST)</td><td>実機</td><td>iPhone 14 (iOS 17) / Pixel 7 (Android 14)</td><td>BLE 5.0 対応の実機を最低 2 機種</td></tr>
+      <tr><td>Backend (UT)</td><td>vitest + supertest</td><td>Node.js 20.12 LTS</td><td>PostgreSQL 16 はテストコンテナ（pg-mem も可）</td></tr>
+      <tr><td>Backend (IT/ST)</td><td>Fly.io staging</td><td>同上 / fly app: lingoglass-api-stg</td><td>API キーは sandbox（OpenAI / DeepL test tier）</td></tr>
+      <tr><td>Firmware (UT)</td><td>Unity（C ユニットテスト）</td><td>ESP-IDF 5.2</td><td>QEMU ESP32-S3 でロジック層を実行</td></tr>
+      <tr><td>Firmware (IT/ST)</td><td>実機 ESPr Developer S3 Type-C (ESP32-S3-WROOM-1, Flash 16MB, PSRAM 8MB) + 0.96" I2C OLED 128x64（SDA GPIO8 / SCL GPIO9）+ solderless breadboard</td><td>カスタム FW v0.1.x</td><td>BLE は実機 ↔ 実スマホで計測</td></tr>
+      <tr><td>ネットワーク</td><td>Wi-Fi 5GHz + 4G LTE 切替</td><td>—</td><td>遅延テストは 2 環境で計測（NFR-01）</td></tr>
+      <tr><td>パイロット</td><td>屋内 + 屋外（晴天昼）</td><td>—</td><td>NFR-06 視認性検証用</td></tr>
+    </tbody>
+  </table>
+
+  <div class="sec-head">■ §3　テスト範囲マトリクス（要件 × テストレベル）</div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:10%">カテゴリ</th>
+        <th style="width:18%">要件 ID（REQ）</th>
+        <th style="width:10%">UT</th>
+        <th style="width:10%">IT</th>
+        <th style="width:10%">ST</th>
+        <th style="width:10%">UAT</th>
+        <th>担当テストケース</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>HW / BLE</td><td>FR-HW-01〜08</td><td class="ok">✔</td><td class="ok">✔</td><td class="ok">✔</td><td class="ng">—</td><td>UT-FW-01〜10 / IT-02 / ST-04</td></tr>
+      <tr><td>Mobile App</td><td>FR-APP-01〜12</td><td class="ok">✔</td><td class="ok">✔</td><td class="ok">✔</td><td class="ok">✔</td><td>UT-APP-01〜15 / IT-01〜03 / ST-01〜03</td></tr>
+      <tr><td>Backend</td><td>FR-BE-01〜05</td><td class="ok">✔</td><td class="ok">✔</td><td class="ok">✔</td><td class="ng">—</td><td>UT-BE-01〜12 / IT-01,04,05</td></tr>
+      <tr><td>運用</td><td>FR-OPS-01〜02</td><td class="ng">—</td><td class="ok">✔</td><td class="ok">✔</td><td class="ng">—</td><td>IT-06 / ST-PERF-01</td></tr>
+      <tr><td>性能</td><td>NFR-01〜03</td><td class="ng">—</td><td class="ok">✔</td><td class="ok">✔</td><td class="ok">✔</td><td>ST-PERF-01〜03（KPI K-01〜03）</td></tr>
+      <tr><td>バッテリー</td><td>NFR-04</td><td class="ng">—</td><td class="ng">—</td><td class="ok">✔</td><td class="ok">✔</td><td>ST-USAB-02（K-04/K-05）</td></tr>
+      <tr><td>視認性</td><td>NFR-06</td><td class="ng">—</td><td class="ng">—</td><td class="ok">✔</td><td class="ok">✔</td><td>ST-USAB-01（K-06）</td></tr>
+      <tr><td>可用性</td><td>NFR-07</td><td class="ng">—</td><td class="ok">✔</td><td class="ok">✔</td><td class="ng">—</td><td>IT-04 / ST-04（K-07）</td></tr>
+      <tr><td>プライバシー</td><td>NFR-08, NFR-10</td><td class="ok">✔</td><td class="ok">✔</td><td class="ok">✔</td><td class="ng">—</td><td>UT-BE-10 / IT-07 / ST-PRIV-01</td></tr>
+      <tr><td>セキュリティ</td><td>NFR-09</td><td class="ok">✔</td><td class="ok">✔</td><td class="ng">—</td><td class="ng">—</td><td>UT-BE-11 / IT-08</td></tr>
+      <tr><td>運用コスト</td><td>NFR-11</td><td class="ng">—</td><td class="ng">—</td><td class="ok">✔</td><td class="ok">✔</td><td>ST-COST-01（K-09）</td></tr>
+      <tr><td>保守性</td><td>NFR-12（OTA）</td><td class="ng">—</td><td class="ok">✔</td><td class="ok">✔</td><td class="ng">—</td><td>IT-09 / ST-OTA-01</td></tr>
+    </tbody>
+  </table>
+  <div style="font-size:7px; color:#555;">
+    <strong>テストケース総数</strong>：UT 37件 + IT 9件 + ST 12件 + UAT 5件 = <strong>63 件</strong>（うち異常系 28 件）。一覧は <span class="mono">tests/cases/test_cases_master.csv</span> に格納し、本書は代表項目を抜粋。
+  </div>
+
+  <div class="page-footer">
+    <span>DOC-ID: TS-LGA-001　LingoGlass AR テスト仕様書</span><span>- 2 -</span>
+  </div>
+</div>
+
+
+<!-- ========== PAGE 3: §4 単体テスト Backend + Mobile ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">テスト仕様書 / LingoGlass AR</div>
+    <div class="header-right">DOC-ID: TS-LGA-001　Rev 1.0　2026-05-12</div>
+  </div>
+
+  <div class="sec-head">■ §4　単体テスト仕様書（Backend / Mobile）</div>
+
+  <div class="sub-head">4.1　Backend 単体テスト（vitest + supertest）</div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:10%">No</th>
+        <th style="width:14%">対象モジュール</th>
+        <th style="width:14%">テスト項目</th>
+        <th style="width:16%">入力値</th>
+        <th style="width:18%">期待結果</th>
+        <th style="width:8%">区分</th>
+        <th>備考</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td class="mono">UT-BE-01</td><td class="mono">PacketBuilder.ts</td><td>1 fragment で収まる字幕生成</td><td>text="hello", mtu=247</td><td>fragment_count=1, payload="hello", CRC8 一致</td><td class="center">正常</td><td>FR-HW-02 / §10 BD</td></tr>
+      <tr><td class="mono">UT-BE-02</td><td class="mono">PacketBuilder.ts</td><td>2 fragment 分割</td><td>text=（300 bytes UTF-8）, mtu=185</td><td>fragment_count=2, 各 payload_length &lt; 178, 結合後一致</td><td class="center">正常</td><td>境界値テスト</td></tr>
+      <tr><td class="mono">UT-BE-03</td><td class="mono">PacketBuilder.ts</td><td>MTU 20（最小）</td><td>text="A", mtu=20</td><td>fragment_count=1, 例外なし</td><td class="center">境界</td><td>MTU 20/185/247 を 3 通り検証</td></tr>
+      <tr><td class="mono">UT-BE-04</td><td class="mono">PacketBuilder.ts</td><td>空文字列</td><td>text="", mtu=247</td><td>fragment_count=0 または 1（空ペイロード）, 例外なし</td><td class="center">異常</td><td>—</td></tr>
+      <tr><td class="mono">UT-BE-05</td><td class="mono">PacketBuilder.ts</td><td>超過字幕（&gt; 100 文字）</td><td>text=（120 文字）</td><td>truncate されて 100 文字 + "..."、警告ログ</td><td class="center">異常</td><td>MVP 上限</td></tr>
+      <tr><td class="mono">UT-BE-06</td><td class="mono">SessionService</td><td>正常な start → end</td><td>deviceId valid, src=en, tgt=ja</td><td>sessions.status='active' → 'ended'、events に start/end</td><td class="center">正常</td><td>DB は pg-mem</td></tr>
+      <tr><td class="mono">UT-BE-07</td><td class="mono">SessionService</td><td>STT タイムアウト処理</td><td>SttProvider mock が 5s 待機</td><td>error event STT_TIMEOUT、ws.send で通知、severity='warn'</td><td class="center">異常</td><td>fake timer</td></tr>
+      <tr><td class="mono">UT-BE-08</td><td class="mono">OcrService</td><td>画像ハッシュのみ保存</td><td>image=Buffer(1MB)</td><td>ocr_requests.image_hash 設定、画像本体は DB に無</td><td class="center">正常</td><td>NFR-08</td></tr>
+      <tr><td class="mono">UT-BE-09</td><td class="mono">OcrService</td><td>4 MB 超え画像拒否</td><td>image=Buffer(4.1MB)</td><td>throw PAYLOAD_TOO_LARGE → 413</td><td class="center">異常</td><td>境界値 4MB</td></tr>
+      <tr><td class="mono">UT-BE-10</td><td class="mono">quotaMiddleware</td><td>quota 境界値</td><td>device_id 当日 1000 req 済</td><td>1001 req 目で 429 + Retry-After ヘッダ</td><td class="center">境界</td><td>FR-BE-04</td></tr>
+      <tr><td class="mono">UT-BE-11</td><td class="mono">deviceAuth</td><td>未登録 device_id</td><td>X-Device-Id=&lt;random UUID&gt;</td><td>401 DEVICE_NOT_FOUND</td><td class="center">異常</td><td>NFR-09</td></tr>
+      <tr><td class="mono">UT-BE-12</td><td class="mono">EventService.aggregate</td><td>p50/p90/p95 計算</td><td>20 件 durationMs を投入</td><td>正しい percentile（NIST 算式）</td><td class="center">正常</td><td>K-01 集計検証</td></tr>
+    </tbody>
+  </table>
+
+  <div class="sub-head">4.2　Mobile 単体テスト（flutter test）</div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:10%">No</th>
+        <th style="width:14%">対象</th>
+        <th style="width:14%">テスト項目</th>
+        <th style="width:16%">入力値</th>
+        <th style="width:18%">期待結果</th>
+        <th style="width:8%">区分</th>
+        <th>備考</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td class="mono">UT-APP-01</td><td class="mono">packet_builder.dart</td><td>TS 実装と同一バイナリ出力</td><td>fixtures/pkt_01.json</td><td>byte 列が完全一致</td><td class="center">契約</td><td>contract-test.yml</td></tr>
+      <tr><td class="mono">UT-APP-02</td><td class="mono">VadDetector</td><td>無音 → 発話 → 無音検出</td><td>16kHz PCM 5s 音声</td><td>onSegment が 1 回発火</td><td class="center">正常</td><td>FR-APP-03</td></tr>
+      <tr><td class="mono">UT-APP-03</td><td class="mono">VadDetector</td><td>環境ノイズ（無発話）</td><td>定常 30dB ノイズ 10s</td><td>onSegment 発火 0 回</td><td class="center">異常</td><td>誤検出抑制</td></tr>
+      <tr><td class="mono">UT-APP-04</td><td class="mono">PairingScreen</td><td>BLE デバイス一覧表示</td><td>BleClient mock が 3 件返却</td><td>ListView に 3 件、tap で connect 呼出</td><td class="center">正常</td><td>FR-APP-01 / SCR-01</td></tr>
+      <tr><td class="mono">UT-APP-05</td><td class="mono">SettingsScreen</td><td>言語切替 UI</td><td>UI Lang = vi 選択</td><td>i18nProvider state 更新、ラベル翻訳</td><td class="center">正常</td><td>FR-APP-12 / SCR-05</td></tr>
+      <tr><td class="mono">UT-APP-06</td><td class="mono">SettingsScreen</td><td>履歴削除 確認ダイアログ</td><td>「履歴を全削除」tap</td><td>MOD-02 表示、cancel/delete 2 つの分岐</td><td class="center">正常</td><td>FR-APP-09</td></tr>
+      <tr><td class="mono">UT-APP-07</td><td class="mono">DiagnosticsScreen</td><td>CSV エクスポート</td><td>events 100 件</td><td>CSV (UTF-8 BOM) が生成・共有 sheet が起動</td><td class="center">正常</td><td>F-01</td></tr>
+      <tr><td class="mono">UT-APP-08</td><td class="mono">WsSessionClient</td><td>WSS 切断 → 自動再接続</td><td>force close → 5s 待機</td><td>指数バックオフ後に再接続成功</td><td class="center">異常</td><td>SCR-03 [RECONNECTING] 状態</td></tr>
+      <tr><td class="mono">UT-APP-09</td><td class="mono">RestClient</td><td>429 受信時の挙動</td><td>POST /ocr → 429 Retry-After:60</td><td>UI に「使用量上限に達しました」表示、60s 後再試行可</td><td class="center">異常</td><td>—</td></tr>
+      <tr><td class="mono">UT-APP-10</td><td class="mono">BleClient</td><td>切断 → 自動再接続</td><td>device disconnect</td><td>30s 以内に reconnect、字幕送信再開</td><td class="center">異常</td><td>FR-HW-03</td></tr>
+    </tbody>
+  </table>
+
+  <div class="page-footer">
+    <span>DOC-ID: TS-LGA-001　LingoGlass AR テスト仕様書</span><span>- 3 -</span>
+  </div>
+</div>
+
+
+<!-- ========== PAGE 4: §5 Firmware UT + Boundary matrix ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">テスト仕様書 / LingoGlass AR</div>
+    <div class="header-right">DOC-ID: TS-LGA-001　Rev 1.0　2026-05-12</div>
+  </div>
+
+  <div class="sec-head">■ §5　単体テスト仕様書（Firmware）+ 境界値マトリクス</div>
+
+  <div class="sub-head">5.1　Firmware 単体テスト（Unity / QEMU）</div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:10%">No</th>
+        <th style="width:14%">対象</th>
+        <th style="width:18%">テスト項目</th>
+        <th style="width:18%">入力</th>
+        <th style="width:20%">期待結果</th>
+        <th style="width:8%">区分</th>
+        <th>備考</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td class="mono">UT-FW-01</td><td class="mono">crc8.c</td><td>CRC8 計算正当性</td><td>RFC 3309 ベクター × 5</td><td>全て規格値と一致</td><td class="center">正常</td><td>—</td></tr>
+      <tr><td class="mono">UT-FW-02</td><td class="mono">PacketParser</td><td>正常パケットの解析</td><td>fixtures/pkt_*.bin（10 種）</td><td>parse_result_t::OK, 各フィールド一致</td><td class="center">正常</td><td>—</td></tr>
+      <tr><td class="mono">UT-FW-03</td><td class="mono">PacketParser</td><td>CRC 不一致</td><td>fixtures/pkt_bad_crc.bin</td><td>parse_result_t::BAD_CRC, NAK 0x31 生成</td><td class="center">異常</td><td>—</td></tr>
+      <tr><td class="mono">UT-FW-04</td><td class="mono">PacketParser</td><td>未知の version</td><td>version=0x02</td><td>parse_result_t::UNSUPPORTED</td><td class="center">異常</td><td>後方互換確認</td></tr>
+      <tr><td class="mono">UT-FW-05</td><td class="mono">PacketAssembler</td><td>3 fragment 完成</td><td>seq=1, frag 0,1,2 順序</td><td>is_complete=true、結合テキスト一致</td><td class="center">正常</td><td>—</td></tr>
+      <tr><td class="mono">UT-FW-06</td><td class="mono">PacketAssembler</td><td>fragment 逆順</td><td>seq=1, frag 2,0,1</td><td>is_complete=true、結合 OK</td><td class="center">正常</td><td>順序非依存</td></tr>
+      <tr><td class="mono">UT-FW-07</td><td class="mono">PacketAssembler</td><td>新 sequence で旧破棄</td><td>seq=1 frag 0 → seq=2 frag 0</td><td>seq=1 buffer 破棄、seq=2 開始</td><td class="center">正常</td><td>§10 BD ルール</td></tr>
+      <tr><td class="mono">UT-FW-08</td><td class="mono">PacketAssembler</td><td>5s タイムアウト</td><td>frag 0 のみ → 6s 経過</td><td>tick(now) で buffer reset</td><td class="center">異常</td><td>—</td></tr>
+      <tr><td class="mono">UT-FW-09</td><td class="mono">DisplayRenderer</td><td>2 行字幕</td><td>text=（80 文字）</td><td>自動改行、はみ出しなし</td><td class="center">正常</td><td>1〜2 行制約</td></tr>
+      <tr><td class="mono">UT-FW-10</td><td class="mono">LedController</td><td>BLE write 時 LED ON</td><td>SUBTITLE_TEXT 受信</td><td>led_on() が 100ms 以内に呼出</td><td class="center">正常</td><td>FR-HW-06 / NFR-08</td></tr>
+    </tbody>
+  </table>
+
+  <div class="sub-head">5.2　境界値マトリクス — BLE パケットペイロード長</div>
+  <table>
+    <thead>
+      <tr>
+        <th>条件</th>
+        <th>最小未満</th>
+        <th>最小</th>
+        <th>正常範囲</th>
+        <th>最大</th>
+        <th>最大超</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td class="tbl-label">payload_length（@ MTU 247、上限 238）</td>
+          <td>-1（不正）→ <span class="ng">NG</span></td>
+          <td>0 bytes → <span class="ok">OK</span></td>
+          <td>1〜237 → <span class="ok">OK</span></td>
+          <td>238 → <span class="ok">OK</span></td>
+          <td>239 → <span class="ng">NG（BAD_LENGTH）</span></td></tr>
+      <tr><td class="tbl-label">字幕文字数（UTF-8）</td>
+          <td>— → —</td>
+          <td>0 文字 → <span class="ok">OK</span></td>
+          <td>1〜100 → <span class="ok">OK</span></td>
+          <td>100 → <span class="ok">OK</span></td>
+          <td>101 → <span class="ng">NG（truncated + warn）</span></td></tr>
+      <tr><td class="tbl-label">fragment_count</td>
+          <td>0 → <span class="ng">NG</span></td>
+          <td>1 → <span class="ok">OK</span></td>
+          <td>1〜4 → <span class="ok">OK</span></td>
+          <td>4 → <span class="ok">OK</span></td>
+          <td>5 → <span class="ng">NG（超過、disc）</span></td></tr>
+      <tr><td class="tbl-label">MTU</td>
+          <td>19 → <span class="ng">NG（contract violation）</span></td>
+          <td>20 → <span class="ok">OK</span></td>
+          <td>185 → <span class="ok">OK</span></td>
+          <td>247 → <span class="ok">OK</span></td>
+          <td>248 → <span class="ng">NG（仕様外）</span></td></tr>
+    </tbody>
+  </table>
+
+  <div class="sub-head">5.3　境界値マトリクス — Quota / セッション</div>
+  <table>
+    <thead>
+      <tr>
+        <th>条件</th>
+        <th>最小未満</th>
+        <th>最小</th>
+        <th>正常範囲</th>
+        <th>最大</th>
+        <th>最大超</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td class="tbl-label">device_id 日次リクエスト数</td>
+          <td>—</td>
+          <td>1 → <span class="ok">OK</span></td>
+          <td>2〜999 → <span class="ok">OK</span></td>
+          <td>1000 → <span class="ok">OK</span></td>
+          <td>1001 → <span class="ng">429 QUOTA_EXCEEDED</span></td></tr>
+      <tr><td class="tbl-label">OCR 画像サイズ</td>
+          <td>0 byte → <span class="ng">400</span></td>
+          <td>1 byte → <span class="ok">OK</span></td>
+          <td>1KB〜4MB → <span class="ok">OK</span></td>
+          <td>4 MB → <span class="ok">OK</span></td>
+          <td>4 MB + 1 → <span class="ng">413</span></td></tr>
+      <tr><td class="tbl-label">セッション同時数（1 device）</td>
+          <td>—</td>
+          <td>1 → <span class="ok">OK</span></td>
+          <td>1 のみ → <span class="ok">OK</span></td>
+          <td>1 → <span class="ok">OK</span></td>
+          <td>2 → <span class="ng">既存切断 + 新規受付</span></td></tr>
+      <tr><td class="tbl-label">BLE 再接続待機時間</td>
+          <td>—</td>
+          <td>0s（即時）→ <span class="ok">OK</span></td>
+          <td>1〜29s → <span class="ok">OK</span></td>
+          <td>30s → <span class="ok">OK</span></td>
+          <td>31s 以上 → <span class="ng">UC-02 中止、ユーザー通知</span></td></tr>
+    </tbody>
+  </table>
+
+  <div style="font-size:7px; color:#555;">
+    境界値テストは「ちょうど境界」での挙動を必ず確認。最小未満／最大超は <strong>異常系として扱い、適切なエラーレスポンス</strong> が返ることを検証する。
+  </div>
+
+  <div class="page-footer">
+    <span>DOC-ID: TS-LGA-001　LingoGlass AR テスト仕様書</span><span>- 4 -</span>
+  </div>
+</div>
+
+
+<!-- ========== PAGE 5: §6 結合テスト ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">テスト仕様書 / LingoGlass AR</div>
+    <div class="header-right">DOC-ID: TS-LGA-001　Rev 1.0　2026-05-12</div>
+  </div>
+
+  <div class="sec-head">■ §6　結合テスト仕様書（IT）</div>
+  <div style="font-size:7.5px; margin-bottom:4px;">
+    各シナリオは「始点モジュール → 終点モジュール」を明示し、データの一貫性を検証する。Mobile 実機 + Backend staging + ESP32-S3 実機を使用。
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:8%">No</th>
+        <th style="width:22%">シナリオ</th>
+        <th style="width:18%">前提条件</th>
+        <th style="width:24%">操作手順</th>
+        <th style="width:22%">期待結果</th>
+        <th>備考</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="mono">IT-01</td>
+        <td>App → Backend WSS：音声 1 発話の往復</td>
+        <td>device ペアリング済、staging API キー有効、ネットワーク Wi-Fi</td>
+        <td>① SCR-03 起動 ② 5 秒の英語発話「Hello」 ③ WS event を待つ</td>
+        <td>WSS 接続成功 → stt.partial → stt.final → translate.final が順番に受信 → session_events 5 行が DB に存在</td>
+        <td>FR-BE-01 / API-01 正常系</td>
+      </tr>
+      <tr>
+        <td class="mono">IT-02</td>
+        <td>App → BLE Glass：字幕送信の確実な表示</td>
+        <td>BLE ペアリング済、グラス FW v0.1.x</td>
+        <td>① App から「こんにちは」を 20 回連続送信 ② BLE ログを収集</td>
+        <td>20 回全て表示成功、CRC エラー 0 件、ACK 20 件、app→display 平均 &lt; 200 ms（NFR-03）</td>
+        <td>S0 Spike Pass 条件と同等</td>
+      </tr>
+      <tr>
+        <td class="mono">IT-03</td>
+        <td>App → Backend OCR：撮影から表示まで</td>
+        <td>カメラ権限付与済、メニュー画像 5 枚（日本語/中国語/英語/混在/低照度）</td>
+        <td>① SCR-04 ② 撮影 → プレビュー確認 → グラスへ送信</td>
+        <td>各画像で 3 秒以内に翻訳結果がプレビュー表示、グラスに字幕表示（5/5 成功）</td>
+        <td>FR-APP-06/07 / API-02 / K-03</td>
+      </tr>
+      <tr>
+        <td class="mono">IT-04</td>
+        <td>BLE 切断 → 自動再接続</td>
+        <td>会話中（IT-01 進行中）</td>
+        <td>① グラスを 5 m 離して BLE 切断 ② 元の位置に戻す</td>
+        <td>App が disconnected を検知 → 30 秒以内に再接続 → 字幕送信再開、SCR-03 にバナー表示</td>
+        <td>FR-HW-03 / K-07</td>
+      </tr>
+      <tr>
+        <td class="mono">IT-05</td>
+        <td>STT タイムアウト → エラー字幕</td>
+        <td>STT_PROVIDER を mock-slow（10s 遅延）に切替</td>
+        <td>① SCR-03 ② 発話 ③ 5 秒経過を計測</td>
+        <td>App が「— 翻訳できませんでした —」をグラスに送信、error_logs に severity='warn' 記録</td>
+        <td>UT-BE-07 と連動</td>
+      </tr>
+      <tr>
+        <td class="mono">IT-06</td>
+        <td>診断ログ収集 → ダッシュボード反映</td>
+        <td>20 セッション分のデータ投入</td>
+        <td>① /api/v1/logs にイベント送信 ② SCR-06 で集計表示 ③ Grafana で確認</td>
+        <td>p50/p90/p95 が UI と Grafana で一致、CSV 出力可能</td>
+        <td>FR-BE-03 / FR-OPS-01</td>
+      </tr>
+      <tr>
+        <td class="mono">IT-07</td>
+        <td>プライバシー：履歴 OFF 時の DB 状態</td>
+        <td>SCR-05 で履歴 OFF</td>
+        <td>① 5 発話の会話セッション ② DB の sessions / session_events を直接確認</td>
+        <td>sessions.retain_text=false、payload_text=NULL（テキスト未保存）、画像 hash のみ</td>
+        <td>NFR-08 / D-09</td>
+      </tr>
+      <tr>
+        <td class="mono">IT-08</td>
+        <td>セキュリティ：未承認 device の拒否</td>
+        <td>X-Device-Id にランダム UUID を設定</td>
+        <td>① WSS 接続試行 ② POST /ocr 試行</td>
+        <td>両方 401 DEVICE_NOT_FOUND、Sentry に severity='info' 記録</td>
+        <td>NFR-09 / NFR-10</td>
+      </tr>
+      <tr>
+        <td class="mono">IT-09</td>
+        <td>OTA ファームウェア更新</td>
+        <td>新ファーム v0.1.1 がリリース済、デバイス v0.1.0</td>
+        <td>① App が更新通知 ② ユーザー承認 ③ OTA_UPDATE パケット送信 ④ 再起動 ⑤ バージョン確認</td>
+        <td>更新成功 → STATUS_REPORT で v0.1.1 を確認、字幕機能正常動作</td>
+        <td>NFR-12</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="sub-head">6.1　契約テスト（BLE プロトコル）</div>
+  <table>
+    <thead><tr><th style="width:10%">No</th><th style="width:22%">対象</th><th>テスト内容</th><th style="width:18%">期待結果</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">IT-CT-01</td><td>packages/ble-protocol（TS）</td><td>fixtures/pkt_*.json をパース → 構造体に変換</td><td>全 fixture が parsed_t と一致</td></tr>
+      <tr><td class="mono">IT-CT-02</td><td>packages/ble-protocol（Dart）</td><td>同じ fixtures を Dart 側でパース</td><td>TS と完全同一の構造</td></tr>
+      <tr><td class="mono">IT-CT-03</td><td>双方向</td><td>TS が build → Dart が parse / Dart が build → TS が parse</td><td>round-trip で text が一致</td></tr>
+    </tbody>
+  </table>
+  <div style="font-size:7px; color:#555;">
+    契約テストは GitHub Actions <span class="mono">contract-test.yml</span> で自動実行。fixtures は <span class="mono">packages/ble-protocol/fixtures/</span> で管理。
+  </div>
+
+  <div class="page-footer">
+    <span>DOC-ID: TS-LGA-001　LingoGlass AR テスト仕様書</span><span>- 5 -</span>
+  </div>
+</div>
+
+
+<!-- ========== PAGE 6: §7 総合テスト E2E + Performance ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">テスト仕様書 / LingoGlass AR</div>
+    <div class="header-right">DOC-ID: TS-LGA-001　Rev 1.0　2026-05-12</div>
+  </div>
+
+  <div class="sec-head">■ §7　総合テスト仕様書（ST）— E2E + パフォーマンス</div>
+
+  <div class="sub-head">7.1　E2E シナリオテスト</div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:8%">No</th>
+        <th style="width:18%">シナリオ</th>
+        <th style="width:14%">想定ユーザー</th>
+        <th style="width:32%">フロー（操作手順）</th>
+        <th>期待結果 / 計測値</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="mono">ST-01</td>
+        <td>旅行者：レストラン会話</td>
+        <td>海外旅行者</td>
+        <td>① 装着 → ペアリング ② SCR-03 起動 ③ 店員と 10 発話の英⇆日会話 ④ メニュー OCR 1 回</td>
+        <td>10 発話のうち 8 件以上で字幕が読めた + p50 ≤ 2.0s、OCR 1 回で 3.0s 以内</td>
+      </tr>
+      <tr>
+        <td class="mono">ST-02</td>
+        <td>接客スタッフ：PTT モード</td>
+        <td>飲食店スタッフ</td>
+        <td>① PTT を ON ② 注文受付時にボタン押下中のみ収音 ③ 5 客分対応</td>
+        <td>常時収音ではない（LED は押下中のみ）、誤検出 0、5/5 客対応完了</td>
+      </tr>
+      <tr>
+        <td class="mono">ST-03</td>
+        <td>留学生：講義中の専門用語</td>
+        <td>留学生</td>
+        <td>① 静かな講義室で 30 分装着 ② 専門用語含む英語講義の聞き取り補助</td>
+        <td>装着不快感なし、字幕読みやすさ「OK」、講義妨害なし</td>
+      </tr>
+      <tr>
+        <td class="mono">ST-04</td>
+        <td>連続使用安定性</td>
+        <td>全ユーザー</td>
+        <td>① 30 分間 SCR-03 を起動したまま、5 分おきに会話 ② BLE 切断頻度を計測</td>
+        <td>K-07：BLE 切断 ≤ 2 回（30 分中）、自動再接続成功率 100%</td>
+      </tr>
+      <tr>
+        <td class="mono">ST-PRIV-01</td>
+        <td>プライバシー：周囲認識</td>
+        <td>—</td>
+        <td>① 屋外で SCR-03 起動 ② 第三者 3 名に「録音中とわかるか」を質問</td>
+        <td>3/3 名が物理 LED を視認、「録音中とわかる」と回答</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="sub-head">7.2　パフォーマンステスト</div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:10%">No</th>
+        <th style="width:18%">項目</th>
+        <th style="width:14%">KPI / 目標値</th>
+        <th style="width:24%">計測方法</th>
+        <th>サンプル数</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td class="mono">ST-PERF-01</td><td>会話字幕 E2E 遅延</td><td>K-01 p50 ≤ 2.0s / K-02 p95 ≤ 3.5s</td><td>診断ログから session_events を集計（NIST 算式）</td><td>3 環境 × 20 発話 = 60 件</td></tr>
+      <tr><td class="mono">ST-PERF-02</td><td>OCR 翻訳表示時間</td><td>K-03 ≤ 3.0s</td><td>撮影〜BLE 表示までを計測</td><td>10 回</td></tr>
+      <tr><td class="mono">ST-PERF-03</td><td>BLE app→display 遅延</td><td>NFR-03 ≤ 200ms</td><td>App 送信 ts → ACK 受信 ts</td><td>100 件</td></tr>
+      <tr><td class="mono">ST-PERF-04</td><td>同時セッション負荷（pilot 上限）</td><td>50 device 同時 WSS</td><td>k6 で WS 模擬接続、ping/pong 維持</td><td>5 分継続</td></tr>
+      <tr><td class="mono">ST-PERF-05</td><td>クラウドコスト</td><td>K-09 ≤ $550 USD / 月（50 名換算）</td><td>1 週間分の usage を 4 倍換算</td><td>1 週 × 50 名</td></tr>
+    </tbody>
+  </table>
+
+  <div class="sub-head">7.3　ユーザビリティ・装着評価</div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:10%">No</th>
+        <th style="width:18%">項目</th>
+        <th style="width:14%">KPI / 目標値</th>
+        <th style="width:24%">手順</th>
+        <th>合否基準</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td class="mono">ST-USAB-01</td><td>屋外視認性</td><td>K-06 ≥ 80%</td><td>晴天昼の屋外で 10 名がメニュー字幕を読む → 「読めた／読めない」アンケート</td><td>8/10 以上が「読めた」</td></tr>
+      <tr><td class="mono">ST-USAB-02</td><td>連続装着 active</td><td>K-04 ≥ 2h</td><td>SCR-03 起動 + 5 分おきに発話を続け、バッテリー切れまで計測</td><td>2 時間以上動作</td></tr>
+      <tr><td class="mono">ST-USAB-03</td><td>混合使用</td><td>K-05 ≥ 6h</td><td>active 30 分 + standby 30 分を交互に繰り返す</td><td>6 時間以上動作</td></tr>
+      <tr><td class="mono">ST-USAB-04</td><td>熱・装着感</td><td>NFR-05</td><td>5 名 × 60 分装着 → アンケート（太陽穴・鼻梁の温度感）</td><td>「不快な熱感あり」≤ 1 名</td></tr>
+    </tbody>
+  </table>
+
+  <div class="sub-head">7.4　異常系・例外シナリオ</div>
+  <table>
+    <thead>
+      <tr><th style="width:10%">No</th><th style="width:22%">シナリオ</th><th style="width:28%">トリガー</th><th>期待挙動</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="mono">ST-ERR-01</td><td>機内モード切替中の会話</td><td>会話中に機内モード ON → OFF</td><td>App が WSS 再接続、字幕「ネットワーク切断」を 1 回送信</td></tr>
+      <tr><td class="mono">ST-ERR-02</td><td>API key 失効</td><td>OPENAI_API_KEY を無効化</td><td>error STT_FAILED、Sentry severity='error'、ダッシュボードに警告</td></tr>
+      <tr><td class="mono">ST-ERR-03</td><td>低バッテリー（&lt; 5%）</td><td>グラス充電せず使用継続</td><td>LOW_POWER 状態へ遷移、輝度 50%、App に通知</td></tr>
+      <tr><td class="mono">ST-ERR-04</td><td>不正パケット送信（攻撃想定）</td><td>外部ツールで version=0xFF のパケットを送信</td><td>parse_result_t::UNSUPPORTED、NAK 返信、字幕レンダリングなし</td></tr>
+    </tbody>
+  </table>
+
+  <div class="page-footer">
+    <span>DOC-ID: TS-LGA-001　LingoGlass AR テスト仕様書</span><span>- 6 -</span>
+  </div>
+</div>
+
+
+<!-- ========== PAGE 7: §8 UAT + §9 Bug management + Review ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">テスト仕様書 / LingoGlass AR</div>
+    <div class="header-right">DOC-ID: TS-LGA-001　Rev 1.0　2026-05-12</div>
+  </div>
+
+  <div class="sec-head">■ §8　受入基準（KPI 検証）+ パイロット評価</div>
+
+  <div class="sub-head">8.1　Go/No-Go 判断表（REQ §3 §12 と対応）</div>
+  <table>
+    <thead>
+      <tr><th style="width:10%">KPI</th><th style="width:22%">項目</th><th style="width:18%">Go 基準</th><th style="width:18%">No-Go 基準</th><th>検証 TC</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="mono">K-01</td><td>会話字幕 p50 遅延</td><td class="ok">≤ 2.0s</td><td class="ng">&gt; 2.5s 常態化</td><td>ST-PERF-01</td></tr>
+      <tr><td class="mono">K-02</td><td>会話字幕 p95 遅延</td><td class="ok">≤ 3.5s</td><td class="ng">&gt; 4.0s</td><td>ST-PERF-01</td></tr>
+      <tr><td class="mono">K-03</td><td>OCR 翻訳表示</td><td class="ok">≤ 3.0s</td><td class="ng">&gt; 4.0s</td><td>ST-PERF-02</td></tr>
+      <tr><td class="mono">K-04</td><td>連続使用 active</td><td class="ok">≥ 2h</td><td class="ng">&lt; 1h</td><td>ST-USAB-02</td></tr>
+      <tr><td class="mono">K-05</td><td>混合使用</td><td class="ok">≥ 6h</td><td class="ng">&lt; 4h</td><td>ST-USAB-03</td></tr>
+      <tr><td class="mono">K-06</td><td>屋外視認性</td><td class="ok">≥ 80%</td><td class="ng">&lt; 60%</td><td>ST-USAB-01</td></tr>
+      <tr><td class="mono">K-07</td><td>BLE 接続エラー（30 分）</td><td class="ok">≤ 2 回</td><td class="ng">&gt; 5 回</td><td>ST-04</td></tr>
+      <tr><td class="mono">K-08</td><td>継続使用意向</td><td class="ok">≥ 40%</td><td class="ng">&lt; 20%</td><td>UAT-05</td></tr>
+      <tr><td class="mono">K-09</td><td>クラウドコスト</td><td class="ok">≤ $550/月</td><td class="ng">&gt; $800/月</td><td>ST-PERF-05</td></tr>
+    </tbody>
+  </table>
+  <div style="font-size:7px; color:#555;">
+    Go/No-Go 判断は <strong>K-01〜K-07 を全て Go</strong>＋<strong>K-08 を Go</strong>で「Go」。中間値（Go と No-Go の間）はサンプル数を増やして再評価。
+  </div>
+
+  <div class="sub-head">8.2　パイロット受入テスト（UAT）</div>
+  <table>
+    <thead>
+      <tr><th style="width:10%">No</th><th style="width:24%">項目</th><th>手順</th><th style="width:22%">合否基準</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="mono">UAT-01</td><td>初期セットアップ（10 分以内）</td><td>テスター単独でグラスをペアリング → ホーム表示まで</td><td>10 分以内に完了 4/5 名</td></tr>
+      <tr><td class="mono">UAT-02</td><td>1 日体験（観光シナリオ）</td><td>4 時間の街歩き中に会話 + OCR を使用、フィードバック記録</td><td>「使用継続したい」3/5 名以上</td></tr>
+      <tr><td class="mono">UAT-03</td><td>業務シナリオ（接客）</td><td>飲食店で 1 営業時間装着、外国人客対応</td><td>業務妨害なし、装着完走 1/1 名</td></tr>
+      <tr><td class="mono">UAT-04</td><td>フィードバック収集</td><td>SCR-06 から CSV エクスポート + 紙アンケート</td><td>5 名分のデータ取得</td></tr>
+      <tr><td class="mono">UAT-05</td><td>継続意向アンケート</td><td>「また使いたいか」yes/no/maybe</td><td>K-08：yes ≥ 40%（2/5 名）</td></tr>
+    </tbody>
+  </table>
+
+  <div class="sec-head">■ §9　障害管理運用 + 障害一覧テンプレート</div>
+
+  <div class="sub-head">9.1　重要度の定義</div>
+  <table>
+    <thead><tr><th style="width:14%">重要度</th><th style="width:24%">基準</th><th style="width:18%">対応 SLA</th><th>例</th></tr></thead>
+    <tbody>
+      <tr><td class="pri-h">致命（Critical）</td><td>システムが使えない／データ破損／プライバシー漏洩</td><td>当日対応・リリース停止</td><td>音声原音がサーバーに保存される、BLE が一切繋がらない</td></tr>
+      <tr><td class="pri-h">重大（Major）</td><td>主要機能の片方が動作しない</td><td>3 営業日以内</td><td>OCR が常に失敗、字幕が 1/3 で文字化け</td></tr>
+      <tr><td class="pri-m">中（Medium）</td><td>動作するが UX が大幅に悪い</td><td>1 週間以内</td><td>遅延 p95 が 4 秒、BLE 切断 5 回/30 分</td></tr>
+      <tr><td class="pri-l">軽微（Minor）</td><td>UI 表示崩れ・タイポ等</td><td>次マイナーリリース</td><td>SCR-05 のラベル誤字、ja→vi 切替時の文字幅問題</td></tr>
+    </tbody>
+  </table>
+
+  <div class="sub-head">9.2　障害一覧（テンプレート + サンプル 2 件）</div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:8%">No</th>
+        <th style="width:12%">発見者 / 日付</th>
+        <th style="width:26%">内容（再現手順）</th>
+        <th style="width:8%">重要度</th>
+        <th style="width:10%">対応者</th>
+        <th style="width:14%">対応状況</th>
+        <th>備考 / PR</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td class="mono">BUG-001</td><td>NGUYEN<br>2026-05-13</td>
+          <td>S0 spike: MTU 20 環境で fragment が稀に欠落（10 回中 1 回）。原因：notify バッファ枯渇</td>
+          <td class="pri-h">重大</td><td>NGUYEN</td><td>対応中</td><td>—</td></tr>
+      <tr><td class="mono">BUG-002</td><td>Tester A<br>2026-05-15</td>
+          <td>UAT-01: ペアリング時にデバイスが 2 度表示される（重複）。再現：BLE スキャン 2 回連続</td>
+          <td class="pri-m">中</td><td>NGUYEN</td><td>未対応</td><td>FR-APP-01</td></tr>
+      <tr><td class="mono">BUG-NNN</td><td>—</td><td>—</td><td class="center">—</td><td>—</td><td>—</td><td>—</td></tr>
+    </tbody>
+  </table>
+
+  <div class="sub-head">9.3　リグレッションテスト運用</div>
+  <ul>
+    <li>障害修正後は <strong>同一 TC を再実行</strong>（最小限の再現テスト）</li>
+    <li><strong>関連機能</strong>も同時にチェック：BLE 修正なら IT-02 + IT-04、API 修正なら IT-01 + ST-PERF-01 を必ず再実行</li>
+    <li>致命・重大は <strong>全 UT + IT</strong> をフル実行（CI で自動）</li>
+    <li>毎リリース前に <strong>スモークテスト</strong>（UC-01〜03 の手動 1 周）を実施</li>
+  </ul>
+
+  <!-- Review -->
+  <div class="review-box">
+    <div class="sec-head" style="margin-top:0">■ レビュー・承認欄</div>
+    <div class="review-grid">
+      <div class="review-cell">
+        <div class="review-label">作成者</div>
+        氏名：NGUYEN MINH TRI<br>
+        日付：2026-05-12<br>
+        署名：＿＿＿＿＿＿＿＿
+      </div>
+      <div class="review-cell">
+        <div class="review-label">レビュー者（QA）</div>
+        氏名：＿＿＿＿＿＿<br>
+        日付：＿＿＿＿＿＿<br>
+        署名：＿＿＿＿＿＿＿＿
+      </div>
+      <div class="review-cell">
+        <div class="review-label">承認者</div>
+        氏名：＿＿＿＿＿＿<br>
+        日付：＿＿＿＿＿＿<br>
+        署名：＿＿＿＿＿＿＿＿
+      </div>
+    </div>
+    <div style="margin-top:6px; font-size:7px; color:#555;">
+      ※ Rev 1.0 としてS0実行を承認済み。S0 spike テストの実行と並行運用を開始。テスト結果は <span class="mono">/tests/results/{date}/</span> に CSV で保存し、F-05 pilot_report に集約する。
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span>DOC-ID: TS-LGA-001　LingoGlass AR テスト仕様書</span><span>- 7 -</span>
+  </div>
+</div>
+
+</body>
+</html>

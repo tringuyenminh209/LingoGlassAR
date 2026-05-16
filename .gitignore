@@ -1,0 +1,45 @@
+# OS / editor
+Thumbs.db
+.DS_Store
+desktop.ini
+*.swp
+*.swo
+*~
+
+# IDE
+.vs/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.code-workspace
+
+# Local secrets / env
+.env
+.env.*
+!.env.example
+
+# PlatformIO (also covered by firmware/esp32s3/.gitignore but kept here as a safety net)
+.pio/
+.piolibdeps/
+
+# Flutter / Dart (also covered by mobile/.gitignore)
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+.fvm/
+.fvmrc
+android/.gradle/
+android/local.properties
+android/key.properties
+ios/Pods/
+ios/.symlinks/
+
+# Logs
+*.log
+
+# Claude local overrides (per-machine permissions etc. should not be shared)
+.claude/settings.local.json

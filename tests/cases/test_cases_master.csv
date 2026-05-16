@@ -1,0 +1,64 @@
+test_id,level,type,requirement,title,expected
+UT-BE-01,UT,normal,FR-HW-02,PacketBuilder one fragment,fragment_count=1 and crc valid
+UT-BE-02,UT,boundary,FR-HW-02,PacketBuilder two fragments,reassembled payload equals source
+UT-BE-03,UT,boundary,FR-HW-02,PacketBuilder MTU 20,max payload is respected
+UT-BE-04,UT,error,FR-HW-02,PacketParser crc mismatch,INVALID_CRC returned
+UT-BE-05,UT,normal,FR-BE-01,WsSessionHandler session start,session_id returned
+UT-BE-06,UT,error,FR-BE-01,WsSessionHandler invalid lang,400 INVALID_PAYLOAD
+UT-BE-07,UT,error,FR-BE-01,SttProvider timeout,error event STT_TIMEOUT
+UT-BE-08,UT,normal,NFR-08,OcrService stores image hash only,no raw image persisted
+UT-BE-09,UT,boundary,FR-BE-02,OcrService rejects image over 4MB,413 PAYLOAD_TOO_LARGE
+UT-BE-10,UT,boundary,FR-BE-04,quota boundary,request 1001 returns 429
+UT-BE-11,UT,error,NFR-09,unknown device auth,401 DEVICE_NOT_FOUND
+UT-BE-12,UT,normal,FR-BE-03,percentile aggregation,p50 p90 p95 match expected
+UT-APP-01,UT,normal,FR-APP-01,Ble scan state,devices list updates
+UT-APP-02,UT,normal,FR-APP-03,VAD speech segment,onSegment fires once
+UT-APP-03,UT,error,FR-APP-03,VAD silence only,no segment emitted
+UT-APP-04,UT,normal,FR-APP-01,Pairing screen list,three devices displayed
+UT-APP-05,UT,normal,FR-APP-12,UI language switch,labels redraw without restart
+UT-APP-06,UT,normal,FR-APP-09,history delete dialog,cancel and delete branches work
+UT-APP-07,UT,normal,FR-APP-05,subtitle send command,PacketBuilder called
+UT-APP-08,UT,error,FR-APP-05,BLE send while disconnected,error banner shown
+UT-APP-09,UT,error,FR-BE-04,RestClient 429 handling,retry-after surfaced
+UT-APP-10,UT,error,FR-HW-03,BLE auto reconnect,reconnect within 30 seconds
+UT-APP-11,UT,normal,FR-APP-06,camera capture compress,image under 4MB
+UT-APP-12,UT,normal,FR-APP-07,OCR result preview,user can send to glass
+UT-APP-13,UT,normal,FR-APP-10,diagnostics stats,p50 p90 p95 rendered
+UT-APP-14,UT,normal,FR-APP-11,push-to-talk,state gates microphone capture
+UT-APP-15,UT,error,NFR-08,privacy history off,no text retained locally
+UT-FW-01,UT,normal,FR-HW-01,BLE service advertises,service uuid visible
+UT-FW-02,UT,normal,FR-HW-02,packet parse valid,fields decoded big-endian
+UT-FW-03,UT,error,FR-HW-02,packet parse bad version,NAK unsupported
+UT-FW-04,UT,error,FR-HW-02,packet parse bad crc,NAK crc
+UT-FW-05,UT,normal,FR-HW-02,assembler three fragments,is_complete true
+UT-FW-06,UT,normal,FR-HW-02,assembler reverse order,reassembled text matches
+UT-FW-07,UT,normal,FR-HW-02,new sequence discards old,old buffer reset
+UT-FW-08,UT,error,FR-HW-02,assembler timeout,buffer reset after 5s
+UT-FW-09,UT,normal,FR-HW-04,display render two lines,no layout jump
+UT-FW-10,UT,normal,FR-HW-06,privacy led on,led_on within 100ms
+IT-01,IT,normal,FR-BE-01,App Backend WSS conversation,translation.final received
+IT-02,IT,normal,FR-APP-05,App BLE Glass subtitle,20 sends all ACK
+IT-03,IT,normal,FR-APP-06,App Backend OCR,result under 3s in staging
+IT-04,IT,error,FR-HW-03,BLE disconnect reconnect,auto reconnect succeeds
+IT-05,IT,normal,FR-BE-03,log upload batch,events persisted
+IT-06,IT,normal,FR-OPS-01,diagnostics export,csv and json generated
+IT-07,IT,error,NFR-08,privacy no raw media,no audio image body stored
+IT-08,IT,error,NFR-09,plaintext transport blocked,HTTP/WSS policy enforced
+IT-09,IT,normal,NFR-12,firmware OTA update,new version boots
+ST-01,ST,normal,FR-APP-03,restaurant conversation,8 of 10 readable subtitles
+ST-02,ST,normal,FR-APP-06,menu OCR scenario,translation appears under 3s
+ST-03,ST,error,FR-BE-04,quota exceeded flow,user sees quota state
+ST-04,ST,error,NFR-07,30 min BLE stability,disconnect count <=2
+ST-PERF-01,ST,performance,NFR-01,conversation latency,p50<=2s p95<=3.5s
+ST-PERF-02,ST,performance,NFR-02,OCR latency,each run<=3s
+ST-PERF-03,ST,performance,NFR-03,BLE app display latency,100 events avg<200ms
+ST-USAB-01,ST,usability,NFR-06,outdoor readability,>=80 percent can read
+ST-USAB-02,ST,usability,NFR-04,active battery runtime,>=2h active
+ST-USAB-03,ST,usability,NFR-04,mixed battery runtime,>=6h mixed
+ST-USAB-04,ST,usability,NFR-05,thermal comfort,<=1 of 5 reports discomfort
+ST-COST-01,ST,operations,NFR-11,pilot monthly cost,projected <=550 USD
+UAT-01,UAT,acceptance,FR-APP-01,first pairing,user completes pairing unaided
+UAT-02,UAT,acceptance,K-08,tourism day trial,>=3 of 5 want continued use
+UAT-03,UAT,acceptance,NFR-06,real outdoor subtitle,>=80 percent readable
+UAT-04,UAT,acceptance,NFR-08,privacy expectation,user understands recording state
+UAT-05,UAT,acceptance,K-09,go no-go review,decision report completed

@@ -1,0 +1,266 @@
+openapi: 3.1.0
+info:
+  title: LingoGlass AR MVP API
+  version: 1.0.0
+servers:
+  - url: https://api.lingoglass.app
+paths:
+  /api/v1/ocr:
+    post:
+      summary: OCR and translate an image from the mobile app
+      parameters:
+        - in: header
+          name: X-Device-Id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [image, source_lang, target_lang]
+              properties:
+                image:
+                  type: string
+                  format: binary
+                  description: JPEG/PNG/WebP, max 4 MB
+                source_lang:
+                  type: string
+                  enum: [auto, ja, en, vi, ko, zh-CN]
+                target_lang:
+                  type: string
+                  enum: [ja, en, vi, ko, zh-CN]
+      responses:
+        "200":
+          description: OCR and translation succeeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OcrResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /api/v1/logs:
+    post:
+      summary: Upload latency/error events
+      parameters:
+        - in: header
+          name: X-Device-Id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [events]
+              properties:
+                events:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/SessionEvent"
+      responses:
+        "202":
+          description: Accepted
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /api/v1/sessions/{id}/events:
+    get:
+      summary: Fetch diagnostic events for one session
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Session events
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    const: true
+                  data:
+                    type: object
+                    required: [events]
+                    properties:
+                      events:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/SessionEvent"
+  /api/v1/sessions/{id}/purge:
+    post:
+      summary: Purge retained text for a session
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Purged
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurgeResponse"
+  /api/v1/feedback:
+    post:
+      summary: Submit pilot feedback
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FeedbackRequest"
+      responses:
+        "201":
+          description: Feedback stored
+  /api/v1/healthz:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+components:
+  schemas:
+    OcrResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          const: true
+        data:
+          type: object
+          required: [request_id, translated_text, ocr_text_length, duration_ms]
+          properties:
+            request_id:
+              type: string
+              format: uuid
+            translated_text:
+              type: string
+              maxLength: 300
+            ocr_text_length:
+              type: integer
+              minimum: 0
+            duration_ms:
+              type: integer
+              minimum: 0
+    SessionEvent:
+      type: object
+      required: [session_id, seq_no, event_type, created_at]
+      properties:
+        session_id:
+          type: string
+          format: uuid
+        seq_no:
+          type: integer
+          minimum: 0
+        event_type:
+          type: string
+          enum: [vad_start, vad_end, stt_done, translate_done, ble_sent, displayed, error]
+        duration_ms:
+          type: integer
+          minimum: 0
+        payload_text:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+        created_at:
+          type: string
+          format: date-time
+    PurgeResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          const: true
+        data:
+          type: object
+          required: [purged_events]
+          properties:
+            purged_events:
+              type: integer
+              minimum: 0
+    FeedbackRequest:
+      type: object
+      required: [session_id, rating, would_recommend]
+      properties:
+        tester_id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        would_recommend:
+          type: string
+          enum: [yes, no, maybe]
+        comment:
+          type: string
+          maxLength: 2000
+    ApiFail:
+      type: object
+      required: [success, error]
+      properties:
+        success:
+          const: false
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+  responses:
+    BadRequest:
+      description: Invalid payload
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiFail"
+    Unauthorized:
+      description: Device not registered
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiFail"
+    PayloadTooLarge:
+      description: Payload too large
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiFail"
+    RateLimited:
+      description: Quota exceeded
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiFail"
+

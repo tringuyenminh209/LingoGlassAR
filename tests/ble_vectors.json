@@ -1,0 +1,111 @@
+{
+  "comment": "Shared BLE subtitle packet test vectors. Mirror in firmware C++ and Flutter Dart unit tests. Hex strings are uppercase, no separators. Update all sides together.",
+  "crc": {
+    "algorithm": "CRC-8/CCITT",
+    "poly": "0x07",
+    "init": "0x00",
+    "xorout": "0x00",
+    "refin": false,
+    "refout": false
+  },
+  "vectors": [
+    {
+      "name": "subtitle_A_seq1",
+      "description": "Single fragment, ASCII payload 'A'",
+      "header": {
+        "version": 1,
+        "message_type": 1,
+        "sequence_id": 1,
+        "fragment_index": 0,
+        "fragment_count": 1,
+        "payload_length": 1
+      },
+      "payload_hex": "41",
+      "bytes_before_crc_hex": "0101010000010141",
+      "crc8": 91,
+      "crc8_hex": "5B",
+      "full_packet_hex": "01010100000101415B"
+    },
+    {
+      "name": "subtitle_Hello_seq2",
+      "description": "Single fragment, ASCII payload 'Hello'",
+      "header": {
+        "version": 1,
+        "message_type": 1,
+        "sequence_id": 2,
+        "fragment_index": 0,
+        "fragment_count": 1,
+        "payload_length": 5
+      },
+      "payload_hex": "48656C6C6F",
+      "bytes_before_crc_hex": "0101020000010548656C6C6F",
+      "crc8": 54,
+      "crc8_hex": "36",
+      "full_packet_hex": "0101020000010548656C6C6F36"
+    },
+    {
+      "name": "subtitle_jp_ko_seq3",
+      "description": "Single fragment, UTF-8 Japanese codepoint U+3053 (E3 81 93)",
+      "header": {
+        "version": 1,
+        "message_type": 1,
+        "sequence_id": 3,
+        "fragment_index": 0,
+        "fragment_count": 1,
+        "payload_length": 3
+      },
+      "payload_hex": "E38193",
+      "bytes_before_crc_hex": "01010300000103E38193",
+      "crc8": 92,
+      "crc8_hex": "5C",
+      "full_packet_hex": "01010300000103E381935C"
+    },
+    {
+      "name": "subtitle_wrap_seq_FFFF_frag1of2",
+      "description": "Sequence id at wrap boundary 0xFFFF, fragment 1 of 2, payload 'AB'",
+      "header": {
+        "version": 1,
+        "message_type": 1,
+        "sequence_id": 65535,
+        "fragment_index": 1,
+        "fragment_count": 2,
+        "payload_length": 2
+      },
+      "payload_hex": "4142",
+      "bytes_before_crc_hex": "0101FFFF0102024142",
+      "crc8": 158,
+      "crc8_hex": "9E",
+      "full_packet_hex": "0101FFFF01020241429E"
+    },
+    {
+      "name": "ack_for_seq1",
+      "description": "ACK message for subtitle sequence 1, payload = seq_id little-endian",
+      "header": {
+        "version": 1,
+        "message_type": 3,
+        "sequence_id": 1,
+        "fragment_index": 0,
+        "fragment_count": 1,
+        "payload_length": 2
+      },
+      "payload_hex": "0100",
+      "bytes_before_crc_hex": "010301000001020100",
+      "crc8": 70,
+      "crc8_hex": "46",
+      "full_packet_hex": "01030100000102010046"
+    }
+  ],
+  "utf8_fragment_cases": [
+    {
+      "name": "jp_konnichiwa_max7",
+      "description": "Japanese string konnichiwa (5 chars = 15 bytes UTF-8). With max_payload=7, fragments must split on codepoint boundaries: 6 / 6 / 3.",
+      "input_utf8_hex": "E38193E38293E381ABE381A1E381AF",
+      "max_payload": 7,
+      "expected_fragments_hex": [
+        "E38193E38293",
+        "E381ABE381A1",
+        "E381AF"
+      ]
+    }
+  ]
+}

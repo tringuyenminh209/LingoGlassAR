@@ -1,0 +1,1271 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>詳細設計書 / LingoGlass AR</title>
+<style>
+  @page { size: A4; margin: 14mm 14mm 18mm 14mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Yu Gothic", "Meiryo", "Hiragino Kaku Gothic Pro", sans-serif;
+         font-size: 8.5px; color: #000; background: #fff; }
+
+  .page {
+    width: 210mm; min-height: 297mm; padding: 12mm 12mm 16mm 12mm;
+    page-break-after: always; break-after: page;
+    position: relative; overflow: hidden;
+  }
+  .page:last-of-type { page-break-after: auto; break-after: auto; }
+
+  /* Header / Footer */
+  .page-header {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    border-bottom: 2px solid #000; padding-bottom: 4px; margin-bottom: 8px;
+  }
+  .page-header .doc-title { font-size: 13px; font-weight: bold; }
+  .page-header .header-right { font-size: 7.5px; text-align: right; line-height: 1.6; }
+  .page-footer {
+    position: absolute; bottom: 6mm; left: 12mm; right: 12mm;
+    border-top: 1px solid #999; padding-top: 3px;
+    display: flex; justify-content: space-between; font-size: 7px; color: #555;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+
+  /* Section */
+  .sec-head {
+    font-size: 10px; font-weight: bold; padding: 4px 8px;
+    border-left: 4px solid #000; background: #f0f0f0;
+    margin: 8px 0 5px 0;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    page-break-after: avoid; break-after: avoid;
+  }
+  .sub-head {
+    font-size: 8.5px; font-weight: bold; border-left: 3px solid #555;
+    padding-left: 6px; margin: 6px 0 3px 0;
+    page-break-after: avoid; break-after: avoid;
+  }
+
+  /* Table */
+  table { border-collapse: collapse; width: 100%; margin-bottom: 6px; }
+  th, td { border: 1px solid #888; padding: 2.5px 5px; vertical-align: top; line-height: 1.45; font-size: 8px; }
+  thead th {
+    background: #e8e8e8; font-weight: bold; text-align: center;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  tr { page-break-inside: avoid !important; break-inside: avoid !important; }
+  table { page-break-inside: auto; }
+  thead { display: table-header-group; }
+
+  .tbl-label { background: #f0f0f0; font-weight: bold;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .center { text-align: center; }
+  .mono { font-family: "Consolas", "Menlo", "Courier New", monospace; font-size: 7.5px; }
+
+  /* Cover */
+  .cover-title { font-size: 26px; font-weight: bold; text-align: center; margin: 26mm 0 5mm 0; letter-spacing: 4px; }
+  .cover-sub   { font-size: 14px; text-align: center; margin-bottom: 14mm; color: #333; }
+  .cover-meta  { width: 130mm; margin: 0 auto; }
+  .cover-meta table td { border: none; padding: 3px 10px; font-size: 9px; }
+
+  /* TOC */
+  .toc-item { display: flex; justify-content: space-between; padding: 2px 0;
+              border-bottom: 1px dotted #ccc; font-size: 8.5px; }
+
+  /* Code block */
+  pre.code { font-family: "Consolas", "Menlo", "Courier New", monospace; font-size: 7.3px;
+             border: 1px solid #ccc; background: #fafafa; padding: 6px 8px; line-height: 1.45;
+             page-break-inside: avoid; break-inside: avoid; white-space: pre; overflow: hidden; }
+
+  /* Class diagram boxes */
+  .cls-box { border: 1.5px solid #000; padding: 0; margin: 4px 0; font-size: 7.5px;
+             page-break-inside: avoid; break-inside: avoid; background: #fff; }
+  .cls-title { background: #333; color: #fff; padding: 3px 6px; font-weight: bold; text-align: center; font-size: 8.5px;
+               -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .cls-stereo { font-size: 6.5px; font-style: italic; opacity: 0.9; display: block; }
+  .cls-attr, .cls-method { padding: 3px 6px; }
+  .cls-sep { border-top: 1px solid #888; }
+  .cls-attr div, .cls-method div { padding: 1px 0; }
+
+  /* Sequence diagram */
+  .seq-wrap { display: grid; border: 1px solid #888; margin-bottom: 6px;
+              page-break-inside: avoid; break-inside: avoid; }
+  .seq-head { font-weight: bold; text-align: center; padding: 4px; font-size: 8px;
+              background: #e8e8e8; border-bottom: 2px solid #000; border-right: 1px solid #888;
+              -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .seq-head:last-child { border-right: none; }
+  .seq-cell { border-right: 1px dotted #ccc; border-bottom: 1px solid #eee;
+              padding: 4px 5px; font-size: 7.5px; min-height: 14px;
+              display: flex; align-items: center; justify-content: center; text-align: center; }
+  .seq-cell:last-child { border-right: none; }
+  .seq-msg { background: #fff; border: 1px solid #555; padding: 2px 4px; display: inline-block;
+              font-size: 7px; }
+  .seq-arr { color: #000; font-weight: bold; }
+  .seq-frame { background: #fffbe6; border: 1px dashed #c90;
+              -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .seq-alt   { background: #f0f8ff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  /* UC diagram */
+  .uc-wrap { border: 2px dashed #555; padding: 10px; position: relative;
+             page-break-inside: avoid; break-inside: avoid; }
+  .uc-system-label { position: absolute; top: -8px; left: 8px; background: #fff; padding: 0 6px;
+             font-size: 8px; font-weight: bold; }
+  .uc-actor { border: 1.5px solid #000; padding: 4px 8px; text-align: center; font-size: 7.5px;
+              background: #fafafa; }
+  .uc-case  { border: 1.5px solid #000; padding: 3px 8px; text-align: center; font-size: 7.5px;
+              border-radius: 30px; background: #fff; display: inline-block; }
+
+  /* Tree */
+  .tree { font-size: 7.5px; line-height: 1.5; font-family: "Consolas", "Menlo", "Courier New", monospace;
+          border: 1px solid #ccc; padding: 6px 10px; background: #fafafa;
+          page-break-inside: avoid; break-inside: avoid;
+          -webkit-print-color-adjust: exact; print-color-adjust: exact;
+          white-space: pre; }
+
+  /* Review */
+  .review-box { border: 1.5px solid #000; padding: 8px; margin-top: 8px;
+                page-break-inside: avoid; break-inside: avoid; }
+  .review-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-top: 4px; }
+  .review-cell { border: 1px solid #888; padding: 5px; font-size: 7.5px; line-height: 1.8; }
+  .review-label { font-size: 7.5px; font-weight: bold; border-bottom: 1px solid #ccc;
+                  padding-bottom: 2px; margin-bottom: 3px; }
+
+  p { margin-bottom: 3px; line-height: 1.55; }
+  ul { margin: 2px 0 4px 14px; }
+  li { line-height: 1.65; font-size: 8px; }
+
+  pre.code, .cls-box, .seq-wrap, .uc-wrap, .tree, .review-box
+    { page-break-inside: avoid; break-inside: avoid; }
+  .sec-head, .sub-head { page-break-after: avoid; break-after: avoid; }
+</style>
+</head>
+<body>
+
+<!-- ========== PAGE 1: COVER ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">詳細設計書 / LingoGlass AR</div>
+    <div class="header-right">
+      DOC-ID: DD-LGA-001　Rev 1.0　2026-05-12<br>
+      作成者: NGUYEN MINH TRI
+    </div>
+  </div>
+
+  <div class="cover-title">詳 細 設 計 書</div>
+  <div class="cover-sub">LingoGlass AR — リアルタイム字幕表示 AR グラス</div>
+
+  <div class="cover-meta">
+    <table>
+      <tr><td class="tbl-label">プロジェクト名</td><td>LingoGlass AR</td></tr>
+      <tr><td class="tbl-label">ドキュメント ID</td><td>DD-LGA-001</td></tr>
+      <tr><td class="tbl-label">バージョン</td><td>Rev 1.0（S0実行承認版）</td></tr>
+      <tr><td class="tbl-label">作成日</td><td>2026-05-12</td></tr>
+      <tr><td class="tbl-label">対象フェーズ</td><td>詳細設計（内部設計）— Developer How</td></tr>
+      <tr><td class="tbl-label">前提ドキュメント</td><td>要件定義書 REQ-LGA-001 Rev 1.0 ／ 基本設計書 BD-LGA-001 Rev 1.0</td></tr>
+      <tr><td class="tbl-label">アーキテクチャ</td><td>レイヤードアーキテクチャ（Handler / Service / Repository）＋ モノレポ</td></tr>
+      <tr><td class="tbl-label">次工程</td><td>WBS（WBS-LGA-001 予定）／ テスト仕様書（TS-LGA-001 予定）</td></tr>
+    </table>
+  </div>
+
+  <div style="margin-top: 12mm;">
+    <div class="sec-head">■ 改訂履歴</div>
+    <table>
+      <thead><tr><th style="width:10%">Rev</th><th style="width:18%">日付</th><th style="width:22%">担当者</th><th>変更内容</th></tr></thead>
+      <tbody>
+        <tr><td class="center">0.1</td><td class="center">2026-05-12</td><td>NGUYEN MINH TRI</td><td>初版作成。BD-LGA-001 を入力としてモノレポ構成・クラス図・シーケンス図・インフラ設定を起草。</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div style="margin-top: 8mm;">
+    <div class="sec-head">■ 目次</div>
+    <div class="toc-item"><span>§1　本書の位置づけ・前提</span><span>p.2</span></div>
+    <div class="toc-item"><span>§2　モノレポ構成（ディレクトリツリー）</span><span>p.2</span></div>
+    <div class="toc-item"><span>§3　パッケージ責務・主要モジュール一覧</span><span>p.3</span></div>
+    <div class="toc-item"><span>§4　ユースケース図 + UC 仕様書</span><span>p.3</span></div>
+    <div class="toc-item"><span>§5　バックエンド クラス図（Node.js + WS）</span><span>p.4</span></div>
+    <div class="toc-item"><span>§6　ファームウェア モジュール構成（ESP32-S3 / ESP-IDF）</span><span>p.5</span></div>
+    <div class="toc-item"><span>§7　フロントエンド コンポーネント構成（Flutter）</span><span>p.6</span></div>
+    <div class="toc-item"><span>§8　シーケンス図 — 会話字幕（正常系 / 異常系）</span><span>p.7</span></div>
+    <div class="toc-item"><span>§9　シーケンス図 — OCR 翻訳 + IPO 図</span><span>p.8</span></div>
+    <div class="toc-item"><span>§10　インフラ設定（fly.toml / Dockerfile / CI/CD）</span><span>p.8</span></div>
+    <div class="toc-item"><span>　　　レビュー・承認欄</span><span>p.8</span></div>
+  </div>
+
+  <div class="page-footer">
+    <span>DOC-ID: DD-LGA-001　LingoGlass AR 詳細設計書</span><span>- 1 -</span>
+  </div>
+</div>
+
+
+<!-- ========== PAGE 2: §1 + §2 ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">詳細設計書 / LingoGlass AR</div>
+    <div class="header-right">DOC-ID: DD-LGA-001　Rev 1.0　2026-05-12</div>
+  </div>
+
+  <div class="sec-head">■ §1　本書の位置づけ・前提</div>
+  <table>
+    <tr><td class="tbl-label" style="width:18%">本書の対象</td><td>LingoGlass AR MVP の <strong>内部実装方法</strong>（HOW）を確定する。クラス構造・関数シグネチャ・エラーコード・環境変数・ディレクトリ配置までを定義し、開発者が手戻りなしに実装に入れる状態にする。</td></tr>
+    <tr><td class="tbl-label">対象読者</td><td>Firmware / Mobile / Backend Engineer、QA、AI agents（コード生成補助）</td></tr>
+    <tr><td class="tbl-label">記述レベル</td><td>関数シグネチャ・クラス図・状態遷移までを記述。実コード（メソッド本体）は対象外。</td></tr>
+    <tr><td class="tbl-label">技術スタック（lock-in）</td><td>
+      ・Firmware: ESP-IDF 5.x (C/C++17) on ESP32-S3<br>
+      ・Mobile: Flutter 3.22 / Dart 3.4（iOS 16+ / Android 11+）<br>
+      ・Backend: Node.js 20 LTS + Express 4 + ws 8 + TypeScript 5.4<br>
+      ・DB: PostgreSQL 16（Drizzle ORM）／ Redis 7（任意）<br>
+      ・Infra: Fly.io（東京リージョン nrt）／ S3 互換ストレージ（Backblaze B2）
+    </td></tr>
+    <tr><td class="tbl-label">採用パターン</td><td>
+      ・レイヤード：Handler → Service → Repository<br>
+      ・依存性注入：コンストラクタ DI（DI コンテナ未使用 — `index.ts` でワイヤー）<br>
+      ・エラーは <span class="mono">AppError(code, message, status)</span> 統一型でレスポンスへ変換<br>
+      ・Flutter は features/ 単位の Riverpod ベース状態管理
+    </td></tr>
+  </table>
+
+  <div class="sec-head">■ §2　モノレポ構成（ディレクトリツリー）</div>
+  <div class="tree">lingoglass-ar/
+├── apps/
+│   └── mobile/                       # Flutter app（iOS + Android）
+│       ├── lib/
+│       │   ├── main.dart
+│       │   ├── app.dart                       # MaterialApp + Router
+│       │   ├── features/
+│       │   │   ├── pairing/                   # SCR-01
+│       │   │   ├── home/                      # SCR-02
+│       │   │   ├── conversation/              # SCR-03（会話字幕）
+│       │   │   ├── ocr/                       # SCR-04
+│       │   │   ├── settings/                  # SCR-05 + MOD-01/02
+│       │   │   └── diagnostics/               # SCR-06
+│       │   ├── core/
+│       │   │   ├── ble/                       # BleClient, ConnectionManager
+│       │   │   ├── api/                       # WsSessionClient, RestClient
+│       │   │   ├── audio/                     # MicCapture, Vad, OpusEncoder
+│       │   │   ├── camera/                    # CameraController, ImageCropper
+│       │   │   └── storage/                   # SecureStore, AppPrefs
+│       │   ├── shared/
+│       │   │   ├── i18n/  ja.arb / en.arb / vi.arb
+│       │   │   ├── theme/ tokens.dart
+│       │   │   └── widgets/                   # 共通 UI（ChipStatus, etc.）
+│       │   └── di/                            # Riverpod providers
+│       ├── test/
+│       └── pubspec.yaml
+│
+├── services/
+│   └── api/                          # Node.js + Express + ws
+│       ├── src/
+│       │   ├── handlers/                      # HTTP / WS エンドポイント
+│       │   ├── services/                      # ビジネスロジック
+│       │   ├── providers/                     # 外部 AI ラッパー
+│       │   ├── repositories/                  # DB アクセス
+│       │   ├── middleware/                    # quota / device-auth / errors
+│       │   ├── db/
+│       │   │   ├── schema.ts                  # Drizzle schema
+│       │   │   └── migrations/
+│       │   ├── utils/                         # logger, metrics
+│       │   ├── index.ts                       # Composition root
+│       │   └── env.ts                         # zod-validated env
+│       ├── tests/
+│       ├── Dockerfile
+│       ├── fly.toml
+│       └── package.json
+│
+├── firmware/
+│   └── esp32s3/                      # ESP-IDF C/C++
+│       ├── main/
+│       │   ├── main.c                         # app_main
+│       │   ├── ble_manager.[ch]               # BLE GATT サーバ
+│       │   ├── packet_parser.[ch]             # §10 プロトコル実装
+│       │   ├── packet_assembler.[ch]          # fragment 組立
+│       │   ├── display_renderer.[ch]          # I2C OLED 字幕描画 (SDA GPIO8 / SCL GPIO9)
+│       │   ├── battery_monitor.[ch]
+│       │   ├── led_controller.[ch]            # プライバシー LED
+│       │   ├── power_manager.[ch]
+│       │   └── ota_updater.[ch]               # OTA（NFR-12）
+│       ├── components/                        # 外部ライブラリ
+│       ├── CMakeLists.txt
+│       └── sdkconfig.defaults
+│
+├── packages/
+│   ├── shared-types/                 # TypeScript 共通型（ApiClient と Backend で共有）
+│   │   └── src/{api,ble,events}.ts
+│   └── ble-protocol/                 # BLE パケット仕様（Dart + TS 両実装）
+│       ├── ts/   PacketBuilder.ts / PacketParser.ts
+│       └── dart/ packet_builder.dart / packet_parser.dart
+│
+├── infra/
+│   ├── docker-compose.yml            # 開発用 (api + postgres + redis)
+│   ├── postgres-init.sql
+│   ├── prometheus.yml
+│   └── .github/workflows/
+│       ├── api-ci.yml                # build + test + deploy fly
+│       ├── mobile-ci.yml             # flutter test + lint
+│       └── firmware-ci.yml           # idf.py build
+│
+├── docs/                             # 設計書 (本書含む)
+├── Makefile
+├── pnpm-workspace.yaml
+└── README.md</div>
+
+  <div class="page-footer">
+    <span>DOC-ID: DD-LGA-001　LingoGlass AR 詳細設計書</span><span>- 2 -</span>
+  </div>
+</div>
+
+
+<!-- ========== PAGE 3: §3 + §4 ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">詳細設計書 / LingoGlass AR</div>
+    <div class="header-right">DOC-ID: DD-LGA-001　Rev 1.0　2026-05-12</div>
+  </div>
+
+  <div class="sec-head">■ §3　パッケージ責務・主要モジュール一覧</div>
+  <table>
+    <thead>
+      <tr><th style="width:14%">パッケージ</th><th style="width:8%">言語</th><th style="width:24%">責務</th><th style="width:18%">主要依存</th><th>公開 I/F・備考</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="mono">apps/mobile</td><td class="center">Dart</td><td>6 画面 + BLE/API クライアント。ユーザー入力 → 音声/画像取得 → サーバー連携 → BLE 送信</td><td>flutter_blue_plus, just_audio, camera, web_socket_channel, drift</td><td>features/* の Riverpod Provider を Router 経由で公開</td></tr>
+      <tr><td class="mono">services/api</td><td class="center">TS</td><td>WSS セッション / OCR / Logs / Feedback / Health の 7 API。Provider Router で STT・翻訳・OCR を抽象化</td><td>express, ws, drizzle-orm, zod, pino, openai, deepl-node, google-cloud/vision</td><td><span class="mono">docs/api-contract/openapi.yaml</span> を <span class="mono">/docs</span> で配信。WSS は <span class="mono">ws-events.schema.json</span> とZodで検証</td></tr>
+      <tr><td class="mono">firmware/esp32s3</td><td class="center">C/C++</td><td>BLE GATT サーバ、字幕レンダリング、LED、バッテリー報告、OTA</td><td>esp-idf 5.x（nimble, lvgl 任意, spi_master）</td><td>カスタム GATT Service UUID（§10）</td></tr>
+      <tr><td class="mono">packages/ble-protocol</td><td class="center">TS+Dart</td><td>BLE パケットの builder / parser を Mobile と Firmware で共有テスト</td><td>—（依存なし）</td><td>同一テストベクター（fixtures/*.json）で両実装を検証</td></tr>
+      <tr><td class="mono">packages/shared-types</td><td class="center">TS</td><td>WSS メッセージ / REST DTO / event_type enum を Mobile (codegen) と API で共有</td><td>zod</td><td><span class="mono">codegen.ts</span> で Dart 型を生成</td></tr>
+    </tbody>
+  </table>
+
+  <div class="sub-head">3.1　Backend モジュール内訳（services/api/src/）</div>
+  <table>
+    <thead><tr><th style="width:18%">レイヤー</th><th style="width:24%">モジュール</th><th>責務</th></tr></thead>
+    <tbody>
+      <tr><td>handlers/</td><td class="mono">WsSessionHandler</td><td>WSS 接続受付・音声 chunk → SessionService に転送。session_id 発行。</td></tr>
+      <tr><td></td><td class="mono">OcrHandler</td><td>POST /ocr。multipart → OcrService → JSON 返却。</td></tr>
+      <tr><td></td><td class="mono">LogHandler / FeedbackHandler / HealthHandler</td><td>各 API のリクエスト変換と Service 呼び出し。</td></tr>
+      <tr><td>services/</td><td class="mono">SessionService</td><td>STT chunk → TranslateProvider → 結果ストリームをハンドラへ返す。タイムスタンプ記録。</td></tr>
+      <tr><td></td><td class="mono">OcrService</td><td>OcrProvider → TranslateProvider。<span class="mono">ocr_requests</span> に履歴を記録（画像 hash のみ）。</td></tr>
+      <tr><td></td><td class="mono">EventService</td><td>session_events への一括書き込み・p50/p90/p95 集計。</td></tr>
+      <tr><td>providers/</td><td class="mono">SttProvider (interface)</td><td>実装：<span class="mono">OpenAiRealtimeStt</span> / <span class="mono">FasterWhisperStt</span>。<span class="mono">STT_PROVIDER</span> で切替。</td></tr>
+      <tr><td></td><td class="mono">TranslateProvider (interface)</td><td>実装：<span class="mono">OpenAiTranslate</span> / <span class="mono">DeeplTranslate</span>。</td></tr>
+      <tr><td></td><td class="mono">OcrProvider (interface)</td><td>実装：<span class="mono">GoogleVisionOcr</span>。</td></tr>
+      <tr><td>repositories/</td><td class="mono">DeviceRepo / SessionRepo / EventRepo / OcrRepo / ErrorRepo / FeedbackRepo / TesterRepo</td><td>Drizzle ORM ラッパー。トランザクション境界はサービス層で管理。</td></tr>
+      <tr><td>middleware/</td><td class="mono">deviceAuth</td><td><span class="mono">X-Device-Id</span> ヘッダを検証。MVP では存在チェックのみ。</td></tr>
+      <tr><td></td><td class="mono">quotaMiddleware</td><td>device_id × 日次 1,000 リクエスト超過で 429（FR-BE-04）。</td></tr>
+      <tr><td></td><td class="mono">errorHandler</td><td>AppError → JSON エンベロープ、unknown → 500 + Sentry 通知。</td></tr>
+    </tbody>
+  </table>
+
+  <div class="sec-head">■ §4　ユースケース図 + UC 仕様書</div>
+
+  <div class="uc-wrap">
+    <div class="uc-system-label">System: LingoGlass AR MVP</div>
+    <table style="border:none; margin: 0;">
+      <tr style="border:none;">
+        <td style="border:none; width:18%; padding-right:6px;">
+          <div class="uc-actor">エンドユーザー<br>（旅行者・接客等）</div>
+          <div style="height:6px;"></div>
+          <div class="uc-actor">パイロット<br>テスター</div>
+          <div style="height:6px;"></div>
+          <div class="uc-actor">開発者<br>（NGUYEN）</div>
+        </td>
+        <td style="border:none; padding: 0;">
+          <div style="display:flex; flex-direction:column; gap:5px; align-items:center;">
+            <span class="uc-case">UC-01 グラスをペアリングする</span>
+            <span class="uc-case">UC-02 会話の字幕を表示する</span>
+            <span class="uc-case">UC-03 看板/メニューを翻訳する</span>
+            <span class="uc-case">UC-04 言語・UI を設定する</span>
+            <span class="uc-case">UC-05 履歴を削除する</span>
+            <span class="uc-case">UC-06 診断ログを出力する</span>
+            <span class="uc-case">UC-07 ファームウェアを更新する（OTA）</span>
+            <span class="uc-case">UC-08 フィードバックを送信する</span>
+          </div>
+        </td>
+        <td style="border:none; width:18%; padding-left:6px;">
+          <div class="uc-actor">Cloud AI<br>(STT/翻訳/OCR)</div>
+          <div style="height:6px;"></div>
+          <div class="uc-actor">LingoGlass<br>(ESP32-S3)</div>
+        </td>
+      </tr>
+    </table>
+    <div style="font-size:7px; color:#555; margin-top:6px;">
+      ※ 関係：UC-02 «include» UC-01 ／ UC-03 «include» UC-01 ／ UC-08 «extend» UC-02（パイロット時のみ）
+    </div>
+  </div>
+
+  <div class="sub-head" style="margin-top:6px;">4.1　主要 UC 仕様書（UC-02 会話字幕）</div>
+  <table>
+    <tr><td class="tbl-label" style="width:14%">UC-ID</td><td class="mono">UC-02</td>
+        <td class="tbl-label" style="width:14%">名前</td><td>会話の字幕を表示する</td></tr>
+    <tr><td class="tbl-label">主アクター</td><td>エンドユーザー</td>
+        <td class="tbl-label">2 次アクター</td><td>Cloud AI（STT/翻訳）、LingoGlass</td></tr>
+    <tr><td class="tbl-label">事前条件</td><td colspan="3">グラスとペアリング済み（<span class="mono">devices.is_active = true</span>）、ネットワーク到達可能、マイク権限付与済み。</td></tr>
+    <tr><td class="tbl-label">基本フロー</td><td colspan="3">
+      ① ユーザー SCR-03 を開く ② アプリが WSS <span class="mono">/api/v1/session</span> を確立し、sessions レコードを active で作成 ③ マイク収音 + VAD で発話区間を切出し、Opus エンコードで chunk を送信 ④ サーバーが STT → Translate を逐次実行 ⑤ 翻訳テキストをアプリへ返却 ⑥ アプリが <span class="mono">PacketBuilder</span> で BLE フラグメントに分割 → グラスへ送信 ⑦ グラスが字幕レンダリング、ACK を返す ⑧ 各ステップの timestamp を session_events へ記録
+    </td></tr>
+    <tr><td class="tbl-label">例外フロー</td><td colspan="3">
+      E1 WSS 切断 → 5 秒以内に再接続。失敗時 SCR-03 にエラーバナー。<br>
+      E2 STT/翻訳タイムアウト（5s） → エラー結果を BLE で「— 翻訳できませんでした —」として表示。<br>
+      E3 BLE 切断 → 自動再接続（最大 30s）。再接続中は字幕送信を抑止。
+    </td></tr>
+    <tr><td class="tbl-label">事後条件</td><td colspan="3"><span class="mono">sessions.status='ended'</span>、ended_at 設定。SCR-06 で p50/p90/p95 が確認できる。</td></tr>
+  </table>
+
+  <div class="page-footer">
+    <span>DOC-ID: DD-LGA-001　LingoGlass AR 詳細設計書</span><span>- 3 -</span>
+  </div>
+</div>
+
+
+<!-- ========== PAGE 4: §5 Backend Class diagram ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">詳細設計書 / LingoGlass AR</div>
+    <div class="header-right">DOC-ID: DD-LGA-001　Rev 1.0　2026-05-12</div>
+  </div>
+
+  <div class="sec-head">■ §5　バックエンド クラス図（Node.js + WebSocket）</div>
+
+  <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
+    <!-- Handlers -->
+    <div>
+      <div class="sub-head">5.1　Handler 層</div>
+
+      <div class="cls-box">
+        <div class="cls-title">WsSessionHandler<span class="cls-stereo">«handler»</span></div>
+        <div class="cls-attr">
+          <div>- sessionService: SessionService</div>
+          <div>- eventService: EventService</div>
+        </div>
+        <div class="cls-method cls-sep">
+          <div>+ handle(ws, req): void</div>
+          <div>- onMessage(ws, raw): Promise</div>
+          <div>- onClose(ws, code): Promise</div>
+          <div>- streamReply(ws, text)</div>
+        </div>
+      </div>
+
+      <div class="cls-box">
+        <div class="cls-title">OcrHandler<span class="cls-stereo">«handler»</span></div>
+        <div class="cls-attr">
+          <div>- ocrService: OcrService</div>
+        </div>
+        <div class="cls-method cls-sep">
+          <div>+ post(req, res): Promise</div>
+        </div>
+      </div>
+
+      <div class="cls-box">
+        <div class="cls-title">LogHandler / FeedbackHandler / HealthHandler</div>
+        <div class="cls-method">
+          <div>+ post(req,res) / get(req,res)</div>
+          <div>※ シンプル委譲のため省略</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Services -->
+    <div>
+      <div class="sub-head">5.2　Service 層</div>
+
+      <div class="cls-box">
+        <div class="cls-title">SessionService<span class="cls-stereo">«service»</span></div>
+        <div class="cls-attr">
+          <div>- sttProvider: SttProvider</div>
+          <div>- translate: TranslateProvider</div>
+          <div>- sessionRepo: SessionRepo</div>
+          <div>- eventRepo: EventRepo</div>
+        </div>
+        <div class="cls-method cls-sep">
+          <div>+ start(deviceId, src, tgt): Session</div>
+          <div>+ pushAudio(sid, chunk): void</div>
+          <div>+ end(sid, reason): Session</div>
+          <div>- onSttPartial(sid, text)</div>
+          <div>- onSttFinal(sid, text)</div>
+        </div>
+      </div>
+
+      <div class="cls-box">
+        <div class="cls-title">OcrService<span class="cls-stereo">«service»</span></div>
+        <div class="cls-attr">
+          <div>- ocrProvider: OcrProvider</div>
+          <div>- translate: TranslateProvider</div>
+          <div>- ocrRepo: OcrRepo</div>
+        </div>
+        <div class="cls-method cls-sep">
+          <div>+ recognize(image, src, tgt): OcrResult</div>
+          <div>- hashImage(buf): string</div>
+        </div>
+      </div>
+
+      <div class="cls-box">
+        <div class="cls-title">EventService</div>
+        <div class="cls-method">
+          <div>+ record(events[]): Promise</div>
+          <div>+ aggregate(sid): LatencyStats</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Providers + Repos -->
+    <div>
+      <div class="sub-head">5.3　Provider / Repository 層</div>
+
+      <div class="cls-box">
+        <div class="cls-title">SttProvider<span class="cls-stereo">«interface»</span></div>
+        <div class="cls-method">
+          <div>+ open(opts): SttStream</div>
+        </div>
+      </div>
+      <div style="text-align:center; font-size: 9px;">⊳-- (実装)</div>
+      <div class="cls-box">
+        <div class="cls-title">OpenAiRealtimeStt / FasterWhisperStt</div>
+        <div class="cls-method"><div>+ open(opts): SttStream</div></div>
+      </div>
+
+      <div class="cls-box">
+        <div class="cls-title">TranslateProvider<span class="cls-stereo">«interface»</span></div>
+        <div class="cls-method">
+          <div>+ translate(text, src, tgt): string</div>
+        </div>
+      </div>
+      <div style="text-align:center; font-size: 9px;">⊳-- (実装)</div>
+      <div class="cls-box">
+        <div class="cls-title">OpenAiTranslate / DeeplTranslate</div>
+        <div class="cls-method"><div>+ translate(...): string</div></div>
+      </div>
+
+      <div class="cls-box">
+        <div class="cls-title">SessionRepo（Drizzle）</div>
+        <div class="cls-method">
+          <div>+ create(input): Session</div>
+          <div>+ findById(id): Session?</div>
+          <div>+ updateStatus(id, status)</div>
+          <div>+ purge(deviceId): number</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sub-head">5.4　主要型定義（packages/shared-types）</div>
+  <pre class="code">// packages/shared-types/src/api.ts
+export type ApiOk&lt;T&gt;   = { success: true; data: T };
+export type ApiFail     = { success: false; error: { code: string; message: string } };
+export type ApiResponse&lt;T&gt; = ApiOk&lt;T&gt; | ApiFail;
+
+export type WsClientEvent =
+  | { type: 'session.start'; deviceId: string; sourceLang: Lang; targetLang: Lang; retainText: boolean; clientTs: string }
+  | { type: 'audio.chunk';   sessionId: string; seq: number; codec: 'opus16k'; dataBase64: string; clientTs: string }
+  | { type: 'audio.end';     sessionId: string; seq: number; clientTs: string }
+  | { type: 'metrics';       sessionId: string; name: string; valueMs: number; clientTs: string };
+export type WsServerEvent =
+  | { type: 'session.opened';      sessionId: string; serverTs: string }
+  | { type: 'translation.partial'; sessionId: string; text: string; serverTs: string }
+  | { type: 'translation.final';   sessionId: string; sourceText?: string; translatedText: string; durationMs: number; serverTs: string }
+  | { type: 'error';               sessionId?: string; code: ErrorCode; message: string; retryable: boolean; serverTs: string };
+
+export type OcrRequest = { image: File; sourceLang: Lang | 'auto'; targetLang: Lang; deviceId: string };
+export type OcrResponse = { requestId: string; translatedText: string; ocrTextLength: number; durationMs: number };
+
+export type Lang = 'ja' | 'en' | 'vi' | 'ko' | 'zh-CN';
+export type ErrorCode =
+  | 'STT_TIMEOUT' | 'STT_FAILED' | 'TRANSLATE_FAILED'
+  | 'QUOTA_EXCEEDED' | 'INVALID_PAYLOAD' | 'INTERNAL';</pre>
+
+  <div class="sub-head">5.5　エラーコード一覧</div>
+  <table>
+    <thead><tr><th style="width:18%">code</th><th style="width:8%">HTTP</th><th style="width:22%">発生元</th><th>意味・対処</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">STT_TIMEOUT</td><td class="center">—</td><td>SttProvider 5s タイムアウト</td><td>WS event でクライアントへ通知。アプリは「翻訳できませんでした」を字幕送信</td></tr>
+      <tr><td class="mono">STT_FAILED</td><td class="center">—</td><td>STT API エラー</td><td>同上。Sentry に severity=warn 記録</td></tr>
+      <tr><td class="mono">TRANSLATE_FAILED</td><td class="center">—</td><td>翻訳プロバイダエラー</td><td>同上</td></tr>
+      <tr><td class="mono">QUOTA_EXCEEDED</td><td class="center">429</td><td>quotaMiddleware</td><td>device_id × 日次 1,000 超過。Retry-After ヘッダ送出</td></tr>
+      <tr><td class="mono">INVALID_PAYLOAD</td><td class="center">400</td><td>zod スキーマ検証</td><td>error.message に詳細パスを格納</td></tr>
+      <tr><td class="mono">DEVICE_NOT_FOUND</td><td class="center">401</td><td>deviceAuth</td><td>X-Device-Id 未登録。再ペアリング誘導</td></tr>
+      <tr><td class="mono">PAYLOAD_TOO_LARGE</td><td class="center">413</td><td>OcrHandler</td><td>画像 > 4 MB。クライアント側で再圧縮</td></tr>
+      <tr><td class="mono">INTERNAL</td><td class="center">500</td><td>未捕捉例外</td><td>Sentry severity=error。ユーザーには汎用メッセージ</td></tr>
+    </tbody>
+  </table>
+
+  <div class="page-footer">
+    <span>DOC-ID: DD-LGA-001　LingoGlass AR 詳細設計書</span><span>- 4 -</span>
+  </div>
+</div>
+
+
+<!-- ========== PAGE 5: §6 Firmware ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">詳細設計書 / LingoGlass AR</div>
+    <div class="header-right">DOC-ID: DD-LGA-001　Rev 1.0　2026-05-12</div>
+  </div>
+
+  <div class="sec-head">■ §6　ファームウェア モジュール構成（ESPr Developer S3 / ESP-IDF 5.x）</div>
+
+  <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
+    <div>
+      <div class="cls-box">
+        <div class="cls-title">BleManager<span class="cls-stereo">«module»</span></div>
+        <div class="cls-attr">
+          <div>- gattService: nimble_t</div>
+          <div>- connectedHandle: uint16_t</div>
+          <div>- mtu: int (20/185/247)</div>
+        </div>
+        <div class="cls-method cls-sep">
+          <div>+ ble_init(void): esp_err_t</div>
+          <div>+ ble_start_adv(void): void</div>
+          <div>+ ble_send_notify(buf, len): esp_err_t</div>
+          <div>- on_connect(handle, addr)</div>
+          <div>- on_write(handle, buf, len)</div>
+          <div>- on_disconnect(reason)</div>
+        </div>
+      </div>
+
+      <div class="cls-box">
+        <div class="cls-title">PacketParser</div>
+        <div class="cls-method">
+          <div>+ parse(buf, len, out): parse_result_t</div>
+          <div>+ crc8(buf, len): uint8_t</div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="cls-box">
+        <div class="cls-title">PacketAssembler</div>
+        <div class="cls-attr">
+          <div>- current_seq: uint16_t</div>
+          <div>- received_frags: bitmap</div>
+          <div>- buffer: char[300]</div>
+          <div>- deadline_ms: int</div>
+        </div>
+        <div class="cls-method cls-sep">
+          <div>+ feed(pkt): assemble_state_t</div>
+          <div>+ is_complete(): bool</div>
+          <div>+ get_text(out): size_t</div>
+          <div>+ tick(now_ms)  // 5s timeout</div>
+          <div>+ discard_old(new_seq)</div>
+        </div>
+      </div>
+
+      <div class="cls-box">
+        <div class="cls-title">DisplayRenderer</div>
+        <div class="cls-attr">
+          <div>- spi_dev: spi_device_handle_t</div>
+          <div>- font_atlas: const Font*</div>
+        </div>
+        <div class="cls-method cls-sep">
+          <div>+ display_init(): esp_err_t</div>
+          <div>+ display_render(text): void</div>
+          <div>+ display_clear(): void</div>
+          <div>+ display_set_dim(level): void</div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="cls-box">
+        <div class="cls-title">LedController</div>
+        <div class="cls-method">
+          <div>+ led_init()</div>
+          <div>+ led_on()  // 収音/撮影中</div>
+          <div>+ led_off()</div>
+          <div>+ led_blink(period_ms)</div>
+        </div>
+      </div>
+
+      <div class="cls-box">
+        <div class="cls-title">BatteryMonitor</div>
+        <div class="cls-method">
+          <div>+ read_voltage_mv(): int</div>
+          <div>+ to_percent(mv): int</div>
+          <div>+ publish_notify()  // 10% step</div>
+        </div>
+      </div>
+
+      <div class="cls-box">
+        <div class="cls-title">PowerManager</div>
+        <div class="cls-method">
+          <div>+ enter_idle_dim()  // 30s 無活動</div>
+          <div>+ enter_sleep()     // 60s 無活動</div>
+          <div>+ wake_on_ble()</div>
+        </div>
+      </div>
+
+      <div class="cls-box">
+        <div class="cls-title">OtaUpdater</div>
+        <div class="cls-method">
+          <div>+ ota_begin(total): esp_err_t</div>
+          <div>+ ota_write(chunk, n)</div>
+          <div>+ ota_end_and_reboot()</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sub-head">6.1　状態遷移（PowerManager / 字幕表示）</div>
+  <pre class="code">[OFF] --power on--&gt; [BOOT] --ble_init ok--&gt; [ADVERTISING]
+    [ADVERTISING] --connect--&gt; [READY]
+    [READY]       --subtitle pkt--&gt; [DISPLAYING] (字幕表示)
+    [DISPLAYING]  --subtitle clear / 30s--&gt; [READY]
+    [READY]       --60s 無活動--&gt; [SLEEP] (display off, BLE notify keep)
+    [SLEEP]       --pkt received--&gt; [READY] (wake)
+    [ANY]         --disconnect--&gt; [ADVERTISING] (自動再接続待ち)
+    [ANY]         --battery&lt;5%--&gt; [LOW_POWER] (字幕は維持、輝度 50%)</pre>
+
+  <div class="sub-head">6.2　IPO 図 — 字幕パケット受信処理（main loop）</div>
+  <table>
+    <thead><tr><th style="width:25%">Input</th><th style="width:40%">Process</th><th>Output</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>BLE write characteristic からのバイナリバッファ（最大 MTU - 3 bytes）</td>
+        <td>① CRC8 検証（失敗 → NAK 0x31 返信）<br>
+            ② version, type, seq, frag_index, frag_count, payload_len を解釈<br>
+            ③ PacketAssembler.feed(pkt)<br>
+            ④ 新 sequence_id → 旧進行中破棄（discard_old）<br>
+            ⑤ 全 fragment 揃ったら DisplayRenderer.render(text)<br>
+            ⑥ ACK 0x30 を返信</td>
+        <td>① 字幕がディスプレイへ描画される<br>② ACK / NAK を BLE notify で送信<br>③ 5 秒タイムアウト：sequence 破棄ログ（任意）</td>
+      </tr>
+      <tr>
+        <td>5 秒経過した PacketAssembler のタイマー tick</td>
+        <td>① is_complete() false かつ deadline 超過 → assembler reset<br>
+            ② Optionally Send STATUS_REPORT (timeout) to App</td>
+        <td>① 壊れた fragment セットが破棄される<br>② アプリ側は再送せず、新しい字幕の到着を待つ</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="page-footer">
+    <span>DOC-ID: DD-LGA-001　LingoGlass AR 詳細設計書</span><span>- 5 -</span>
+  </div>
+</div>
+
+
+<!-- ========== PAGE 6: §7 Frontend ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">詳細設計書 / LingoGlass AR</div>
+    <div class="header-right">DOC-ID: DD-LGA-001　Rev 1.0　2026-05-12</div>
+  </div>
+
+  <div class="sec-head">■ §7　フロントエンド コンポーネント構成（Flutter）</div>
+
+  <div class="sub-head">7.1　Widget ツリー（features/ 単位）</div>
+  <div class="tree">App (MaterialApp.router)
+  └── GoRouter
+      ├── /onboarding         → PairingScreen          (features/pairing)
+      │     └── BleDeviceList → DevicePairButton
+      ├── /home               → HomeScreen             (features/home)
+      │     ├── ConnectionStatusBar
+      │     └── ModeGrid (Conversation / Ocr / Settings / Diagnostics)
+      ├── /translate/voice    → ConversationScreen     (features/conversation)
+      │     ├── ListeningIndicator (LED 連動)
+      │     ├── SubtitlePanel (current + history)
+      │     ├── PttButton
+      │     └── HistoryToggle (default OFF)
+      ├── /translate/ocr      → OcrScreen              (features/ocr)
+      │     ├── CameraPreview
+      │     ├── CaptureButton
+      │     └── ResultPreview → SendToGlassButton
+      ├── /settings           → SettingsScreen         (features/settings)
+      │     ├── LangSelector ×2 (src / tgt) → showLangModal()
+      │     ├── UiLangSelector (ja/en/vi)
+      │     ├── PttToggle
+      │     ├── HistoryToggle (default OFF)
+      │     └── PrivacyActions (history view / purge / unpair)
+      └── /diagnostics        → DiagnosticsScreen      (features/diagnostics)
+            ├── LatencyChart (p50/p90/p95)
+            ├── GlassStatusCard (battery / temp / ble)
+            ├── ErrorLogList
+            └── ExportActions (CSV / JSON / upload)</div>
+
+  <div class="sub-head">7.2　状態管理（Riverpod プロバイダ）</div>
+  <table>
+    <thead>
+      <tr><th style="width:24%">Provider</th><th style="width:16%">型</th><th style="width:22%">参照する Core モジュール</th><th>役割</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="mono">bleConnectionProvider</td><td class="mono">StateNotifier&lt;BleState&gt;</td><td>core/ble/BleClient</td><td>connected / disconnected / pairing 状態を全画面で購読</td></tr>
+      <tr><td class="mono">activeDeviceProvider</td><td class="mono">FutureProvider&lt;Device?&gt;</td><td>core/storage/SecureStore</td><td>SecureStorage の device_id を提供</td></tr>
+      <tr><td class="mono">conversationSessionProvider</td><td class="mono">AsyncNotifier&lt;Session&gt;</td><td>core/api/WsSessionClient</td><td>SCR-03 のセッション状態・受信テキスト</td></tr>
+      <tr><td class="mono">ocrResultProvider</td><td class="mono">AsyncNotifier&lt;OcrResult?&gt;</td><td>core/api/RestClient</td><td>SCR-04 撮影後の結果保持</td></tr>
+      <tr><td class="mono">settingsProvider</td><td class="mono">Notifier&lt;Settings&gt;</td><td>core/storage/AppPrefs</td><td>言語 / PTT / 履歴 / UI 言語</td></tr>
+      <tr><td class="mono">latencyStatsProvider</td><td class="mono">FutureProvider&lt;Stats&gt;</td><td>core/api/RestClient</td><td>SCR-06 用 p50/p90/p95</td></tr>
+      <tr><td class="mono">i18nProvider</td><td class="mono">Provider&lt;Localizations&gt;</td><td>shared/i18n</td><td>UI 言語切替の即時反映</td></tr>
+    </tbody>
+  </table>
+
+  <div class="sub-head">7.3　Core クライアントクラス</div>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+    <div>
+      <div class="cls-box">
+        <div class="cls-title">BleClient<span class="cls-stereo">«core»</span></div>
+        <div class="cls-attr">
+          <div>- _scanner: FlutterBluePlus</div>
+          <div>- _connection: BluetoothDevice?</div>
+          <div>- _subtitleChar: Characteristic?</div>
+          <div>- _packetBuilder: PacketBuilder</div>
+        </div>
+        <div class="cls-method cls-sep">
+          <div>+ scan(): Stream&lt;ScanResult&gt;</div>
+          <div>+ connect(deviceId): Future</div>
+          <div>+ sendSubtitle(text): Future</div>
+          <div>+ disconnect(): Future</div>
+          <div>+ state(): Stream&lt;BleState&gt;</div>
+        </div>
+      </div>
+
+      <div class="cls-box">
+        <div class="cls-title">WsSessionClient</div>
+        <div class="cls-attr">
+          <div>- _channel: WebSocketChannel</div>
+          <div>- _eventCtrl: StreamCtrl&lt;WsEvent&gt;</div>
+        </div>
+        <div class="cls-method cls-sep">
+          <div>+ open(deviceId, src, tgt)</div>
+          <div>+ pushAudio(bytes): void</div>
+          <div>+ events(): Stream&lt;WsEvent&gt;</div>
+          <div>+ close(reason): Future</div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="cls-box">
+        <div class="cls-title">MicCapture + Vad</div>
+        <div class="cls-method">
+          <div>+ start(): Stream&lt;Int16List&gt;</div>
+          <div>+ stop()</div>
+          <div>- detectVoice(frame): bool</div>
+          <div>- emitSegment(segment)</div>
+        </div>
+      </div>
+
+      <div class="cls-box">
+        <div class="cls-title">RestClient</div>
+        <div class="cls-method">
+          <div>+ postOcr(image, src, tgt): OcrResult</div>
+          <div>+ getEvents(sid): List&lt;Event&gt;</div>
+          <div>+ purge(deviceId): void</div>
+          <div>+ postFeedback(input): void</div>
+          <div>+ postLogs(events[]): void</div>
+        </div>
+      </div>
+
+      <div class="cls-box">
+        <div class="cls-title">PacketBuilder (packages/ble-protocol)</div>
+        <div class="cls-method">
+          <div>+ build(text, seqId, mtu): List&lt;Packet&gt;</div>
+          <div>- crc8(buf): int</div>
+          <div>+ chunkSize(mtu): int</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sub-head">7.4　画面の主要状態遷移（SCR-03 ConversationScreen）</div>
+  <pre class="code">[IDLE] --マイク許可 OK--&gt; [READY]
+[READY] --WS 接続 OK--&gt; [LISTENING] (LED ON、収音中)
+[LISTENING] --VAD 発話--&gt; [TRANSCRIBING] (chunk 送信中)
+[TRANSCRIBING] --stt.final 受信--&gt; [TRANSLATING]
+[TRANSLATING] --translate.final--&gt; [SENDING_BLE]
+[SENDING_BLE] --ACK 受信 or 失敗--&gt; [LISTENING] (次発話を待つ)
+[ANY] --WS 切断--&gt; [RECONNECTING] (5s リトライ)
+[ANY] --BLE 切断--&gt; [BLE_RECONNECTING] (LED 点滅、字幕送信停止)
+[ANY] --ユーザー停止 / 戻る--&gt; [IDLE]</pre>
+
+  <div class="page-footer">
+    <span>DOC-ID: DD-LGA-001　LingoGlass AR 詳細設計書</span><span>- 6 -</span>
+  </div>
+</div>
+
+
+<!-- ========== PAGE 7: §8 Sequence diagrams (Conversation) ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">詳細設計書 / LingoGlass AR</div>
+    <div class="header-right">DOC-ID: DD-LGA-001　Rev 1.0　2026-05-12</div>
+  </div>
+
+  <div class="sec-head">■ §8　シーケンス図 — 会話字幕表示</div>
+
+  <div class="sub-head">8.1　正常系（Happy Path）— UC-02</div>
+  <div class="seq-wrap" style="grid-template-columns: 9% 14% 16% 14% 14% 16% 17%;">
+    <div class="seq-head">User</div>
+    <div class="seq-head">Flutter App<br>(SCR-03)</div>
+    <div class="seq-head">WsSession<br>Handler</div>
+    <div class="seq-head">Session<br>Service</div>
+    <div class="seq-head">SttProvider<br>+ Translate</div>
+    <div class="seq-head">PostgreSQL<br>(sessions/events)</div>
+    <div class="seq-head">LingoGlass<br>(ESP32-S3)</div>
+
+    <!-- Row 1: open screen -->
+    <div class="seq-cell">SCR-03 を開く</div>
+    <div class="seq-cell"><span class="seq-arr">→</span> WSS open</div>
+    <div class="seq-cell">受付</div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+
+    <!-- Row 2: start session -->
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"><span class="seq-arr">→</span> start()</div>
+    <div class="seq-cell">create()</div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell">INSERT sessions<br>status='active'</div>
+    <div class="seq-cell"></div>
+
+    <!-- Row 3: session.opened -->
+    <div class="seq-cell"></div>
+    <div class="seq-cell"><span class="mono">←-- session.opened {sid}</span></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+
+    <!-- Row 4: audio chunk -->
+    <div class="seq-cell">発話</div>
+    <div class="seq-cell">VAD 切出し<br><span class="seq-arr">→</span> audio chunk</div>
+    <div class="seq-cell">受信</div>
+    <div class="seq-cell">pushAudio()</div>
+    <div class="seq-cell"><span class="seq-arr">→</span> stt.open()</div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+
+    <!-- Row 5: stt partial -->
+    <div class="seq-cell"></div>
+    <div class="seq-cell"><span class="mono">←-- stt.partial</span></div>
+    <div class="seq-cell">stream</div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"><span class="mono">←-- chunk</span></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+
+    <!-- Row 6: stt final -->
+    <div class="seq-cell"></div>
+    <div class="seq-cell"><span class="mono">←-- stt.final</span></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell">onSttFinal()</div>
+    <div class="seq-cell"><span class="seq-arr">→</span> translate()</div>
+    <div class="seq-cell">INSERT event<br>'stt_done'</div>
+    <div class="seq-cell"></div>
+
+    <!-- Row 7: translate result -->
+    <div class="seq-cell"></div>
+    <div class="seq-cell"><span class="mono">←-- translate.final</span></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"><span class="mono">←-- text</span></div>
+    <div class="seq-cell">INSERT event<br>'translate_done'</div>
+    <div class="seq-cell"></div>
+
+    <!-- Row 8: BLE send -->
+    <div class="seq-cell"></div>
+    <div class="seq-cell">PacketBuilder.build()<br><span class="seq-arr">→</span> BLE notify</div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell">fragment 受信<br>→ assemble</div>
+
+    <!-- Row 9: render + ACK -->
+    <div class="seq-cell">字幕を読む</div>
+    <div class="seq-cell"><span class="mono">←-- ACK</span></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell">INSERT 'ble_sent'<br>+ 'displayed'</div>
+    <div class="seq-cell">DisplayRenderer<br>.render()</div>
+
+    <!-- Row 10: loop -->
+    <div class="seq-cell"></div>
+    <div class="seq-cell" colspan="6" style="grid-column: span 6; background:#fffbe6; -webkit-print-color-adjust:exact;">
+      loop [会話が続く間] — 4〜9 を繰り返す
+    </div>
+
+    <!-- Row 11: end -->
+    <div class="seq-cell">画面を閉じる</div>
+    <div class="seq-cell"><span class="seq-arr">→</span> close()</div>
+    <div class="seq-cell">end(sid)</div>
+    <div class="seq-cell">updateStatus()</div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell">UPDATE status<br>='ended'</div>
+    <div class="seq-cell">字幕消去<br>(SUBTITLE_CLEAR)</div>
+  </div>
+
+  <div class="sub-head">8.2　異常系（Error Path）— STT タイムアウト + BLE 切断</div>
+  <div class="seq-wrap" style="grid-template-columns: 9% 14% 16% 14% 14% 16% 17%;">
+    <div class="seq-head">User</div>
+    <div class="seq-head">Flutter App</div>
+    <div class="seq-head">WsHandler</div>
+    <div class="seq-head">SessionService</div>
+    <div class="seq-head">SttProvider</div>
+    <div class="seq-head">PostgreSQL / Sentry</div>
+    <div class="seq-head">LingoGlass</div>
+
+    <div class="seq-cell">発話</div>
+    <div class="seq-cell"><span class="seq-arr">→</span> audio chunk</div>
+    <div class="seq-cell">受信</div>
+    <div class="seq-cell">pushAudio</div>
+    <div class="seq-cell">stt.open()</div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell">… 5s 無応答 …</div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+
+    <div class="seq-cell"></div>
+    <div class="seq-cell" colspan="6" style="grid-column: span 6; background:#f0f8ff; -webkit-print-color-adjust:exact;">
+      <strong>alt [STT_TIMEOUT]</strong>
+    </div>
+
+    <div class="seq-cell"></div>
+    <div class="seq-cell"><span class="mono">←-- error STT_TIMEOUT</span></div>
+    <div class="seq-cell">stream</div>
+    <div class="seq-cell">catch + log</div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell">INSERT error_log<br>severity='warn'</div>
+    <div class="seq-cell"></div>
+
+    <div class="seq-cell"></div>
+    <div class="seq-cell">BLE 送信<br>"— 翻訳できませんでした —"</div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell">エラー字幕<br>表示</div>
+
+    <div class="seq-cell"></div>
+    <div class="seq-cell" colspan="6" style="grid-column: span 6; background:#f0f8ff; -webkit-print-color-adjust:exact;">
+      <strong>alt [BLE 切断（送信中）]</strong>
+    </div>
+
+    <div class="seq-cell"></div>
+    <div class="seq-cell">BleClient.state → disconnected<br>SCR-03 にバナー表示</div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell">切断</div>
+
+    <div class="seq-cell"></div>
+    <div class="seq-cell">自動再接続<br>(最大 30s, 指数バックオフ)</div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell">advertising</div>
+
+    <div class="seq-cell"></div>
+    <div class="seq-cell">再接続成功</div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell">INSERT event<br>'ble_reconnected'</div>
+    <div class="seq-cell">connected</div>
+  </div>
+  <div style="font-size:7px; color:#555;">
+    ※ STT_TIMEOUT は最大 3 連続で発生した場合のみ Sentry severity を error に昇格。BLE 切断 30 秒以上で UC-02 を中止し、ユーザーに「ペアリングを確認してください」を表示。
+  </div>
+
+  <div class="page-footer">
+    <span>DOC-ID: DD-LGA-001　LingoGlass AR 詳細設計書</span><span>- 7 -</span>
+  </div>
+</div>
+
+
+<!-- ========== PAGE 8: §9 OCR Sequence + §10 Infra + Review ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">詳細設計書 / LingoGlass AR</div>
+    <div class="header-right">DOC-ID: DD-LGA-001　Rev 1.0　2026-05-12</div>
+  </div>
+
+  <div class="sec-head">■ §9　シーケンス図 — OCR 翻訳（UC-03 正常系）</div>
+  <div class="seq-wrap" style="grid-template-columns: 10% 17% 16% 16% 18% 23%;">
+    <div class="seq-head">User</div>
+    <div class="seq-head">Flutter App<br>(SCR-04)</div>
+    <div class="seq-head">OcrHandler</div>
+    <div class="seq-head">OcrService</div>
+    <div class="seq-head">GoogleVisionOcr<br>+ Translate</div>
+    <div class="seq-head">PostgreSQL / LingoGlass</div>
+
+    <div class="seq-cell">撮影</div>
+    <div class="seq-cell">撮影 → クロップ →<br>POST /api/v1/ocr (multipart)</div>
+    <div class="seq-cell">受信 + zod 検証</div>
+    <div class="seq-cell">recognize()</div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell">hashImage(SHA-256)<br>+ INSERT ocr_requests</div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell">INSERT ocr_requests<br>(image_hash のみ)</div>
+
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"><span class="seq-arr">→</span> visionOcr()</div>
+    <div class="seq-cell">OCR テキスト抽出</div>
+    <div class="seq-cell"></div>
+
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"><span class="seq-arr">→</span> translate()</div>
+    <div class="seq-cell">翻訳結果</div>
+    <div class="seq-cell"></div>
+
+    <div class="seq-cell">プレビュー確認</div>
+    <div class="seq-cell"><span class="mono">←-- 200 OcrResult</span></div>
+    <div class="seq-cell">JSON 返却</div>
+    <div class="seq-cell">UPDATE status='success'</div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell">UPDATE duration_ms</div>
+
+    <div class="seq-cell">「グラスへ送信」</div>
+    <div class="seq-cell">PacketBuilder → BLE notify</div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell"></div>
+    <div class="seq-cell">字幕表示</div>
+  </div>
+
+  <div class="sec-head">■ §10　インフラ設定（fly.toml / Dockerfile / CI/CD）</div>
+
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+    <div>
+      <div class="sub-head">10.1　services/api/fly.toml</div>
+      <pre class="code">app = "lingoglass-api"
+primary_region = "nrt"   # 東京
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "8080"
+  STT_PROVIDER = "openai-realtime"
+  TRANSLATE_PROVIDER = "deepl"
+  OCR_PROVIDER = "google-vision"
+  LOG_LEVEL = "info"
+
+[[services]]
+  internal_port = 8080
+  protocol = "tcp"
+  [[services.ports]]
+    handlers = ["tls", "http"]
+    port = 443
+
+[[services.tcp_checks]]
+  interval = "30s"
+  timeout = "5s"
+  grace_period = "10s"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512
+
+# Secrets (fly secrets set ...)
+# OPENAI_API_KEY=...
+# DEEPL_API_KEY=...
+# GOOGLE_APPLICATION_CREDENTIALS_JSON=...
+# DATABASE_URL=postgres://...
+# REDIS_URL=redis://...
+# SENTRY_DSN=...</pre>
+    </div>
+
+    <div>
+      <div class="sub-head">10.2　services/api/Dockerfile</div>
+      <pre class="code">FROM node:20-alpine AS builder
+WORKDIR /app
+COPY pnpm-lock.yaml package.json ./
+RUN corepack enable && pnpm install --frozen-lockfile
+COPY . .
+RUN pnpm build
+
+FROM node:20-alpine
+WORKDIR /app
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules ./node_modules
+COPY package.json ./
+ENV NODE_ENV=production
+EXPOSE 8080
+USER node
+HEALTHCHECK --interval=30s --timeout=5s \
+  CMD wget -qO- http://localhost:8080/api/v1/healthz || exit 1
+CMD ["node", "dist/index.js"]</pre>
+    </div>
+  </div>
+
+  <div class="sub-head">10.3　GitHub Actions（CI/CD）</div>
+  <table>
+    <thead><tr><th style="width:22%">Workflow</th><th style="width:18%">トリガー</th><th>主要ステップ</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">.github/workflows/api-ci.yml</td><td>push / PR (paths: services/api/**)</td>
+          <td>① pnpm install ② lint (eslint) ③ typecheck ④ test (vitest) ⑤ build ⑥ docker build (PR は build のみ) ⑦ main へ push 時 <span class="mono">flyctl deploy --remote-only</span></td></tr>
+      <tr><td class="mono">.github/workflows/mobile-ci.yml</td><td>push / PR (paths: apps/mobile/**)</td>
+          <td>① flutter pub get ② flutter analyze ③ flutter test ④ build apk (PR で attach as artifact) ⑤ TestFlight / Internal Testing は手動トリガー</td></tr>
+      <tr><td class="mono">.github/workflows/firmware-ci.yml</td><td>push / PR (paths: firmware/**)</td>
+          <td>① idf.py build（espressif/idf:release-v5.2 コンテナ） ② size check（フラッシュ閾値 80%） ③ artifact として bin をアップロード ④ OTA リリースは <span class="mono">v*</span> tag で手動</td></tr>
+      <tr><td class="mono">.github/workflows/contract-test.yml</td><td>push (paths: packages/ble-protocol/**)</td>
+          <td>TS 実装と Dart 実装で同一 fixtures/*.json をパース → 結果の同一性を検証</td></tr>
+    </tbody>
+  </table>
+
+  <div class="sub-head">10.4　監視・運用</div>
+  <table>
+    <thead><tr><th style="width:18%">用途</th><th style="width:18%">ツール</th><th>設定値</th></tr></thead>
+    <tbody>
+      <tr><td>APM / エラー監視</td><td>Sentry</td><td>severity: info/warn/error/critical。release は git sha</td></tr>
+      <tr><td>メトリクス</td><td>Prometheus + Grafana（任意）</td><td>API レイテンシ p50/p95、WS 接続数、quota 使用率を計測</td></tr>
+      <tr><td>コスト監視</td><td>Cost Monitor（自前 cron）</td><td>毎日 OpenAI / DeepL / Vision の API usage を集計、$550/月 cap に達したら Slack 通知</td></tr>
+      <tr><td>バックアップ</td><td>cron + flyctl postgres backup</td><td>毎日 03:00 JST に dump → B2 へ転送（F-06）</td></tr>
+    </tbody>
+  </table>
+
+  <!-- Review -->
+  <div class="review-box">
+    <div class="sec-head" style="margin-top:0">■ レビュー・承認欄</div>
+    <div class="review-grid">
+      <div class="review-cell">
+        <div class="review-label">作成者</div>
+        氏名：NGUYEN MINH TRI<br>
+        日付：2026-05-12<br>
+        署名：＿＿＿＿＿＿＿＿
+      </div>
+      <div class="review-cell">
+        <div class="review-label">レビュー者</div>
+        氏名：＿＿＿＿＿＿<br>
+        日付：＿＿＿＿＿＿<br>
+        署名：＿＿＿＿＿＿＿＿
+      </div>
+      <div class="review-cell">
+        <div class="review-label">承認者</div>
+        氏名：＿＿＿＿＿＿<br>
+        日付：＿＿＿＿＿＿<br>
+        署名：＿＿＿＿＿＿＿＿
+      </div>
+    </div>
+    <div style="margin-top:6px; font-size:7px; color:#555;">
+      ※ Rev 1.0 としてS0実行を承認済み。次工程「WBS」（DOC-ID: WBS-LGA-001 予定）および「テスト仕様書」（TS-LGA-001 予定）へ移行する。
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span>DOC-ID: DD-LGA-001　LingoGlass AR 詳細設計書</span><span>- 8 -</span>
+  </div>
+</div>
+
+</body>
+</html>

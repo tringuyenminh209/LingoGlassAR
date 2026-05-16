@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>WBS + Gantt / LingoGlass AR</title>
+<style>
+  @page { size: A4; margin: 14mm 12mm 18mm 12mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Yu Gothic", "Meiryo", "Hiragino Kaku Gothic Pro", sans-serif;
+         font-size: 8.5px; color: #000; background: #fff; }
+
+  .page {
+    width: 210mm; min-height: 297mm; padding: 12mm 10mm 16mm 10mm;
+    page-break-after: always; break-after: page;
+    position: relative; overflow: hidden;
+  }
+  .page:last-of-type { page-break-after: auto; break-after: auto; }
+
+  .page-header {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    border-bottom: 2px solid #000; padding-bottom: 4px; margin-bottom: 8px;
+  }
+  .page-header .doc-title { font-size: 13px; font-weight: bold; }
+  .page-header .header-right { font-size: 7.5px; text-align: right; line-height: 1.6; }
+  .page-footer {
+    position: absolute; bottom: 6mm; left: 12mm; right: 12mm;
+    border-top: 1px solid #999; padding-top: 3px;
+    display: flex; justify-content: space-between; font-size: 7px; color: #555;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+
+  .sec-head {
+    font-size: 10px; font-weight: bold; padding: 4px 8px;
+    border-left: 4px solid #000; background: #f0f0f0;
+    margin: 8px 0 5px 0;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    page-break-after: avoid; break-after: avoid;
+  }
+  .sub-head {
+    font-size: 8.5px; font-weight: bold; border-left: 3px solid #555;
+    padding-left: 6px; margin: 6px 0 3px 0;
+    page-break-after: avoid; break-after: avoid;
+  }
+
+  table { border-collapse: collapse; width: 100%; margin-bottom: 6px; }
+  th, td { border: 1px solid #888; padding: 2.5px 5px; vertical-align: top; line-height: 1.4; font-size: 7.5px; }
+  thead th {
+    background: #e8e8e8; font-weight: bold; text-align: center;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  tr { page-break-inside: avoid !important; break-inside: avoid !important; }
+  table { page-break-inside: auto; }
+  thead { display: table-header-group; }
+
+  .tbl-label { background: #f0f0f0; font-weight: bold;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .center { text-align: center; }
+  .right  { text-align: right; }
+  .mono { font-family: "Consolas", "Menlo", "Courier New", monospace; font-size: 7px; }
+
+  /* Sprint highlight rows */
+  .lv1-row td { background: #333; color: #fff; font-weight: bold;
+                -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .lv2-row td { background: #ddd;
+                -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .crit { background: #fff4d6 !important;
+                -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  /* Cover */
+  .cover-title { font-size: 26px; font-weight: bold; text-align: center; margin: 26mm 0 5mm 0; letter-spacing: 4px; }
+  .cover-sub   { font-size: 14px; text-align: center; margin-bottom: 14mm; color: #333; }
+  .cover-meta  { width: 130mm; margin: 0 auto; }
+  .cover-meta table td { border: none; padding: 3px 10px; font-size: 9px; }
+
+  .toc-item { display: flex; justify-content: space-between; padding: 2px 0;
+              border-bottom: 1px dotted #ccc; font-size: 8.5px; }
+
+  /* Gantt chart */
+  .gantt-table { width: 100%; table-layout: fixed; }
+  .gantt-table th, .gantt-table td { padding: 1px 2px; font-size: 6.5px;
+                                      border: 1px solid #ccc; vertical-align: middle; }
+  .gantt-table th.label-col { width: 32mm; text-align: left; padding-left: 4px; background: #e8e8e8; }
+  .gantt-table th.week-col { width: 9mm; background: #e8e8e8; }
+  .gantt-table td.label-col { text-align: left; padding: 2px 4px; font-size: 7px; }
+  .gantt-table td.week-col { height: 14px; position: relative; padding: 0; }
+  .bar { position: absolute; top: 3px; bottom: 3px; left: 5%; right: 5%;
+         background: #333; border-radius: 1px;
+         -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .bar-crit { background: #000; border: 1.5px double #fff; }
+  .bar-half-l { right: 50%; }
+  .bar-half-r { left: 50%; }
+  .ms-marker { position: absolute; top: 1px; left: 50%; transform: translateX(-50%);
+               width: 0; height: 0;
+               border-left: 5px solid transparent; border-right: 5px solid transparent;
+               border-bottom: 8px solid #000; }
+
+  /* Critical path diagram */
+  .cp-box { display: inline-block; border: 1.5px solid #000; padding: 3px 6px; font-size: 7px;
+            background: #fff4d6;
+            -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .cp-arrow { display: inline-block; font-size: 10px; padding: 0 4px; }
+
+  /* Review */
+  .review-box { border: 1.5px solid #000; padding: 8px; margin-top: 8px;
+                page-break-inside: avoid; break-inside: avoid; }
+  .review-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-top: 4px; }
+  .review-cell { border: 1px solid #888; padding: 5px; font-size: 7.5px; line-height: 1.8; }
+  .review-label { font-size: 7.5px; font-weight: bold; border-bottom: 1px solid #ccc;
+                  padding-bottom: 2px; margin-bottom: 3px; }
+
+  p { margin-bottom: 3px; line-height: 1.55; }
+  ul { margin: 2px 0 4px 14px; }
+  li { line-height: 1.65; font-size: 8px; }
+
+  .review-box, .gantt-table { page-break-inside: avoid; break-inside: avoid; }
+  .sec-head, .sub-head { page-break-after: avoid; break-after: avoid; }
+</style>
+</head>
+<body>
+
+<!-- ========== PAGE 1: COVER ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">WBS / LingoGlass AR</div>
+    <div class="header-right">
+      DOC-ID: WBS-LGA-001　Rev 1.0　2026-05-12<br>
+      作成者: NGUYEN MINH TRI
+    </div>
+  </div>
+
+  <div class="cover-title">W B S + G a n t t</div>
+  <div class="cover-sub">LingoGlass AR — 16 週ロードマップ / Solo Founder + AI Agents</div>
+
+  <div class="cover-meta">
+    <table>
+      <tr><td class="tbl-label">プロジェクト名</td><td>LingoGlass AR MVP</td></tr>
+      <tr><td class="tbl-label">ドキュメント ID</td><td>WBS-LGA-001</td></tr>
+      <tr><td class="tbl-label">バージョン</td><td>Rev 1.0（S0実行承認版）</td></tr>
+      <tr><td class="tbl-label">作成日</td><td>2026-05-12</td></tr>
+      <tr><td class="tbl-label">開始予定</td><td>2026-05-13（水）— REQ-LGA-001 Rev 1.0 承認後</td></tr>
+      <tr><td class="tbl-label">完了予定</td><td>2026-09-01（火）— S5 Go/No-Go 判定</td></tr>
+      <tr><td class="tbl-label">総期間</td><td>16 週（4 ヶ月）</td></tr>
+      <tr><td class="tbl-label">総工数（見積）</td><td>80 人日 = 4 人月（Solo / 週 5 人日 想定）+ リスクバッファ 10 人日（条件付き）</td></tr>
+      <tr><td class="tbl-label">担当者</td><td>NGUYEN MINH TRI（Solo Founder）+ AI agents（Claude / Gemini）</td></tr>
+      <tr><td class="tbl-label">前提ドキュメント</td><td>REQ-LGA-001 Rev 1.0 ／ BD-LGA-001 ／ DD-LGA-001 ／ TS-LGA-001 ／ DDR-LGA-001</td></tr>
+    </table>
+  </div>
+
+  <div style="margin-top: 10mm;">
+    <div class="sec-head">■ 改訂履歴</div>
+    <table>
+      <thead><tr><th style="width:10%">Rev</th><th style="width:18%">日付</th><th style="width:22%">担当者</th><th>変更内容</th></tr></thead>
+      <tbody>
+        <tr><td class="center">1.0</td><td class="center">2026-05-12</td><td>NGUYEN MINH TRI</td><td>S0実行承認版。REQ §12 の S0〜S5 を 6 マイルストーン × 3 階層に展開、80 人日で見積。Critical Path と条件付きリスクバッファを確定。</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div style="margin-top: 8mm;">
+    <div class="sec-head">■ 目次</div>
+    <div class="toc-item"><span>§1　計画方針・前提</span><span>p.2</span></div>
+    <div class="toc-item"><span>§2.1　WBS — M0 Spike / M1 Mobile App</span><span>p.2</span></div>
+    <div class="toc-item"><span>§2.2　WBS — M2 STT / M3 OCR</span><span>p.3</span></div>
+    <div class="toc-item"><span>§2.3　WBS — M4 Wearable / M5 Pilot</span><span>p.4</span></div>
+    <div class="toc-item"><span>§3　工数サマリー（マイルストーン別・担当別）</span><span>p.4</span></div>
+    <div class="toc-item"><span>§4　Gantt チャート（16 週ビュー）</span><span>p.5</span></div>
+    <div class="toc-item"><span>§5　Critical Path 分析</span><span>p.5</span></div>
+    <div class="toc-item"><span>§6　リスク・バッファ計画</span><span>p.5</span></div>
+    <div class="toc-item"><span>　　　レビュー・承認欄</span><span>p.5</span></div>
+  </div>
+
+  <div class="page-footer">
+    <span>DOC-ID: WBS-LGA-001　LingoGlass AR WBS</span><span>- 1 -</span>
+  </div>
+</div>
+
+
+<!-- ========== PAGE 2: §1 + WBS M0 + M1 ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">WBS / LingoGlass AR</div>
+    <div class="header-right">DOC-ID: WBS-LGA-001　Rev 1.0　2026-05-12</div>
+  </div>
+
+  <div class="sec-head">■ §1　計画方針・前提</div>
+  <table>
+    <tr><td class="tbl-label" style="width:18%">見積手法</td><td><strong>ボトムアップ</strong>（DD-LGA-001 で確定したクラス図・モジュールに基づき、各タスクを 0.5〜3 人日に分解）+ <strong>ファンクションポイント概算</strong>でクロスチェック</td></tr>
+    <tr><td class="tbl-label">1 人日の定義</td><td>1 人 × 8 時間。Solo founder の実働は 1 日 6〜7 時間想定のため、人日見積に <strong>1.2 倍バッファ</strong> を内包</td></tr>
+    <tr><td class="tbl-label">階層</td><td>Lv1 = マイルストーン（S0〜S5 = M0〜M5）／ Lv2 = サブフェーズ／ Lv3 = 0.5〜3 人日の作業単位</td></tr>
+    <tr><td class="tbl-label">タスク粒度</td><td>Lv3 タスクは 1〜3 人日が原則。3 人日超は Lv4 に分割するか、リスクとして §6 に記載</td></tr>
+    <tr><td class="tbl-label">依存関係</td><td>S0 → S1 → S2 → S3 → S4 → S5（基本順序）。S2 と S3 の一部は並行可能、S4 と S5 の準備は重ねる</td></tr>
+    <tr><td class="tbl-label">合否ゲート</td><td>各マイルストーン末に <strong>Go/No-Go ゲート</strong>。No-Go なら scope を削る or 1 週延長。3 週連続超過なら全体見直し</td></tr>
+    <tr><td class="tbl-label">AI agents の役割</td><td>コードスケルトン生成（API handlers、Riverpod provider）／ テストケース生成／ ログ解析。1 人日 → 0.5〜0.7 人日に短縮できるタスクに反映済み</td></tr>
+  </table>
+
+  <div class="sec-head">■ §2.1　WBS — M0（Spike）/ M1（Mobile App）</div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:7%">ID</th>
+        <th style="width:14%">大タスク</th>
+        <th style="width:18%">中タスク</th>
+        <th style="width:23%">小タスク（作業内容）</th>
+        <th style="width:6%">担当</th>
+        <th style="width:6%">工数</th>
+        <th style="width:8%">開始</th>
+        <th style="width:8%">終了</th>
+        <th style="width:10%">依存</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="lv1-row"><td class="mono">1</td><td colspan="3">M0：Spike — Phone → BLE → ESP32-S3 → Display</td><td class="center">Tri</td><td class="center">5 pd</td><td class="center">05-13</td><td class="center">05-19</td><td>—</td></tr>
+
+      <tr class="lv2-row"><td class="mono">1.1</td><td></td><td colspan="2">HW セットアップ + BLE 通信 PoC</td><td class="center">Tri</td><td class="center">3.5 pd</td><td class="center">05-13</td><td class="center">05-17</td><td>—</td></tr>
+      <tr><td class="mono">1.1.1</td><td></td><td></td><td>開発環境（ESP-IDF 5.2 + Flutter 3.22）構築</td><td class="center">Tri</td><td class="center">0.5 pd</td><td class="center">05-13</td><td class="center">05-13</td><td>—</td></tr>
+      <tr><td class="mono">1.1.2</td><td></td><td></td><td>0.96" I2C OLED 配線（SDA GPIO8 / SCL GPIO9）+ Hello World 表示</td><td class="center">Tri</td><td class="center">1 pd</td><td class="center">05-13</td><td class="center">05-14</td><td>1.1.1</td></tr>
+      <tr><td class="mono">1.1.3</td><td></td><td></td><td>ESP32-S3 BLE GATT サーバ実装（NimBLE）</td><td class="center">Tri</td><td class="center">1 pd</td><td class="center">05-14</td><td class="center">05-15</td><td>1.1.2</td></tr>
+      <tr><td class="mono">1.1.4</td><td></td><td></td><td>Flutter BLE スキャン・接続 PoC</td><td class="center">Tri</td><td class="center">1 pd</td><td class="center">05-15</td><td class="center">05-16</td><td>1.1.3</td></tr>
+
+      <tr class="lv2-row"><td class="mono">1.2</td><td></td><td colspan="2">字幕 E2E 検証 + Go ゲート</td><td class="center">Tri</td><td class="center">1.5 pd</td><td class="center">05-18</td><td class="center">05-19</td><td>1.1</td></tr>
+      <tr><td class="mono">1.2.1</td><td></td><td></td><td>字幕 "Hello" を BLE → OLED 表示（1 回）</td><td class="center">Tri</td><td class="center">0.5 pd</td><td class="center">05-18</td><td class="center">05-18</td><td>1.1.4</td></tr>
+      <tr class="crit"><td class="mono">1.2.2</td><td></td><td></td><td><strong>★ S0 ゲート：20 件連続表示 + app→display &lt; 200ms</strong></td><td class="center">Tri</td><td class="center">1 pd</td><td class="center">05-19</td><td class="center">05-19</td><td>1.2.1</td></tr>
+
+      <tr class="lv1-row"><td class="mono">2</td><td colspan="3">M1：Mobile App（ペアリング・字幕送信・診断）</td><td class="center">Tri</td><td class="center">10 pd</td><td class="center">05-20</td><td class="center">06-02</td><td>M0</td></tr>
+
+      <tr class="lv2-row"><td class="mono">2.1</td><td></td><td colspan="2">モノレポ + 共通モジュール</td><td class="center">Tri</td><td class="center">3 pd</td><td class="center">05-20</td><td class="center">05-22</td><td>1.2.2</td></tr>
+      <tr><td class="mono">2.1.1</td><td></td><td></td><td>pnpm workspace 初期化 + ble-protocol package</td><td class="center">Tri</td><td class="center">1 pd</td><td class="center">05-20</td><td class="center">05-20</td><td>1.2.2</td></tr>
+      <tr><td class="mono">2.1.2</td><td></td><td></td><td>PacketBuilder/Parser TS + Dart 両実装 + 契約テスト fixtures</td><td class="center">Tri</td><td class="center">2 pd</td><td class="center">05-21</td><td class="center">05-22</td><td>2.1.1</td></tr>
+
+      <tr class="lv2-row"><td class="mono">2.2</td><td></td><td colspan="2">Flutter 画面実装</td><td class="center">Tri</td><td class="center">5 pd</td><td class="center">05-25</td><td class="center">05-29</td><td>2.1</td></tr>
+      <tr><td class="mono">2.2.1</td><td></td><td></td><td>6 画面 scaffolding + GoRouter</td><td class="center">Tri</td><td class="center">1.5 pd</td><td class="center">05-25</td><td class="center">05-26</td><td>2.1.2</td></tr>
+      <tr class="crit"><td class="mono">2.2.2</td><td></td><td></td><td><strong>★ BleClient + ペアリングフロー（SCR-01）</strong></td><td class="center">Tri</td><td class="center">2 pd</td><td class="center">05-26</td><td class="center">05-28</td><td>2.2.1</td></tr>
+      <tr><td class="mono">2.2.3</td><td></td><td></td><td>設定画面 SCR-05 (言語/PTT/i18n ja/en/vi)</td><td class="center">Tri</td><td class="center">1.5 pd</td><td class="center">05-28</td><td class="center">05-29</td><td>2.2.1</td></tr>
+
+      <tr class="lv2-row"><td class="mono">2.3</td><td></td><td colspan="2">診断画面 + S1 デモ</td><td class="center">Tri</td><td class="center">2 pd</td><td class="center">06-01</td><td class="center">06-02</td><td>2.2</td></tr>
+      <tr><td class="mono">2.3.1</td><td></td><td></td><td>SCR-06 診断画面（遅延グラフ + CSV エクスポート）</td><td class="center">Tri</td><td class="center">1.5 pd</td><td class="center">06-01</td><td class="center">06-02</td><td>2.2.3</td></tr>
+      <tr><td class="mono">2.3.2</td><td></td><td></td><td><strong>★ S1 ゲート：アプリからグラスに字幕が安定表示</strong></td><td class="center">Tri</td><td class="center">0.5 pd</td><td class="center">06-02</td><td class="center">06-02</td><td>2.3.1</td></tr>
+    </tbody>
+  </table>
+
+  <div class="page-footer">
+    <span>DOC-ID: WBS-LGA-001　LingoGlass AR WBS</span><span>- 2 -</span>
+  </div>
+</div>
+
+
+<!-- ========== PAGE 3: WBS M2 + M3 ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">WBS / LingoGlass AR</div>
+    <div class="header-right">DOC-ID: WBS-LGA-001　Rev 1.0　2026-05-12</div>
+  </div>
+
+  <div class="sec-head">■ §2.2　WBS — M2（STT + 翻訳）／ M3（OCR 翻訳）</div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:7%">ID</th>
+        <th style="width:14%">大タスク</th>
+        <th style="width:18%">中タスク</th>
+        <th style="width:23%">小タスク（作業内容）</th>
+        <th style="width:6%">担当</th>
+        <th style="width:6%">工数</th>
+        <th style="width:8%">開始</th>
+        <th style="width:8%">終了</th>
+        <th style="width:10%">依存</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="lv1-row"><td class="mono">3</td><td colspan="3">M2：Backend STT + 翻訳 pipeline</td><td class="center">Tri</td><td class="center">15 pd</td><td class="center">06-03</td><td class="center">06-23</td><td>M1</td></tr>
+
+      <tr class="lv2-row"><td class="mono">3.1</td><td></td><td colspan="2">Backend スケルトン + DB</td><td class="center">Tri</td><td class="center">3 pd</td><td class="center">06-03</td><td class="center">06-05</td><td>2.3.2</td></tr>
+      <tr><td class="mono">3.1.1</td><td></td><td></td><td>Express + ws + Drizzle ORM 初期化 + ヘルスチェック</td><td class="center">Tri</td><td class="center">1 pd</td><td class="center">06-03</td><td class="center">06-03</td><td>2.3.2</td></tr>
+      <tr><td class="mono">3.1.2</td><td></td><td></td><td>DB マイグレーション（7 テーブル + index）</td><td class="center">Tri</td><td class="center">1 pd</td><td class="center">06-04</td><td class="center">06-04</td><td>3.1.1</td></tr>
+      <tr><td class="mono">3.1.3</td><td></td><td></td><td>共通 middleware（deviceAuth / quota / errorHandler）</td><td class="center">Tri</td><td class="center">1 pd</td><td class="center">06-05</td><td class="center">06-05</td><td>3.1.2</td></tr>
+
+      <tr class="lv2-row"><td class="mono">3.2</td><td></td><td colspan="2">STT + 翻訳プロバイダ実装</td><td class="center">Tri</td><td class="center">4 pd</td><td class="center">06-08</td><td class="center">06-11</td><td>3.1</td></tr>
+      <tr><td class="mono">3.2.1</td><td></td><td></td><td>SttProvider interface + OpenAI Realtime 実装</td><td class="center">Tri</td><td class="center">2 pd</td><td class="center">06-08</td><td class="center">06-09</td><td>3.1.3</td></tr>
+      <tr><td class="mono">3.2.2</td><td></td><td></td><td>TranslateProvider + OpenAI / DeepL 実装</td><td class="center">Tri</td><td class="center">1.5 pd</td><td class="center">06-10</td><td class="center">06-11</td><td>3.2.1</td></tr>
+      <tr><td class="mono">3.2.3</td><td></td><td></td><td>FasterWhisper（self-host 検討、結果でメインに置換可）</td><td class="center">Tri</td><td class="center">0.5 pd</td><td class="center">06-11</td><td class="center">06-11</td><td>3.2.1</td></tr>
+
+      <tr class="lv2-row"><td class="mono">3.3</td><td></td><td colspan="2">WSS Session + 音声統合</td><td class="center">Tri</td><td class="center">5 pd</td><td class="center">06-12</td><td class="center">06-18</td><td>3.2</td></tr>
+      <tr class="crit"><td class="mono">3.3.1</td><td></td><td></td><td><strong>★ WsSessionHandler + SessionService（chunk → STT → 翻訳）</strong></td><td class="center">Tri</td><td class="center">2 pd</td><td class="center">06-12</td><td class="center">06-15</td><td>3.2.2</td></tr>
+      <tr class="crit"><td class="mono">3.3.2</td><td></td><td></td><td><strong>★ Flutter MicCapture + VAD + WsSessionClient</strong></td><td class="center">Tri</td><td class="center">2 pd</td><td class="center">06-16</td><td class="center">06-17</td><td>3.3.1</td></tr>
+      <tr><td class="mono">3.3.3</td><td></td><td></td><td>App → Backend → グラス まで E2E 接続テスト</td><td class="center">Tri</td><td class="center">1 pd</td><td class="center">06-18</td><td class="center">06-18</td><td>3.3.2</td></tr>
+
+      <tr class="lv2-row"><td class="mono">3.4</td><td></td><td colspan="2">遅延計測 + デプロイ + S2 ゲート</td><td class="center">Tri</td><td class="center">3 pd</td><td class="center">06-19</td><td class="center">06-23</td><td>3.3</td></tr>
+      <tr><td class="mono">3.4.1</td><td></td><td></td><td>EventService (p50/p90/p95) + ダッシュボード</td><td class="center">Tri</td><td class="center">1 pd</td><td class="center">06-19</td><td class="center">06-19</td><td>3.3.3</td></tr>
+      <tr><td class="mono">3.4.2</td><td></td><td></td><td>Fly.io staging デプロイ + Sentry / Grafana 設定</td><td class="center">Tri</td><td class="center">1 pd</td><td class="center">06-22</td><td class="center">06-22</td><td>3.4.1</td></tr>
+      <tr class="crit"><td class="mono">3.4.3</td><td></td><td></td><td><strong>★ S2 ゲート：p50 ≤ 2.0s（3 環境 × 20 発話）K-01 検証</strong></td><td class="center">Tri</td><td class="center">1 pd</td><td class="center">06-23</td><td class="center">06-23</td><td>3.4.2</td></tr>
+
+      <tr class="lv1-row"><td class="mono">4</td><td colspan="3">M3：OCR 翻訳パイプライン</td><td class="center">Tri</td><td class="center">10 pd</td><td class="center">06-24</td><td class="center">07-07</td><td>M2</td></tr>
+
+      <tr class="lv2-row"><td class="mono">4.1</td><td></td><td colspan="2">Backend OCR + Vision API</td><td class="center">Tri</td><td class="center">3 pd</td><td class="center">06-24</td><td class="center">06-26</td><td>3.4.3</td></tr>
+      <tr><td class="mono">4.1.1</td><td></td><td></td><td>OcrProvider + Google Vision setup（auth 鍵管理含む）</td><td class="center">Tri</td><td class="center">1 pd</td><td class="center">06-24</td><td class="center">06-24</td><td>3.4.3</td></tr>
+      <tr><td class="mono">4.1.2</td><td></td><td></td><td>OcrService + OcrHandler（POST /ocr、image hash 保存）</td><td class="center">Tri</td><td class="center">1.5 pd</td><td class="center">06-25</td><td class="center">06-26</td><td>4.1.1</td></tr>
+      <tr><td class="mono">4.1.3</td><td></td><td></td><td>image_hash 検証（NFR-08 / IT-07）</td><td class="center">Tri</td><td class="center">0.5 pd</td><td class="center">06-26</td><td class="center">06-26</td><td>4.1.2</td></tr>
+
+      <tr class="lv2-row"><td class="mono">4.2</td><td></td><td colspan="2">Flutter Camera UI</td><td class="center">Tri</td><td class="center">4 pd</td><td class="center">06-29</td><td class="center">07-02</td><td>4.1</td></tr>
+      <tr><td class="mono">4.2.1</td><td></td><td></td><td>camera plugin 統合 + 撮影 UI（SCR-04）</td><td class="center">Tri</td><td class="center">2 pd</td><td class="center">06-29</td><td class="center">06-30</td><td>4.1.2</td></tr>
+      <tr><td class="mono">4.2.2</td><td></td><td></td><td>multipart upload + プレビュー → グラス送信</td><td class="center">Tri</td><td class="center">1.5 pd</td><td class="center">07-01</td><td class="center">07-02</td><td>4.2.1</td></tr>
+      <tr><td class="mono">4.2.3</td><td></td><td></td><td>長文 OCR 結果の要約（100 文字以内に整形）</td><td class="center">Tri</td><td class="center">0.5 pd</td><td class="center">07-02</td><td class="center">07-02</td><td>4.2.2</td></tr>
+
+      <tr class="lv2-row"><td class="mono">4.3</td><td></td><td colspan="2">統合テスト + S3 ゲート</td><td class="center">Tri</td><td class="center">3 pd</td><td class="center">07-03</td><td class="center">07-07</td><td>4.2</td></tr>
+      <tr><td class="mono">4.3.1</td><td></td><td></td><td>IT-03 OCR 5 種画像テスト（日/中/英/混在/低照度）</td><td class="center">Tri</td><td class="center">1.5 pd</td><td class="center">07-03</td><td class="center">07-06</td><td>4.2.3</td></tr>
+      <tr><td class="mono">4.3.2</td><td></td><td></td><td>異常系（4MB 超画像・OCR 失敗）の挙動確認</td><td class="center">Tri</td><td class="center">0.5 pd</td><td class="center">07-06</td><td class="center">07-06</td><td>4.3.1</td></tr>
+      <tr class="crit"><td class="mono">4.3.3</td><td></td><td></td><td><strong>★ S3 ゲート：OCR ≤ 3.0s（K-03 検証）</strong></td><td class="center">Tri</td><td class="center">1 pd</td><td class="center">07-07</td><td class="center">07-07</td><td>4.3.2</td></tr>
+    </tbody>
+  </table>
+
+  <div class="page-footer">
+    <span>DOC-ID: WBS-LGA-001　LingoGlass AR WBS</span><span>- 3 -</span>
+  </div>
+</div>
+
+
+<!-- ========== PAGE 4: WBS M4 + M5 + Summary ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">WBS / LingoGlass AR</div>
+    <div class="header-right">DOC-ID: WBS-LGA-001　Rev 1.0　2026-05-12</div>
+  </div>
+
+  <div class="sec-head">■ §2.3　WBS — M4（Wearable / Readability）／ M5（Pilot）</div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:7%">ID</th>
+        <th style="width:14%">大タスク</th>
+        <th style="width:18%">中タスク</th>
+        <th style="width:23%">小タスク</th>
+        <th style="width:6%">担当</th>
+        <th style="width:6%">工数</th>
+        <th style="width:8%">開始</th>
+        <th style="width:8%">終了</th>
+        <th style="width:10%">依存</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="lv1-row"><td class="mono">5</td><td colspan="3">M4：Wearable プロトタイプ + Readability</td><td class="center">Tri</td><td class="center">20 pd</td><td class="center">07-08</td><td class="center">08-04</td><td>M3</td></tr>
+
+      <tr class="lv2-row"><td class="mono">5.1</td><td></td><td colspan="2">AR dev kit 評価 + HW 移植</td><td class="center">Tri</td><td class="center">5 pd</td><td class="center">07-08</td><td class="center">07-14</td><td>4.3.3</td></tr>
+      <tr><td class="mono">5.1.1</td><td></td><td></td><td>Brilliant Monocle / Vuzix 入手・初期セットアップ</td><td class="center">Tri</td><td class="center">1 pd</td><td class="center">07-08</td><td class="center">07-08</td><td>4.3.3</td></tr>
+      <tr class="crit"><td class="mono">5.1.2</td><td></td><td></td><td><strong>★ ファーム移植 → 字幕レンダリング確認</strong></td><td class="center">Tri</td><td class="center">3 pd</td><td class="center">07-09</td><td class="center">07-13</td><td>5.1.1</td></tr>
+      <tr><td class="mono">5.1.3</td><td></td><td></td><td>LED プライバシーインジケーター 物理実装</td><td class="center">Tri</td><td class="center">1 pd</td><td class="center">07-14</td><td class="center">07-14</td><td>5.1.2</td></tr>
+
+      <tr class="lv2-row"><td class="mono">5.2</td><td></td><td colspan="2">電源・OTA・PowerManager</td><td class="center">Tri</td><td class="center">6 pd</td><td class="center">07-15</td><td class="center">07-22</td><td>5.1</td></tr>
+      <tr><td class="mono">5.2.1</td><td></td><td></td><td>バッテリー回路組立 + 連続使用 ベース計測</td><td class="center">Tri</td><td class="center">2 pd</td><td class="center">07-15</td><td class="center">07-16</td><td>5.1.3</td></tr>
+      <tr><td class="mono">5.2.2</td><td></td><td></td><td>PowerManager 実装（idle/sleep/wake on BLE）</td><td class="center">Tri</td><td class="center">2 pd</td><td class="center">07-17</td><td class="center">07-20</td><td>5.2.1</td></tr>
+      <tr><td class="mono">5.2.3</td><td></td><td></td><td>OtaUpdater 実装 + 更新テスト（NFR-12）</td><td class="center">Tri</td><td class="center">2 pd</td><td class="center">07-21</td><td class="center">07-22</td><td>5.2.2</td></tr>
+
+      <tr class="lv2-row"><td class="mono">5.3</td><td></td><td colspan="2">Readability + 装着評価</td><td class="center">Tri</td><td class="center">6 pd</td><td class="center">07-23</td><td class="center">07-30</td><td>5.2</td></tr>
+      <tr><td class="mono">5.3.1</td><td></td><td></td><td>屋内字幕 readability（テスター 3 名）</td><td class="center">Tri</td><td class="center">1 pd</td><td class="center">07-23</td><td class="center">07-23</td><td>5.2.3</td></tr>
+      <tr class="crit"><td class="mono">5.3.2</td><td></td><td></td><td><strong>★ 屋外字幕 readability（晴天昼 10 名）K-06 測定</strong></td><td class="center">Tri</td><td class="center">2 pd</td><td class="center">07-24</td><td class="center">07-27</td><td>5.3.1</td></tr>
+      <tr><td class="mono">5.3.3</td><td></td><td></td><td>熱・装着感（5 名 × 60 分）NFR-05</td><td class="center">Tri</td><td class="center">2 pd</td><td class="center">07-28</td><td class="center">07-29</td><td>5.3.1</td></tr>
+      <tr><td class="mono">5.3.4</td><td></td><td></td><td>BLE 30 分連続安定性（ST-04 K-07）</td><td class="center">Tri</td><td class="center">1 pd</td><td class="center">07-30</td><td class="center">07-30</td><td>5.3.2</td></tr>
+
+      <tr class="lv2-row"><td class="mono">5.4</td><td></td><td colspan="2">設計修正 + S4 ゲート</td><td class="center">Tri</td><td class="center">3 pd</td><td class="center">07-31</td><td class="center">08-04</td><td>5.3</td></tr>
+      <tr><td class="mono">5.4.1</td><td></td><td></td><td>Readability 不足箇所の設計修正（font/輝度）</td><td class="center">Tri</td><td class="center">2 pd</td><td class="center">07-31</td><td class="center">08-03</td><td>5.3.4</td></tr>
+      <tr class="crit"><td class="mono">5.4.2</td><td></td><td></td><td><strong>★ S4 ゲート：K-04(≥2h) / K-05(≥6h) / K-06(≥80%)</strong></td><td class="center">Tri</td><td class="center">1 pd</td><td class="center">08-04</td><td class="center">08-04</td><td>5.4.1</td></tr>
+
+      <tr class="lv1-row"><td class="mono">6</td><td colspan="3">M5：Pilot 5-10 名 + Go/No-Go 判定</td><td class="center">Tri+Testers</td><td class="center">20 pd</td><td class="center">08-05</td><td class="center">09-01</td><td>M4</td></tr>
+
+      <tr class="lv2-row"><td class="mono">6.1</td><td></td><td colspan="2">テスター募集 + 準備</td><td class="center">Tri</td><td class="center">4 pd</td><td class="center">08-05</td><td class="center">08-10</td><td>5.4.2</td></tr>
+      <tr><td class="mono">6.1.1</td><td></td><td></td><td>テスター 5-10 名募集（4 セグメント混合）</td><td class="center">Tri</td><td class="center">1 pd</td><td class="center">08-05</td><td class="center">08-05</td><td>5.4.2</td></tr>
+      <tr><td class="mono">6.1.2</td><td></td><td></td><td>同意書 + プライバシーポリシー作成</td><td class="center">Tri</td><td class="center">1 pd</td><td class="center">08-06</td><td class="center">08-06</td><td>—</td></tr>
+      <tr><td class="mono">6.1.3</td><td></td><td></td><td>セットアップマニュアル + 動画 + フィードバックフォーム</td><td class="center">Tri</td><td class="center">2 pd</td><td class="center">08-07</td><td class="center">08-10</td><td>6.1.1</td></tr>
+
+      <tr class="lv2-row"><td class="mono">6.2</td><td></td><td colspan="2">Pilot 実施 + 計測</td><td class="center">Tri+Testers</td><td class="center">10 pd</td><td class="center">08-11</td><td class="center">08-24</td><td>6.1</td></tr>
+      <tr><td class="mono">6.2.1</td><td></td><td></td><td>予備パイロット（1-2 名、3 日間） + 障害修正</td><td class="center">Tri</td><td class="center">3 pd</td><td class="center">08-11</td><td class="center">08-13</td><td>6.1.3</td></tr>
+      <tr class="crit"><td class="mono">6.2.2</td><td></td><td></td><td><strong>★ 本パイロット 5-10 名（1 週間配布 + 並行サポート）</strong></td><td class="center">Tri+Testers</td><td class="center">5 pd</td><td class="center">08-14</td><td class="center">08-20</td><td>6.2.1</td></tr>
+      <tr><td class="mono">6.2.3</td><td></td><td></td><td>ST-PERF-01〜05 計測 + ST-USAB-01〜04 集計</td><td class="center">Tri</td><td class="center">2 pd</td><td class="center">08-21</td><td class="center">08-24</td><td>6.2.2</td></tr>
+
+      <tr class="lv2-row"><td class="mono">6.3</td><td></td><td colspan="2">レポート + Go/No-Go</td><td class="center">Tri</td><td class="center">6 pd</td><td class="center">08-25</td><td class="center">09-01</td><td>6.2</td></tr>
+      <tr><td class="mono">6.3.1</td><td></td><td></td><td>障害修正（致命・重大）+ リグレッション</td><td class="center">Tri</td><td class="center">2 pd</td><td class="center">08-25</td><td class="center">08-26</td><td>6.2.3</td></tr>
+      <tr><td class="mono">6.3.2</td><td></td><td></td><td>Pilot Report 作成（F-05 PDF）+ コスト集計（K-09）</td><td class="center">Tri</td><td class="center">2 pd</td><td class="center">08-27</td><td class="center">08-28</td><td>6.3.1</td></tr>
+      <tr><td class="mono">6.3.3</td><td></td><td></td><td>UAT-05 継続意向アンケート集計（K-08）</td><td class="center">Tri</td><td class="center">1 pd</td><td class="center">08-31</td><td class="center">08-31</td><td>6.3.2</td></tr>
+      <tr class="crit"><td class="mono">6.3.4</td><td></td><td></td><td><strong>★ S5 ゲート：Go/No-Go 判定 + 次フェーズ計画</strong></td><td class="center">Tri</td><td class="center">1 pd</td><td class="center">09-01</td><td class="center">09-01</td><td>6.3.3</td></tr>
+    </tbody>
+  </table>
+
+  <div class="sec-head">■ §3　工数サマリー</div>
+  <table>
+    <thead><tr><th style="width:10%">マイルストーン</th><th style="width:24%">概要</th><th style="width:12%">期間</th><th style="width:10%">工数（人日）</th><th style="width:14%">主な成果物</th><th>Go/No-Go ゲート</th></tr></thead>
+    <tbody>
+      <tr><td class="mono center">M0</td><td>Spike：BLE → ESP32 → Display</td><td class="center">1 週</td><td class="center">5</td><td>動作する OLED + BLE</td><td>20 件連続 + &lt;200ms</td></tr>
+      <tr><td class="mono center">M1</td><td>Mobile App（ペアリング + 字幕）</td><td class="center">2 週</td><td class="center">10</td><td>SCR-01〜06 動作版</td><td>App→Glass 字幕安定</td></tr>
+      <tr><td class="mono center">M2</td><td>Backend STT + 翻訳</td><td class="center">3 週</td><td class="center">15</td><td>WSS API + 遅延ログ</td><td>K-01 p50 ≤ 2.0s</td></tr>
+      <tr><td class="mono center">M3</td><td>OCR 翻訳</td><td class="center">2 週</td><td class="center">10</td><td>POST /ocr 動作版</td><td>K-03 ≤ 3.0s</td></tr>
+      <tr><td class="mono center">M4</td><td>Wearable + Readability</td><td class="center">4 週</td><td class="center">20</td><td>装着可能プロトタイプ</td><td>K-04/K-05/K-06 達成</td></tr>
+      <tr><td class="mono center">M5</td><td>Pilot 5-10 名</td><td class="center">4 週</td><td class="center">20</td><td>Pilot Report PDF</td><td>K-08 ≥ 40% で Go</td></tr>
+      <tr class="tbl-label"><td class="center">合計</td><td>—</td><td class="center"><strong>16 週</strong></td><td class="center"><strong>80 pd / 4 人月</strong></td><td>—</td><td>—</td></tr>
+    </tbody>
+  </table>
+
+  <table>
+    <thead><tr><th style="width:25%">担当者</th><th style="width:18%">負荷（人日）</th><th style="width:18%">月平均</th><th>備考</th></tr></thead>
+    <tbody>
+      <tr><td>NGUYEN MINH TRI（Solo）</td><td class="center">75 pd</td><td class="center">18.75 pd/月</td><td>標準上限 20 pd/月内。週 5 日 × 7h 想定</td></tr>
+      <tr><td>Pilot Testers（5-10 名）</td><td class="center">5 pd 相当</td><td class="center">—</td><td>M5 のみ。各テスター 0.5 pd × 10 名 = 5 pd</td></tr>
+      <tr><td>AI agents（Claude / Gemini）</td><td class="center">—</td><td class="center">常時補助</td><td>Tri の工数を実質 1.2 倍程度押し上げ済（見積に内包）</td></tr>
+    </tbody>
+  </table>
+
+  <div class="page-footer">
+    <span>DOC-ID: WBS-LGA-001　LingoGlass AR WBS</span><span>- 4 -</span>
+  </div>
+</div>
+
+
+<!-- ========== PAGE 5: Gantt + Critical Path + Risk + Review ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">WBS / LingoGlass AR</div>
+    <div class="header-right">DOC-ID: WBS-LGA-001　Rev 1.0　2026-05-12</div>
+  </div>
+
+  <div class="sec-head">■ §4　Gantt チャート（16 週ビュー）</div>
+
+  <table class="gantt-table">
+    <thead>
+      <tr>
+        <th class="label-col">タスク</th>
+        <th class="week-col">W1<br><span style="font-weight:normal">5/13</span></th>
+        <th class="week-col">W2</th>
+        <th class="week-col">W3</th>
+        <th class="week-col">W4<br><span style="font-weight:normal">6/3</span></th>
+        <th class="week-col">W5</th>
+        <th class="week-col">W6</th>
+        <th class="week-col">W7</th>
+        <th class="week-col">W8</th>
+        <th class="week-col">W9<br><span style="font-weight:normal">7/8</span></th>
+        <th class="week-col">W10</th>
+        <th class="week-col">W11</th>
+        <th class="week-col">W12</th>
+        <th class="week-col">W13<br><span style="font-weight:normal">8/5</span></th>
+        <th class="week-col">W14</th>
+        <th class="week-col">W15</th>
+        <th class="week-col">W16</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="label-col"><strong>M0 Spike</strong></td>
+        <td class="week-col"><div class="bar bar-crit"></div></td>
+        <td colspan="15" class="week-col"></td>
+      </tr>
+      <tr>
+        <td class="label-col"><strong>M1 Mobile App</strong></td>
+        <td class="week-col"></td>
+        <td class="week-col"><div class="bar bar-crit"></div></td>
+        <td class="week-col"><div class="bar bar-crit"></div></td>
+        <td colspan="13" class="week-col"></td>
+      </tr>
+      <tr>
+        <td class="label-col"><strong>M2 STT + 翻訳</strong></td>
+        <td colspan="3" class="week-col"></td>
+        <td class="week-col"><div class="bar bar-crit"></div></td>
+        <td class="week-col"><div class="bar bar-crit"></div></td>
+        <td class="week-col"><div class="bar bar-crit"></div></td>
+        <td colspan="10" class="week-col"></td>
+      </tr>
+      <tr>
+        <td class="label-col"><strong>M3 OCR</strong></td>
+        <td colspan="6" class="week-col"></td>
+        <td class="week-col"><div class="bar bar-crit"></div></td>
+        <td class="week-col"><div class="bar bar-crit"></div></td>
+        <td colspan="8" class="week-col"></td>
+      </tr>
+      <tr>
+        <td class="label-col"><strong>M4 Wearable</strong></td>
+        <td colspan="8" class="week-col"></td>
+        <td class="week-col"><div class="bar bar-crit"></div></td>
+        <td class="week-col"><div class="bar bar-crit"></div></td>
+        <td class="week-col"><div class="bar bar-crit"></div></td>
+        <td class="week-col"><div class="bar bar-crit"></div></td>
+        <td colspan="4" class="week-col"></td>
+      </tr>
+      <tr>
+        <td class="label-col"><strong>M5 Pilot</strong></td>
+        <td colspan="12" class="week-col"></td>
+        <td class="week-col"><div class="bar bar-crit"></div></td>
+        <td class="week-col"><div class="bar bar-crit"></div></td>
+        <td class="week-col"><div class="bar bar-crit"></div></td>
+        <td class="week-col"><div class="bar bar-crit"></div></td>
+      </tr>
+      <tr style="border-top: 2px solid #000;">
+        <td class="label-col" style="font-size:6.5px;">▼ ゲート（マイルストーン）</td>
+        <td class="week-col"><div class="ms-marker" title="S0"></div></td>
+        <td class="week-col"></td>
+        <td class="week-col"><div class="ms-marker" title="S1"></div></td>
+        <td class="week-col"></td>
+        <td class="week-col"></td>
+        <td class="week-col"><div class="ms-marker" title="S2"></div></td>
+        <td class="week-col"></td>
+        <td class="week-col"><div class="ms-marker" title="S3"></div></td>
+        <td class="week-col"></td>
+        <td class="week-col"></td>
+        <td class="week-col"></td>
+        <td class="week-col"><div class="ms-marker" title="S4"></div></td>
+        <td class="week-col"></td>
+        <td class="week-col"></td>
+        <td class="week-col"></td>
+        <td class="week-col"><div class="ms-marker" title="S5"></div></td>
+      </tr>
+      <tr>
+        <td class="label-col" style="font-size:6.5px;">並行：パイロット準備 (任意)</td>
+        <td colspan="10" class="week-col"></td>
+        <td class="week-col"><div class="bar" style="background:#aaa;"></div></td>
+        <td class="week-col"><div class="bar" style="background:#aaa;"></div></td>
+        <td colspan="4" class="week-col"></td>
+      </tr>
+    </tbody>
+  </table>
+  <div style="font-size:7px; color:#555; margin-top:2px;">
+    ■ 黒バー = Critical Path（全マイルストーンが直列依存のため全てクリティカル）／ ▼ = S0〜S5 Go/No-Go ゲート／ 灰色バー = 並行可能なパイロット準備作業（テスター募集 / 同意書）。<br>
+    総工期 16 週・総工数 80 人日。通常バッファ：各マイルストーン末尾に 0.5〜1 日分の予備を内包済（合計 ~5 pd）。条件付きリスクバッファ：display shipping +3 pd、BLE実機差分 +2 pd、iOS/Android BLE差分 +2 pd、cloud API quota/key setup +1 pd、hardware debug +2 pd。
+  </div>
+
+  <div class="sec-head">■ §5　Critical Path 分析</div>
+  <div style="border: 1px solid #888; padding: 6px; margin-bottom: 4px;">
+    <div style="font-size: 7.5px;"><strong>経路 A（Critical）：</strong></div>
+    <div style="text-align: center; font-size: 7px; line-height: 2.2;">
+      <span class="cp-box">1.2.2 S0 ゲート (1 pd)</span><span class="cp-arrow">→</span>
+      <span class="cp-box">2.2.2 BleClient (2 pd)</span><span class="cp-arrow">→</span>
+      <span class="cp-box">3.3.1 WsSessionHandler (2 pd)</span><span class="cp-arrow">→</span>
+      <span class="cp-box">3.3.2 MicCapture+WsClient (2 pd)</span><br>
+      <span class="cp-arrow">↓</span><br>
+      <span class="cp-box">3.4.3 S2 ゲート K-01 (1 pd)</span><span class="cp-arrow">→</span>
+      <span class="cp-box">4.3.3 S3 ゲート K-03 (1 pd)</span><span class="cp-arrow">→</span>
+      <span class="cp-box">5.1.2 ファーム移植 (3 pd)</span><span class="cp-arrow">→</span>
+      <span class="cp-box">5.3.2 屋外 readability K-06 (2 pd)</span><br>
+      <span class="cp-arrow">↓</span><br>
+      <span class="cp-box">5.4.2 S4 ゲート (1 pd)</span><span class="cp-arrow">→</span>
+      <span class="cp-box">6.2.2 本パイロット 5-10 名 (5 pd)</span><span class="cp-arrow">→</span>
+      <span class="cp-box">6.3.4 S5 ゲート Go/No-Go (1 pd)</span>
+    </div>
+    <div style="font-size: 7px; margin-top: 4px;">
+      <strong>Critical Path 累計 = 21 人日（直接 path 上）。残り 59 pd は path 上タスクの遅延を吸収可能。</strong>
+    </div>
+  </div>
+
+  <div style="font-size:7.5px; margin-bottom:4px;">
+    <strong>運用ルール：</strong> Critical Path 上のタスクが 1 人日遅延した場合、その後のすべての Go/No-Go ゲート日付を 1 日後ろにスライド。並行可能タスク（6.1.1〜6.1.3 のパイロット準備）は W11〜W12 に前倒し実施することで吸収可能。
+  </div>
+
+  <div class="sec-head">■ §6　リスク・バッファ計画</div>
+  <table>
+    <thead><tr><th style="width:6%">No</th><th style="width:24%">リスク</th><th style="width:10%">確率</th><th style="width:10%">影響</th><th style="width:14%">対象タスク</th><th>緩和策 / 振替先</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">R-01</td><td>S0 spike で BLE 遅延が &gt; 200ms</td><td class="center">中</td><td class="center">致命</td><td>1.2.2</td><td>Plan B：MTU 拡大 → 失敗時 Wi-Fi へ切替。最大 +3 pd</td></tr>
+      <tr><td class="mono">R-02</td><td>STT プロバイダの料金・遅延変動</td><td class="center">中</td><td class="center">中</td><td>3.2.1</td><td>FasterWhisper self-host を 3.2.3 で並行検証済。切替コスト 2 pd</td></tr>
+      <tr><td class="mono">R-03</td><td>AR dev kit の入手遅延</td><td class="center">高</td><td class="center">重大</td><td>5.1.1</td><td>W6 までに発注完了。手元の 0.96" I2C OLED で代替 demo（readability は妥協）</td></tr>
+      <tr><td class="mono">R-04</td><td>屋外視認性 K-06 が 80% に届かない</td><td class="center">中</td><td class="center">重大</td><td>5.3.2</td><td>5.4.1 設計修正で font サイズ・輝度を調整。+2 pd の予備</td></tr>
+      <tr><td class="mono">R-05</td><td>テスター募集が困難</td><td class="center">中</td><td class="center">中</td><td>6.1.1</td><td>W7（M3 完了直後）から募集を前倒し開始</td></tr>
+      <tr><td class="mono">R-06</td><td>パイロット中の致命バグ</td><td class="center">中</td><td class="center">重大</td><td>6.2.2</td><td>6.3.1 修正バッファ 2 pd を確保。3 連続発生時はパイロット一時停止</td></tr>
+      <tr><td class="mono">R-07</td><td>Solo founder の体調・私用</td><td class="center">中</td><td class="center">中</td><td>全体</td><td>1 週あたり 1 日のバッファを内包。連続 3 日休止時は終了日 +1 週調整</td></tr>
+      <tr><td class="mono">R-08</td><td>クラウドコスト超過（K-09）</td><td class="center">低</td><td class="center">中</td><td>—</td><td>FR-BE-04 quota で 1 device × 1,000 req/日 cap。週次コスト監視</td></tr>
+      <tr><td class="mono">R-09</td><td>display module shipping / datasheet 不備</td><td class="center">中</td><td class="center">重大</td><td>1.1.1 / 5.1.1</td><td>S0 は手元の ESPr Developer S3 + 0.96" I2C OLED + solderless breadboard で実施。AR dev kit 入手遅延時はreadabilityをS4へ延期。条件付き +3 pd</td></tr>
+      <tr><td class="mono">R-10</td><td>iOS / Android BLE stack 差分</td><td class="center">中</td><td class="center">重大</td><td>2.2.2 / IT-02</td><td>iPhone 14 + Pixel 7 の両方でMTU 20/185/247を測定。差分吸収用に BleClient adapter を分離。条件付き +2 pd</td></tr>
+      <tr><td class="mono">R-11</td><td>cloud API quota / key setup 遅延</td><td class="center">中</td><td class="center">中</td><td>3.1.1 / 4.1.1</td><td>OpenAI / DeepL / Vision のキー取得、quota、billing cap をM1完了前に確認。mock provider fallbackを維持。条件付き +1 pd</td></tr>
+    </tbody>
+  </table>
+
+  <!-- Review -->
+  <div class="review-box">
+    <div class="sec-head" style="margin-top:0">■ レビュー・承認欄</div>
+    <div class="review-grid">
+      <div class="review-cell">
+        <div class="review-label">作成者</div>
+        氏名：NGUYEN MINH TRI<br>
+        日付：2026-05-12<br>
+        署名：＿＿＿＿＿＿＿＿
+      </div>
+      <div class="review-cell">
+        <div class="review-label">レビュー者</div>
+        氏名：＿＿＿＿＿＿<br>
+        日付：＿＿＿＿＿＿<br>
+        署名：＿＿＿＿＿＿＿＿
+      </div>
+      <div class="review-cell">
+        <div class="review-label">承認者</div>
+        氏名：＿＿＿＿＿＿<br>
+        日付：＿＿＿＿＿＿<br>
+        署名：＿＿＿＿＿＿＿＿
+      </div>
+    </div>
+    <div style="margin-top:6px; font-size:7px; color:#555;">
+      ※ 承認後 Rev 1.0 へ昇格し、2026-05-13（水）から M0 Spike を開始する。週次ステータス更新は <span class="mono">docs/status/{week}.md</span> に記録。スケジュール変更が生じた場合は本書を Rev 1.x に更新し、関係者に通知すること。
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span>DOC-ID: WBS-LGA-001　LingoGlass AR WBS</span><span>- 5 -</span>
+  </div>
+</div>
+
+</body>
+</html>

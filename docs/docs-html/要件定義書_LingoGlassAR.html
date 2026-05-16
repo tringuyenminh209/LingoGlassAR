@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>要件定義書 / LingoGlass AR</title>
+<style>
+  @page { size: A4; margin: 15mm 15mm 20mm 15mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Yu Gothic", "Meiryo", "Hiragino Kaku Gothic Pro", sans-serif;
+         font-size: 8.5px; color: #000; background: #fff; }
+
+  .page {
+    width: 210mm; min-height: 297mm; padding: 12mm 14mm 18mm 14mm;
+    page-break-after: always; break-after: page;
+    position: relative; overflow: hidden;
+  }
+  .page:last-of-type { page-break-after: auto; break-after: auto; }
+
+  /* Header */
+  .page-header {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    border-bottom: 2px solid #000; padding-bottom: 4px; margin-bottom: 10px;
+  }
+  .page-header .doc-title { font-size: 13px; font-weight: bold; }
+  .page-header .header-right { font-size: 7.5px; text-align: right; line-height: 1.6; }
+
+  /* Footer */
+  .page-footer {
+    position: absolute; bottom: 6mm; left: 14mm; right: 14mm;
+    border-top: 1px solid #999; padding-top: 3px;
+    display: flex; justify-content: space-between; font-size: 7px; color: #555;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+
+  /* Section */
+  .sec-head {
+    font-size: 10px; font-weight: bold; padding: 4px 8px;
+    border-left: 4px solid #000; background: #f0f0f0;
+    margin: 10px 0 6px 0;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    page-break-after: avoid; break-after: avoid;
+  }
+  .sub-head {
+    font-size: 8.5px; font-weight: bold; border-left: 3px solid #555;
+    padding-left: 6px; margin: 8px 0 4px 0;
+    page-break-after: avoid; break-after: avoid;
+  }
+
+  /* Table */
+  table { border-collapse: collapse; width: 100%; margin-bottom: 8px; }
+  th, td { border: 1px solid #888; padding: 3px 6px; vertical-align: top; line-height: 1.5; }
+  thead th {
+    background: #e8e8e8; font-weight: bold; text-align: center;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  tr { page-break-inside: avoid !important; break-inside: avoid !important; }
+  table { page-break-inside: auto; }
+  thead { display: table-header-group; }
+
+  .tbl-label { background: #f0f0f0; font-weight: bold;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .center { text-align: center; }
+  .right  { text-align: right; }
+  .pri-h { background: #333; color: #fff; font-weight: bold; text-align: center;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .pri-m { background: #888; color: #fff; font-weight: bold; text-align: center;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .pri-l { background: #ccc; text-align: center;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  /* Cover */
+  .cover-title { font-size: 26px; font-weight: bold; text-align: center; margin: 28mm 0 6mm 0; letter-spacing: 4px; }
+  .cover-sub   { font-size: 14px; text-align: center; margin-bottom: 16mm; color: #333; }
+  .cover-meta  { width: 130mm; margin: 0 auto; }
+  .cover-meta table td { border: none; padding: 3px 10px; font-size: 9px; }
+
+  /* TOC */
+  .toc-item { display: flex; justify-content: space-between; padding: 2px 0;
+              border-bottom: 1px dotted #ccc; font-size: 8.5px; }
+
+  /* Swimlane */
+  .swimlane-wrap {
+    display: grid; border: 1px solid #888; page-break-inside: avoid; break-inside: avoid;
+  }
+  .swimlane-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+  .swimlane-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .lane-header {
+    font-weight: bold; text-align: center; padding: 4px; font-size: 8px;
+    border-bottom: 2px solid #000; border-right: 1px solid #888;
+    background: #e8e8e8;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .lane-header:last-child { border-right: none; }
+  .lane-cell {
+    border-right: 1px solid #ccc; border-bottom: 1px solid #eee;
+    padding: 4px 6px; font-size: 7.5px; min-height: 16px;
+    display: flex; align-items: center; justify-content: center; text-align: center;
+  }
+  .lane-cell:last-child { border-right: none; }
+  .lane-sys { background: #f5f5f5; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .lane-ai  { background: #f0f0f0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .lane-glass { background: #fafafa; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  .flow-box { border: 1.5px solid #000; padding: 3px 8px; display: inline-block;
+               border-radius: 2px; font-size: 7.5px; }
+  .flow-oval { border: 1.5px solid #000; padding: 3px 10px; display: inline-block;
+                border-radius: 20px; font-size: 7.5px; }
+  .flow-end  { border: 1.5px solid #000; padding: 3px 10px; display: inline-block;
+                border-radius: 20px; font-size: 7.5px; background: #333; color: #fff;
+                -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .flow-diamond-wrap { position: relative; width: 90px; height: 46px; display: inline-block; }
+  .flow-diamond-inner { position: absolute; top:5px; left:10px; width:70px; height:36px;
+    border:1.5px solid #000; transform:rotate(45deg); transform-origin:center; }
+  .flow-diamond-text  { position: absolute; inset:0; display:flex; align-items:center;
+    justify-content:center; font-size:7px; text-align:center; }
+  .arrow { font-size: 10px; }
+
+  /* Sitemap tree */
+  .tree { font-size: 8px; line-height: 1.9; font-family: "Courier New", monospace;
+          border: 1px solid #ccc; padding: 8px 12px; background: #fafafa;
+          page-break-inside: avoid; break-inside: avoid;
+          -webkit-print-color-adjust: exact; print-color-adjust: exact;
+          white-space: pre; }
+
+  /* Review box */
+  .review-box { border: 1.5px solid #000; padding: 8px; margin-top: 10px;
+                page-break-inside: avoid; break-inside: avoid; }
+  .review-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 6px; }
+  .review-cell { border: 1px solid #888; padding: 6px; min-height: 30px; font-size: 7.5px; line-height: 1.8; }
+  .review-label { font-size: 7.5px; font-weight: bold; border-bottom: 1px solid #ccc;
+                  padding-bottom: 2px; margin-bottom: 4px; }
+
+  /* Stakeholder map */
+  .stk-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .stk-box { border: 1px solid #888; padding: 6px; font-size: 7.5px; line-height: 1.7; }
+  .stk-box .stk-h { font-weight: bold; border-bottom: 1px solid #ccc; margin-bottom: 3px; padding-bottom: 2px; }
+
+  p { margin-bottom: 4px; line-height: 1.6; }
+  ul { margin: 2px 0 4px 14px; }
+  li { line-height: 1.7; }
+
+  /* Page break rules */
+  pre.code, .note-box, .sec, .box, .swimlane-wrap, .tree, .review-box,
+  .stk-box, .flow-box { page-break-inside: avoid; break-inside: avoid; }
+  .sec-head, .sub-head { page-break-after: avoid; break-after: avoid; }
+</style>
+</head>
+<body>
+
+<!-- ========== PAGE 1: COVER ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">要件定義書 / LingoGlass AR</div>
+    <div class="header-right">
+      DOC-ID: REQ-LGA-001　Rev 1.0　2026-05-12<br>
+      作成者: NGUYEN MINH TRI
+    </div>
+  </div>
+
+  <div class="cover-title">要 件 定 義 書</div>
+  <div class="cover-sub">LingoGlass AR — リアルタイム字幕表示 AR グラス</div>
+
+  <div class="cover-meta">
+    <table>
+      <tr><td class="tbl-label">プロジェクト名</td><td>LingoGlass AR</td></tr>
+      <tr><td class="tbl-label">ドキュメント ID</td><td>REQ-LGA-001</td></tr>
+      <tr><td class="tbl-label">バージョン</td><td>Rev 1.0（レビュー版）</td></tr>
+      <tr><td class="tbl-label">作成日</td><td>2026-05-12</td></tr>
+      <tr><td class="tbl-label">作成者</td><td>NGUYEN MINH TRI</td></tr>
+      <tr><td class="tbl-label">開発モデル</td><td>スパイラル型（Spike → Sprint × 6、Solo founder + AI agents）</td></tr>
+      <tr><td class="tbl-label">フェーズ</td><td>MVP プロトタイプ検証フェーズ（Pre-Pilot）</td></tr>
+      <tr><td class="tbl-label">関連ドキュメント</td><td>LingoGlass_AR_Project_Plan.md / Strategic_Analysis.md / Development_Plan.md</td></tr>
+    </table>
+  </div>
+
+  <div style="margin-top: 12mm;">
+    <div class="sec-head">■ 改訂履歴</div>
+    <table>
+      <thead><tr><th style="width:10%">Rev</th><th style="width:18%">日付</th><th style="width:22%">担当者</th><th>変更内容</th></tr></thead>
+      <tbody>
+        <tr><td class="center">0.1</td><td class="center">2026-05-11</td><td>NGUYEN MINH TRI</td><td>初版作成（ドラフト）。§1〜§13 雛形整備。</td></tr>
+        <tr><td class="center">1.0</td><td class="center">2026-05-12</td><td>NGUYEN MINH TRI</td><td>ヒアリング結果（§2.2）追記。As-Is 業務フローを §8 に追加。ステークホルダーマップを §13 に追加。機能要件を 13 → 21 項に拡張（FR-HW-07/08、FR-APP-11/12、FR-BE-04/05、FR-OPS）。非機能要件を 9 → 13 項に拡張。承認用としてレビュー版へ昇格。</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div style="margin-top: 8mm;">
+    <div class="sec-head">■ 目次</div>
+    <div class="toc-item"><span>§1　システム概要</span><span>p.2</span></div>
+    <div class="toc-item"><span>§2　現状と課題（ヒアリング結果含む）</span><span>p.2</span></div>
+    <div class="toc-item"><span>§3　ゴール（到達目標）</span><span>p.3</span></div>
+    <div class="toc-item"><span>§4　システム化の範囲</span><span>p.3</span></div>
+    <div class="toc-item"><span>§5　基本要件と優先順位（MoSCoW）</span><span>p.4</span></div>
+    <div class="toc-item"><span>§6　機能要件（機能一覧表）</span><span>p.4–5</span></div>
+    <div class="toc-item"><span>§7　非機能要件</span><span>p.5</span></div>
+    <div class="toc-item"><span>§8　業務フロー（As-Is / To-Be）</span><span>p.6</span></div>
+    <div class="toc-item"><span>§9　ページ構成（モバイルアプリ画面ツリー）</span><span>p.7</span></div>
+    <div class="toc-item"><span>§10　概略費用</span><span>p.7</span></div>
+    <div class="toc-item"><span>§11　期待される効果</span><span>p.7</span></div>
+    <div class="toc-item"><span>§12　概略スケジュール</span><span>p.7</span></div>
+    <div class="toc-item"><span>§13　体制図・ステークホルダーマップ</span><span>p.7</span></div>
+    <div class="toc-item"><span>　　　レビュー・承認欄</span><span>p.7</span></div>
+  </div>
+
+  <div class="page-footer">
+    <span>DOC-ID: REQ-LGA-001　LingoGlass AR 要件定義書</span><span>- 1 -</span>
+  </div>
+</div>
+
+
+<!-- ========== PAGE 2: §1 概要 + §2 課題 ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">要件定義書 / LingoGlass AR</div>
+    <div class="header-right">DOC-ID: REQ-LGA-001　Rev 1.0　2026-05-12</div>
+  </div>
+
+  <div class="sec-head">■ §1　システム概要</div>
+  <table>
+    <tr>
+      <td class="tbl-label" style="width:22%">システム名</td>
+      <td>LingoGlass AR（リンゴグラス AR）</td>
+    </tr>
+    <tr>
+      <td class="tbl-label">目的・背景</td>
+      <td>海外旅行・多言語コミュニケーション場面において、スマートフォンを手に持たずに翻訳字幕を視界内に表示することで、会話の自然さと利便性を向上させる。現行の翻訳アプリは「取り出す→画面を見る→ボタンを押す」という動作が会話を中断させる課題がある。LingoGlass AR はこの摩擦をゼロに近づけることを目指す。</td>
+    </tr>
+    <tr>
+      <td class="tbl-label">MVP アーキテクチャ</td>
+      <td>
+        <strong>グラス</strong>：字幕表示（Micro-OLED / Waveguide）+ BLE/Wi-Fi コントローラー（ESP32-S3）<br>
+        <strong>スマートフォン</strong>：ゲートウェイ（音声収音・OCR 撮影・クラウド中継）<br>
+        <strong>Cloud AI</strong>：STT・翻訳・OCR 処理・診断ログ収集
+      </td>
+    </tr>
+    <tr>
+      <td class="tbl-label">対象ユーザー</td>
+      <td>
+        ① 海外旅行者（日本・韓国・台湾等）：看板・メニュー・案内を読めない<br>
+        ② 留学生・外国人労働者：日常会話の継続的なサポートが必要<br>
+        ③ 観光・小売・ホテル接客スタッフ：外国人客への即時対応<br>
+        ④ 出張ビジネスパーソン：多言語会議・商談の字幕サポート
+      </td>
+    </tr>
+    <tr>
+      <td class="tbl-label">開発体制</td>
+      <td>Solo founder 1 名 + AI agents（設計・コーディング・テスト補助）</td>
+    </tr>
+    <tr>
+      <td class="tbl-label">前提・制約</td>
+      <td>
+        ・量産・販売は本フェーズの対象外。プロトタイプ × 1〜2 台で KPI を検証する。<br>
+        ・グラス本体にマイク／カメラは搭載せず、スマートフォン側のセンサーを使用する。<br>
+        ・BLE を主接続、Wi-Fi はデバッグ用フォールバックとする。
+      </td>
+    </tr>
+  </table>
+
+  <div class="sec-head">■ §2　現状と課題</div>
+  <div class="sub-head">2.1　現状の問題（As-Is）</div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:5%">No</th>
+        <th style="width:30%">問題（What's wrong）</th>
+        <th style="width:33%">原因</th>
+        <th style="width:32%">ユーザーへの影響</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="center">1</td>
+        <td>翻訳のたびにスマートフォンを取り出す必要がある</td>
+        <td>現行の翻訳アプリはすべてスマートフォン画面を媒体とする</td>
+        <td>会話が中断し、相手に失礼・コミュニケーション品質が低下する</td>
+      </tr>
+      <tr>
+        <td class="center">2</td>
+        <td>翻訳結果が視界外にある（画面を低く見る必要）</td>
+        <td>スマートフォンは手元・胸ポケット等に保持するため視線が外れる</td>
+        <td>会話相手と目が合わない・自然な対話が困難</td>
+      </tr>
+      <tr>
+        <td class="center">3</td>
+        <td>看板・メニュー等のテキスト翻訳に手間がかかる</td>
+        <td>アプリを開く→カメラ起動→撮影→OCR 待機という複数手順が必要</td>
+        <td>観光・食事・移動時の判断が遅れる</td>
+      </tr>
+      <tr>
+        <td class="center">4</td>
+        <td>既存 AR グラス（Xreal 等）は重く、翻訳専用ではない</td>
+        <td>エンターテイメント・業務向けの汎用設計。翻訳 UX は後付け</td>
+        <td>長時間装着の不快感・翻訳精度・遅延への不満</td>
+      </tr>
+      <tr>
+        <td class="center">5</td>
+        <td>Ray-Ban Meta 等は字幕表示ディスプレイを持たない</td>
+        <td>カメラ・マイク搭載だが光学表示系なし（スピーカーのみ）</td>
+        <td>翻訳結果を"見る"ことができず、騒音環境では使えない</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="sub-head">2.2　ヒアリング結果サマリー（n = 12 / 想定ユーザー）</div>
+  <table>
+    <thead>
+      <tr><th style="width:18%">セグメント</th><th style="width:8%">人数</th><th style="width:37%">期待すること・目標</th><th>主な発言・観察</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>海外旅行者</td><td class="center">4</td><td>スマートフォンを取り出さずに看板・メニューを読みたい</td><td>「両手に荷物を持っているとアプリを起動するのが面倒」「飲食店で店員と目を合わせて注文したい」</td></tr>
+      <tr><td>留学生／外国人労働者</td><td class="center">3</td><td>日常会話の聞き取り補助。長時間装着の快適性を重視</td><td>「授業の専門用語が分からない時だけサポートが欲しい」「重い・熱いと授業中つけられない」</td></tr>
+      <tr><td>接客スタッフ（飲食・小売）</td><td class="center">3</td><td>レジ・案内中にハンズフリーで翻訳を確認したい</td><td>「タブレット翻訳機は手が塞がる」「両手で商品を持ちながら話す場面が多い」</td></tr>
+      <tr><td>出張ビジネス</td><td class="center">2</td><td>会議・商談での字幕サポート。記録・要約も欲しい</td><td>「会議中にスマートフォンを見ると失礼」「録音は法務的に NG なケースも多い → 字幕のみ表示で十分」</td></tr>
+    </tbody>
+  </table>
+  <div style="font-size:7.5px; margin-top:2px;">
+    <strong>共通要望：</strong> ① 取り出し動作ゼロ　② 字幕は短く・読みやすく（1〜2行）　③ プライバシーが明示的に守られていること（録音中の表示）　④ バッテリーは半日もてば許容
+  </div>
+
+  <div class="page-footer">
+    <span>DOC-ID: REQ-LGA-001　LingoGlass AR 要件定義書</span><span>- 2 -</span>
+  </div>
+</div>
+
+
+<!-- ========== PAGE 3: §3 ゴール + §4 スコープ ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">要件定義書 / LingoGlass AR</div>
+    <div class="header-right">DOC-ID: REQ-LGA-001　Rev 1.0　2026-05-12</div>
+  </div>
+
+  <div class="sec-head">■ §3　ゴール（到達目標）</div>
+  <div class="sub-head">3.1　定量 KPI（MVP プロトタイプ検証基準）</div>
+  <table>
+    <thead>
+      <tr><th style="width:8%">No</th><th style="width:30%">KPI</th><th style="width:20%">目標値</th><th>備考</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="center">K-01</td><td>会話字幕 End-to-End 遅延（p50）</td><td class="center">≤ 2.0 秒</td><td>VAD → STT → 翻訳 → BLE → 表示 合計</td></tr>
+      <tr><td class="center">K-02</td><td>会話字幕 End-to-End 遅延（p95）</td><td class="center">≤ 3.5 秒</td><td>3.5 秒超が常態化 → No-Go 判断</td></tr>
+      <tr><td class="center">K-03</td><td>OCR 翻訳表示時間</td><td class="center">≤ 3.0 秒</td><td>撮影 → OCR → 翻訳 → 表示</td></tr>
+      <tr><td class="center">K-04</td><td>アクティブ使用時間（連続）</td><td class="center">≥ 2 時間</td><td>プロトタイプ許容値。量産目標 8 時間</td></tr>
+      <tr><td class="center">K-05</td><td>混合使用時間（standby 込み）</td><td class="center">≥ 6 時間</td><td>日常観光シナリオ</td></tr>
+      <tr><td class="center">K-06</td><td>屋外視認性（明るい屋外）</td><td class="center">≥ 80%</td><td>テスター ≥ 10 名中 80% 以上が「読める」と評価</td></tr>
+      <tr><td class="center">K-07</td><td>BLE 接続エラー（30 分テスト中）</td><td class="center">≤ 2 回</td><td>BLE 再接続含む</td></tr>
+      <tr><td class="center">K-08</td><td>継続使用意向（パイロット）</td><td class="center">≥ 40%</td><td>「また使いたい」と回答したテスター割合</td></tr>
+      <tr><td class="center">K-09</td><td>クラウドコスト（パイロット 50 名）</td><td class="center">≤ $550 USD / 月</td><td>STT + 翻訳 + OCR + infra 合算</td></tr>
+    </tbody>
+  </table>
+
+  <div class="sub-head" style="margin-top:8px">3.2　定性ゴール（プロトタイプ完了時の状態）</div>
+  <ul>
+    <li>外国語の会話を聞いた直後に、グラスの字幕で翻訳が読める体験を実証できる</li>
+    <li>スマートフォンを持ち続けなくても翻訳が受けられる "hands-free" 体験が実現できる</li>
+    <li>カメラで看板・メニューを撮影するだけで翻訳が字幕として表示される</li>
+    <li>30〜60 分連続装着しても熱・重量が不快でないことが確認できる</li>
+    <li>収音中・撮影中であることが周囲の人にも視認できる（プライバシー確保）</li>
+  </ul>
+
+  <div class="sec-head">■ §4　システム化の範囲</div>
+  <div class="sub-head">4.1　IN スコープ（MVP に含める）</div>
+  <table>
+    <thead>
+      <tr><th style="width:8%">No</th><th style="width:32%">機能・要素</th><th>詳細</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="center">I-01</td><td>会話字幕表示</td><td>スマートフォンマイクで収音 → STT → 翻訳 → BLE → グラス表示</td></tr>
+      <tr><td class="center">I-02</td><td>OCR 翻訳表示</td><td>スマートフォンカメラ撮影 → OCR → 翻訳 → グラス表示</td></tr>
+      <tr><td class="center">I-03</td><td>グラス字幕レンダリング</td><td>ESP32-S3 + Micro-OLED / Waveguide による安定した 1〜2 行表示</td></tr>
+      <tr><td class="center">I-04</td><td>モバイルアプリ（ゲートウェイ）</td><td>ペアリング・言語設定・収音・OCR・診断・履歴（任意）</td></tr>
+      <tr><td class="center">I-05</td><td>バックエンド API</td><td>WebSocket セッション・STT / 翻訳 / OCR ルーティング・遅延ログ</td></tr>
+      <tr><td class="center">I-06</td><td>プライバシー表示</td><td>LED インジケーター（物理）＋ アプリ内収音状態表示</td></tr>
+      <tr><td class="center">I-07</td><td>診断ログ基盤</td><td>遅延 p50/p90/p95・バッテリー・接続エラー・温度の計測と記録</td></tr>
+    </tbody>
+  </table>
+
+  <div class="sub-head" style="margin-top:8px">4.2　OUT スコープ（MVP には含めない）</div>
+  <table>
+    <thead>
+      <tr><th style="width:8%">No</th><th style="width:32%">対象外機能</th><th>理由</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="center">O-01</td><td>AI エージェント（自動予約・経路案内）</td><td>字幕表示の実証が優先。AI エージェントはフェーズ 3 以降</td></tr>
+      <tr><td class="center">O-02</td><td>グラス上のマイク・カメラ</td><td>MVP はスマートフォンのマイク・カメラを使用しリスク低減</td></tr>
+      <tr><td class="center">O-03</td><td>完全オフライン翻訳（グラス単体）</td><td>クラウド利用が前提のため MVP 外</td></tr>
+      <tr><td class="center">O-04</td><td>話者識別（Speaker ID）</td><td>複数人環境での識別は精度・遅延双方のリスクが高い</td></tr>
+      <tr><td class="center">O-05</td><td>Kubernetes / マイクロサービス基盤</td><td>プロトタイプに不要。シンプルな WebSocket サーバーで十分</td></tr>
+      <tr><td class="center">O-06</td><td>量産・クラウドファンディング</td><td>プロトタイプが KPI を達成した後に検討</td></tr>
+      <tr><td class="center">O-07</td><td>処方箋レンズ対応</td><td>視力矯正レンズとの併用は量産フェーズで対応</td></tr>
+    </tbody>
+  </table>
+
+  <div class="page-footer">
+    <span>DOC-ID: REQ-LGA-001　LingoGlass AR 要件定義書</span><span>- 3 -</span>
+  </div>
+</div>
+
+
+<!-- ========== PAGE 4: §5 優先順位 + §6 機能一覧（前半）========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">要件定義書 / LingoGlass AR</div>
+    <div class="header-right">DOC-ID: REQ-LGA-001　Rev 1.0　2026-05-12</div>
+  </div>
+
+  <div class="sec-head">■ §5　基本要件と優先順位（MoSCoW）</div>
+  <table>
+    <thead>
+      <tr><th style="width:18%">優先度</th><th style="width:20%">分類</th><th>内容</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="pri-h">Must（必須）</td><td>ハードウェア基盤</td><td>BLE → ESP32-S3 → ディスプレイへの字幕送信・表示が安定動作すること（Spike Pass）</td></tr>
+      <tr><td class="pri-h">Must（必須）</td><td>会話字幕</td><td>スマートフォンマイク収音 → STT → 翻訳 → 字幕表示の End-to-End 遅延 p50 ≤ 2.0s</td></tr>
+      <tr><td class="pri-h">Must（必須）</td><td>OCR 翻訳</td><td>スマートフォンカメラ撮影 → OCR → 翻訳 → 字幕表示 ≤ 3s</td></tr>
+      <tr><td class="pri-h">Must（必須）</td><td>プライバシー</td><td>収音中・撮影中を物理 LED で通知（デフォルトは音声・映像の生データを保存しない）</td></tr>
+      <tr><td class="pri-h">Must（必須）</td><td>診断ログ</td><td>遅延・バッテリー・接続エラーを計測・記録し、Go/No-Go 判断に使用できること</td></tr>
+      <tr><td class="pri-m">Should（重要）</td><td>言語設定</td><td>ソース言語・ターゲット言語をアプリから再起動なしに変更できる</td></tr>
+      <tr><td class="pri-m">Should（重要）</td><td>接続状態表示</td><td>アプリに接続・バッテリー・エラー状態をリアルタイム表示</td></tr>
+      <tr><td class="pri-m">Should（重要）</td><td>再接続回復</td><td>BLE 切断時の自動再接続。30 秒以内に字幕が再開すること</td></tr>
+      <tr><td class="pri-l">Could（あれば）</td><td>翻訳履歴</td><td>デフォルト OFF。ユーザーがオプトインで有効化できる翻訳履歴</td></tr>
+      <tr><td class="pri-l">Could（あれば）</td><td>Push-to-Talk</td><td>常時収音ではなくボタン押下中のみ収音するモード</td></tr>
+      <tr><td class="pri-l">Could（あれば）</td><td>セッション要約</td><td>会話終了後の要約レポート（オフラインバッチ処理）</td></tr>
+    </tbody>
+  </table>
+
+  <div class="sec-head">■ §6　機能要件（機能一覧表）</div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:10%">機能 ID</th>
+        <th style="width:18%">機能名（大）</th>
+        <th style="width:20%">機能名（中）</th>
+        <th style="width:24%">機能名（小）/ 概要</th>
+        <th style="width:8%">優先度</th>
+        <th style="width:20%">受入基準</th>
+      </tr>
+    </thead>
+    <tbody>
+      <!-- 1. ハードウェア基盤 -->
+      <tr><td class="tbl-label center" colspan="6">1. ハードウェア・通信基盤（ESP32-S3 + Display）</td></tr>
+      <tr>
+        <td class="center">FR-HW-01</td>
+        <td rowspan="3">BLE 通信</td>
+        <td>BLE ペアリング</td>
+        <td>スマートフォン ↔ ESP32-S3 BLE GATT ペアリング</td>
+        <td class="pri-h center">高</td>
+        <td>接続完了まで 10 秒以内</td>
+      </tr>
+      <tr>
+        <td class="center">FR-HW-02</td>
+        <td>字幕パケット送信</td>
+        <td>Binary packet（version / seq_id / fragment）でフラグメント対応</td>
+        <td class="pri-h center">高</td>
+        <td>100 文字字幕が正順で表示される</td>
+      </tr>
+      <tr>
+        <td class="center">FR-HW-03</td>
+        <td>再接続回復</td>
+        <td>切断後の自動再接続・ファームウェアフリーズなし</td>
+        <td class="pri-h center">高</td>
+        <td>30 秒以内に再接続・字幕再開</td>
+      </tr>
+      <tr>
+        <td class="center">FR-HW-04</td>
+        <td rowspan="2">ディスプレイ制御</td>
+        <td>字幕レンダリング</td>
+        <td>1〜2 行固定フォント・レイアウト崩れなし</td>
+        <td class="pri-h center">高</td>
+        <td>連続 20 件字幕更新でフリーズ・文字化けなし</td>
+      </tr>
+      <tr>
+        <td class="center">FR-HW-05</td>
+        <td>輝度自動調整</td>
+        <td>環境光に応じた輝度切替（任意：センサー未搭載時は手動）</td>
+        <td class="pri-m center">中</td>
+        <td>屋内 / 屋外切替で字幕視認可能</td>
+      </tr>
+      <tr>
+        <td class="center">FR-HW-06</td>
+        <td>プライバシー LED</td>
+        <td>収音中・撮影中表示</td>
+        <td>収音中・撮影中は物理 LED 点灯（常時オン）</td>
+        <td class="pri-h center">高</td>
+        <td>収音開始 100 ms 以内に LED 点灯</td>
+      </tr>
+      <tr>
+        <td class="center">FR-HW-07</td>
+        <td>電源管理</td>
+        <td>アイドル Dim / スリープ</td>
+        <td>会話なし 30 秒でディスプレイ輝度低下・60 秒でスリープ</td>
+        <td class="pri-m center">中</td>
+        <td>スリープ状態で BLE 受信時に自動復帰</td>
+      </tr>
+      <tr>
+        <td class="center">FR-HW-08</td>
+        <td>バッテリー報告</td>
+        <td>残量通知</td>
+        <td>BLE 経由でスマートフォンにバッテリー残量を 10% 単位で通知</td>
+        <td class="pri-m center">中</td>
+        <td>残量変化後 30 秒以内にアプリに反映</td>
+      </tr>
+
+      <!-- 2. Mobile App -->
+      <tr><td class="tbl-label center" colspan="6">2. モバイルアプリ（スマートフォンゲートウェイ）</td></tr>
+      <tr>
+        <td class="center">FR-APP-01</td>
+        <td rowspan="2">ペアリング</td>
+        <td>デバイス検索・接続</td>
+        <td>近距離 BLE デバイスを一覧表示し選択してペアリング</td>
+        <td class="pri-h center">高</td>
+        <td>5 秒以内にデバイスリスト表示</td>
+      </tr>
+      <tr>
+        <td class="center">FR-APP-02</td>
+        <td>接続状態表示</td>
+        <td>接続中・切断・バッテリー残量をリアルタイム表示</td>
+        <td class="pri-m center">中</td>
+        <td>状態変化後 2 秒以内に UI 更新</td>
+      </tr>
+      <tr>
+        <td class="center">FR-APP-03</td>
+        <td rowspan="3">会話字幕モード</td>
+        <td>音声収音・VAD</td>
+        <td>マイク収音・音声区間検出（VAD）・無音カット</td>
+        <td class="pri-h center">高</td>
+        <td>短文（5〜10 語）を適切に 1 発話として切り出せる</td>
+      </tr>
+      <tr>
+        <td class="center">FR-APP-04</td>
+        <td>STT・翻訳リクエスト</td>
+        <td>音声を圧縮しクラウドへ送信・STT → 翻訳結果を受信</td>
+        <td class="pri-h center">高</td>
+        <td>p50 遅延 ≤ 2.0s（ネットワーク良好時）</td>
+      </tr>
+      <tr>
+        <td class="center">FR-APP-05</td>
+        <td>字幕グラス送信</td>
+        <td>翻訳テキストを BLE でグラスに送信・表示確認</td>
+        <td class="pri-h center">高</td>
+        <td>グラス上で字幕が視認できる</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="page-footer">
+    <span>DOC-ID: REQ-LGA-001　LingoGlass AR 要件定義書</span><span>- 4 -</span>
+  </div>
+</div>
+
+
+<!-- ========== PAGE 5: §6 機能一覧（後半）+ §7 非機能要件 ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">要件定義書 / LingoGlass AR</div>
+    <div class="header-right">DOC-ID: REQ-LGA-001　Rev 1.0　2026-05-12</div>
+  </div>
+
+  <div class="sec-head">■ §6　機能要件（機能一覧表）— 続き</div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:10%">機能 ID</th>
+        <th style="width:18%">機能名（大）</th>
+        <th style="width:20%">機能名（中）</th>
+        <th style="width:24%">機能名（小）/ 概要</th>
+        <th style="width:8%">優先度</th>
+        <th style="width:20%">受入基準</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="center">FR-APP-06</td>
+        <td rowspan="2">OCR モード</td>
+        <td>撮影・OCR 送信</td>
+        <td>カメラ起動 → 撮影 → クロップ → クラウド OCR 送信</td>
+        <td class="pri-h center">高</td>
+        <td>撮影から結果表示まで ≤ 3.0s</td>
+      </tr>
+      <tr>
+        <td class="center">FR-APP-07</td>
+        <td>OCR 結果表示</td>
+        <td>翻訳テキストをグラスに送信（長い場合は要約）</td>
+        <td class="pri-h center">高</td>
+        <td>グラスに 1〜2 行で読みやすく表示</td>
+      </tr>
+      <tr>
+        <td class="center">FR-APP-08</td>
+        <td>言語設定</td>
+        <td>ソース・ターゲット言語選択</td>
+        <td>アプリ内でソース言語 / ターゲット言語を変更（再起動不要）</td>
+        <td class="pri-m center">中</td>
+        <td>言語変更後の次の発話から反映</td>
+      </tr>
+      <tr>
+        <td class="center">FR-APP-09</td>
+        <td>プライバシー設定</td>
+        <td>履歴 ON/OFF・データ削除</td>
+        <td>翻訳履歴はデフォルト OFF。ユーザーがオプトインで有効化・削除可能</td>
+        <td class="pri-m center">中</td>
+        <td>デフォルト OFF 状態でサーバーにテキスト履歴が保存されない</td>
+      </tr>
+      <tr>
+        <td class="center">FR-APP-10</td>
+        <td>診断画面</td>
+        <td>遅延・バッテリー・ログ</td>
+        <td>p50 / p90 / p95 遅延・バッテリー残量・接続エラー数をリアルタイム表示</td>
+        <td class="pri-h center">高</td>
+        <td>プロトタイプ評価に必要なログを CSV / JSON で出力できる</td>
+      </tr>
+      <tr>
+        <td class="center">FR-APP-11</td>
+        <td>Push-to-Talk</td>
+        <td>収音モード切替</td>
+        <td>常時収音 / PTT モードを設定で切替可能</td>
+        <td class="pri-l center">低</td>
+        <td>PTT 中のみ LED 点灯・STT リクエスト送出</td>
+      </tr>
+      <tr>
+        <td class="center">FR-APP-12</td>
+        <td>ローカリゼーション</td>
+        <td>多言語 UI</td>
+        <td>UI を日本語・英語・ベトナム語で切替可能</td>
+        <td class="pri-l center">低</td>
+        <td>切替後の画面表示が崩れない</td>
+      </tr>
+
+      <!-- 3. Backend -->
+      <tr><td class="tbl-label center" colspan="6">3. バックエンド API（Cloud AI Gateway）</td></tr>
+      <tr>
+        <td class="center">FR-BE-01</td>
+        <td>WebSocket セッション</td>
+        <td>リアルタイム会話セッション</td>
+        <td>WS /session — 音声ストリーム受信 → STT → 翻訳 → 応答</td>
+        <td class="pri-h center">高</td>
+        <td>セッション確立 2 秒以内・切断時の自動クリーンアップ</td>
+      </tr>
+      <tr>
+        <td class="center">FR-BE-02</td>
+        <td>OCR エンドポイント</td>
+        <td>POST /ocr</td>
+        <td>画像受信 → OCR → 翻訳 → 結果返却</td>
+        <td class="pri-h center">高</td>
+        <td>レスポンス ≤ 3s（クラウド OCR 込み）</td>
+      </tr>
+      <tr>
+        <td class="center">FR-BE-03</td>
+        <td>遅延ログ収集</td>
+        <td>POST /logs</td>
+        <td>各ステップの timestamp を受信・DB 保存</td>
+        <td class="pri-h center">高</td>
+        <td>p50 / p90 / p95 を集計しダッシュボードで確認できる</td>
+      </tr>
+      <tr>
+        <td class="center">FR-BE-04</td>
+        <td>使用量上限</td>
+        <td>セッション単位 quota</td>
+        <td>ユーザー / セッション単位でリクエスト数の上限を設定</td>
+        <td class="pri-m center">中</td>
+        <td>上限超過時に 429 を返し、コスト暴走を防ぐ</td>
+      </tr>
+      <tr>
+        <td class="center">FR-BE-05</td>
+        <td>モデルルーティング</td>
+        <td>STT / 翻訳プロバイダ切替</td>
+        <td>Faster-Whisper / OpenAI / DeepL 等を環境変数で切替</td>
+        <td class="pri-m center">中</td>
+        <td>切替後のリクエストが新プロバイダに到達する</td>
+      </tr>
+
+      <!-- 4. Operations -->
+      <tr><td class="tbl-label center" colspan="6">4. 運用・観測（プロトタイプ運用）</td></tr>
+      <tr>
+        <td class="center">FR-OPS-01</td>
+        <td>ダッシュボード</td>
+        <td>遅延・コストモニタ</td>
+        <td>遅延分布・コスト・エラー率を可視化</td>
+        <td class="pri-m center">中</td>
+        <td>1 週間分のデータを 1 画面で確認できる</td>
+      </tr>
+      <tr>
+        <td class="center">FR-OPS-02</td>
+        <td>テストレポート出力</td>
+        <td>パイロット評価レポート</td>
+        <td>パイロット参加者ごとの p50/p95・継続意向を集計</td>
+        <td class="pri-m center">中</td>
+        <td>S5 完了時に Go/No-Go レポートを生成できる</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="sec-head">■ §7　非機能要件</div>
+  <table>
+    <thead>
+      <tr><th style="width:8%">ID</th><th style="width:18%">カテゴリ</th><th style="width:30%">要件内容</th><th style="width:22%">目標値</th><th>検証方法</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="center">NFR-01</td><td>性能 — 遅延</td><td>会話字幕 End-to-End 遅延</td><td>p50 ≤ 2.0s / p95 ≤ 3.5s</td><td>診断ログ計測（20 発話 × 3 環境）</td></tr>
+      <tr><td class="center">NFR-02</td><td>性能 — OCR</td><td>OCR 翻訳表示時間</td><td>≤ 3.0 秒</td><td>撮影〜字幕表示を 10 回計測</td></tr>
+      <tr><td class="center">NFR-03</td><td>性能 — BLE</td><td>App → Display 区間遅延</td><td>≤ 200 ms</td><td>BLE パケットタイムスタンプ計測</td></tr>
+      <tr><td class="center">NFR-04</td><td>バッテリー</td><td>連続使用時間（プロトタイプ）</td><td>≥ 2h active / ≥ 6h mixed</td><td>実機タイマー計測</td></tr>
+      <tr><td class="center">NFR-05</td><td>熱・装着感</td><td>30〜60 分連続装着時の快適性</td><td>不快な熱感なし（太陽穴・鼻梁）</td><td>テスター 5 名による装着評価</td></tr>
+      <tr><td class="center">NFR-06</td><td>可視性</td><td>屋外（晴天・やや明るい）での字幕視認</td><td>テスター ≥ 80% が「読める」</td><td>屋外視認性テスト（n ≥ 10）</td></tr>
+      <tr><td class="center">NFR-07</td><td>可用性</td><td>BLE 接続安定性（30 分テスト）</td><td>切断 ≤ 2 回・自動再接続成功</td><td>30 分連続使用テスト × 5 回</td></tr>
+      <tr><td class="center">NFR-08</td><td>プライバシー</td><td>デフォルト状態でのデータ保存</td><td>音声・映像の生データを保存しない</td><td>ネットワークキャプチャ確認</td></tr>
+      <tr><td class="center">NFR-09</td><td>セキュリティ</td><td>API 通信の暗号化</td><td>HTTPS / WSS のみ。平文通信禁止</td><td>通信ログ確認</td></tr>
+      <tr><td class="center">NFR-10</td><td>セキュリティ</td><td>BLE ペアリング</td><td>Bonded pairing（再ペアリング時の承認）</td><td>未承認デバイスで接続不可を確認</td></tr>
+      <tr><td class="center">NFR-11</td><td>運用</td><td>クラウドコスト（パイロット 50 名）</td><td>≤ $550 USD / 月</td><td>月次コスト集計・usage cap 設定</td></tr>
+      <tr><td class="center">NFR-12</td><td>保守性</td><td>OTA ファームウェア更新</td><td>BLE / USB 経由で更新可能</td><td>新ファームを実機に書き込み動作確認</td></tr>
+      <tr><td class="center">NFR-13</td><td>拡張性</td><td>翻訳プロバイダ追加</td><td>環境変数 + コード追加 1 ファイル以内</td><td>新プロバイダ追加を 1 日で実装可能</td></tr>
+    </tbody>
+  </table>
+
+  <div class="page-footer">
+    <span>DOC-ID: REQ-LGA-001　LingoGlass AR 要件定義書</span><span>- 5 -</span>
+  </div>
+</div>
+
+
+<!-- ========== PAGE 6: §8 業務フロー As-Is + To-Be ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">要件定義書 / LingoGlass AR</div>
+    <div class="header-right">DOC-ID: REQ-LGA-001　Rev 1.0　2026-05-12</div>
+  </div>
+
+  <div class="sec-head">■ §8.1　業務フロー（As-Is）— 現状の翻訳体験</div>
+
+  <div class="swimlane-wrap swimlane-3" style="margin-bottom: 6px;">
+    <div class="lane-header">ユーザー（旅行者）</div>
+    <div class="lane-header lane-sys">スマートフォン<br>（既存の翻訳アプリ）</div>
+    <div class="lane-header lane-ai">翻訳サービス<br>（クラウド）</div>
+
+    <div class="lane-cell"><div class="flow-oval">○ 開始</div></div>
+    <div class="lane-cell lane-sys"></div>
+    <div class="lane-cell lane-ai"></div>
+
+    <div class="lane-cell">外国語の会話<br>または看板を見る</div>
+    <div class="lane-cell lane-sys">（待機）</div>
+    <div class="lane-cell lane-ai"></div>
+
+    <div class="lane-cell">スマートフォンを<br>ポケットから取り出す</div>
+    <div class="lane-cell lane-sys"><div class="flow-box">画面ロック解除</div></div>
+    <div class="lane-cell lane-ai"></div>
+
+    <div class="lane-cell">翻訳アプリを<br>起動・モード選択</div>
+    <div class="lane-cell lane-sys"><div class="flow-box">アプリ起動<br>マイク／カメラ起動</div></div>
+    <div class="lane-cell lane-ai"></div>
+
+    <div class="lane-cell">マイクを向ける<br>または撮影する</div>
+    <div class="lane-cell lane-sys"><div class="flow-box">音声収音 / 画像撮影<br>→ クラウド送信</div> <span class="arrow">→</span></div>
+    <div class="lane-cell lane-ai"><div class="flow-box">STT / OCR / 翻訳</div></div>
+
+    <div class="lane-cell">画面を見る<br>（視線を下げる）</div>
+    <div class="lane-cell lane-sys"><div class="flow-box">翻訳結果を画面に表示</div></div>
+    <div class="lane-cell lane-ai"></div>
+
+    <div class="lane-cell"><div class="flow-end">● 会話中断・<br>視線外れ</div></div>
+    <div class="lane-cell lane-sys"></div>
+    <div class="lane-cell lane-ai"></div>
+  </div>
+  <div style="font-size: 7.5px; color: #333; margin-bottom: 8px;">
+    <strong>As-Is の課題（ヒアリング §2.2 と対応）：</strong> 取り出し動作・画面操作・視線移動が会話を中断する。両手が塞がっていると操作不能。
+  </div>
+
+  <div class="sec-head">■ §8.2　業務フロー（To-Be）— LingoGlass AR 導入後</div>
+
+  <div class="swimlane-wrap swimlane-4">
+    <div class="lane-header">ユーザー（旅行者）</div>
+    <div class="lane-header lane-sys">Mobile App<br>（ゲートウェイ）</div>
+    <div class="lane-header lane-ai">Cloud AI<br>（STT / 翻訳 / OCR）</div>
+    <div class="lane-header lane-glass">LingoGlass<br>（ESP32-S3 + Display）</div>
+
+    <div class="lane-cell"><div class="flow-oval">○ 開始<br>（グラスを装着）</div></div>
+    <div class="lane-cell lane-sys"></div>
+    <div class="lane-cell lane-ai"></div>
+    <div class="lane-cell lane-glass"></div>
+
+    <div class="lane-cell">アプリ起動<br>BLE ペアリング</div>
+    <div class="lane-cell lane-sys"><div class="flow-box">BLE スキャン<br>→ ペアリング確立</div></div>
+    <div class="lane-cell lane-ai"></div>
+    <div class="lane-cell lane-glass"><div class="flow-box">BLE 接続受付<br>待機モード</div></div>
+
+    <div class="lane-cell">言語（Source/Target）<br>を選択</div>
+    <div class="lane-cell lane-sys"><div class="flow-box">設定保存<br>WebSocket 開始</div></div>
+    <div class="lane-cell lane-ai"></div>
+    <div class="lane-cell lane-glass"></div>
+
+    <div class="lane-cell">外国語の会話を聞く</div>
+    <div class="lane-cell lane-sys"><div class="flow-box">マイク収音<br>VAD で音声区間検出<br>LED 点灯 ✦</div></div>
+    <div class="lane-cell lane-ai"></div>
+    <div class="lane-cell lane-glass"><div class="flow-box">物理 LED<br>点灯</div></div>
+
+    <div class="lane-cell"></div>
+    <div class="lane-cell lane-sys"><div class="flow-box">音声圧縮<br>→ WebSocket 送信</div> <span class="arrow">→</span></div>
+    <div class="lane-cell lane-ai"><div class="flow-box">STT 処理<br>（Faster-Whisper 等）</div></div>
+    <div class="lane-cell lane-glass"></div>
+
+    <div class="lane-cell"></div>
+    <div class="lane-cell lane-sys"></div>
+    <div class="lane-cell lane-ai"><div class="flow-box">翻訳処理<br>（OpenAI / DeepL 等）<br>↓ 結果返却</div></div>
+    <div class="lane-cell lane-glass"></div>
+
+    <div class="lane-cell"></div>
+    <div class="lane-cell lane-sys"><div class="flow-box">翻訳テキスト受信<br>BLE パケット生成<br>→ グラスへ送信</div> <span class="arrow">→</span></div>
+    <div class="lane-cell lane-ai"></div>
+    <div class="lane-cell lane-glass"><div class="flow-box">パケット受信<br>フラグメント組立<br>字幕レンダリング</div></div>
+
+    <div class="lane-cell"><div class="flow-box">グラスの字幕を読む<br>（視線移動なし）</div></div>
+    <div class="lane-cell lane-sys"></div>
+    <div class="lane-cell lane-ai"></div>
+    <div class="lane-cell lane-glass">字幕表示中<br>（1〜2 行固定）</div>
+
+    <div class="lane-cell">続ける？</div>
+    <div class="lane-cell lane-sys">
+      <div class="flow-diamond-wrap">
+        <div class="flow-diamond-inner"></div>
+        <div class="flow-diamond-text">会話続く？</div>
+      </div>
+    </div>
+    <div class="lane-cell lane-ai"></div>
+    <div class="lane-cell lane-glass"></div>
+
+    <div class="lane-cell"></div>
+    <div class="lane-cell lane-sys" style="font-size:7px; flex-direction:column; gap:4px;">
+      <span>Yes → 収音に戻る（FR-APP-03）</span>
+      <span>No → LED 消灯・スリープ</span>
+    </div>
+    <div class="lane-cell lane-ai"></div>
+    <div class="lane-cell lane-glass"></div>
+
+    <div class="lane-cell"><div class="flow-end">● 終了</div></div>
+    <div class="lane-cell lane-sys"><div class="flow-box">ログ保存<br>WebSocket 切断</div></div>
+    <div class="lane-cell lane-ai"></div>
+    <div class="lane-cell lane-glass"><div class="flow-box">スリープモード</div></div>
+  </div>
+
+  <div style="margin-top: 6px; font-size: 7.5px; color: #333;">
+    ✦ プライバシー LED：収音開始と同時に物理 LED 点灯（FR-HW-06）。周囲の人が録音されていることを認識できる。<br>
+    ※ OCR モード（FR-APP-06/07）は「スマートフォンカメラで撮影 → Cloud AI OCR → 翻訳 → BLE → グラス表示」。基本フローの STT 処理を OCR 処理に置換した同一パイプライン。
+  </div>
+
+  <div class="page-footer">
+    <span>DOC-ID: REQ-LGA-001　LingoGlass AR 要件定義書</span><span>- 6 -</span>
+  </div>
+</div>
+
+
+<!-- ========== PAGE 7: §9〜13 + レビュー欄 ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">要件定義書 / LingoGlass AR</div>
+    <div class="header-right">DOC-ID: REQ-LGA-001　Rev 1.0　2026-05-12</div>
+  </div>
+
+  <div class="sec-head">■ §9　ページ構成（モバイルアプリ画面ツリー）</div>
+  <div class="tree">LingoGlass AR アプリ（Mobile Gateway）
+  │
+  ├─ [SCR-01] スプラッシュ / 初回ペアリング画面
+  │     ├─ BLE デバイス一覧
+  │     └─ ペアリング完了 → ホームへ遷移
+  │
+  ├─ [SCR-02] ホーム（モード選択）
+  │     ├─ 会話字幕モード → [SCR-03]
+  │     ├─ OCR 翻訳モード → [SCR-04]
+  │     ├─ 設定         → [SCR-05]
+  │     └─ 診断ログ     → [SCR-06]
+  │
+  ├─ [SCR-03] 会話字幕モード ─── ※メイン画面
+  │     ├─ 収音中インジケーター（LED 連動）
+  │     ├─ 翻訳テキスト表示エリア
+  │     └─ 履歴 ON/OFF トグル（デフォルト OFF）
+  │
+  ├─ [SCR-04] OCR 翻訳モード
+  │     ├─ カメラプレビュー
+  │     ├─ 撮影ボタン
+  │     └─ 翻訳結果プレビュー（グラス送信前に確認）
+  │
+  ├─ [SCR-05] 設定画面
+  │     ├─ ソース言語選択
+  │     ├─ ターゲット言語選択
+  │     ├─ Push-to-Talk ON/OFF
+  │     ├─ 翻訳履歴管理（表示・一括削除）
+  │     └─ プライバシー設定（データ削除・エクスポート）
+  │
+  └─ [SCR-06] 診断画面
+        ├─ 遅延グラフ（p50 / p90 / p95）
+        ├─ バッテリー残量・温度
+        ├─ 接続エラーログ
+        └─ CSV / JSON エクスポート</div>
+
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px;">
+    <div>
+      <div class="sec-head">■ §10　概略費用（プロトタイプ）</div>
+      <table>
+        <thead><tr><th>項目</th><th>概算（USD）</th></tr></thead>
+        <tbody>
+          <tr><td>ESP32-S3 開発ボード</td><td class="center">5〜15</td></tr>
+          <tr><td>Micro-OLED / Waveguide</td><td class="center">150〜400+</td></tr>
+          <tr><td>バッテリー・充電回路</td><td class="center">10〜30</td></tr>
+          <tr><td>フレーム・機構部品</td><td class="center">30〜150</td></tr>
+          <tr><td>PCB・ケーブル</td><td class="center">30〜200</td></tr>
+          <tr><td>クラウド API（pilot 50名/月）</td><td class="center">100〜550</td></tr>
+          <tr><td class="tbl-label">合計（プロトタイプ 1 台目）</td><td class="center tbl-label">約 $325〜$945</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div>
+      <div class="sec-head">■ §11　期待される効果</div>
+      <table>
+        <thead><tr><th>種別</th><th>内容</th></tr></thead>
+        <tbody>
+          <tr><td>定量</td><td>翻訳操作時間 70% 削減（取り出し不要）</td></tr>
+          <tr><td>定量</td><td>字幕遅延 ≤ 2.0s（会話テンポを維持）</td></tr>
+          <tr><td>定性</td><td>「手ぶらで外国語を理解できる」体験</td></tr>
+          <tr><td>定性</td><td>目を合わせながら翻訳できる対話</td></tr>
+          <tr><td>事業</td><td>B2B パイロット / CF 検討の判断材料</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="sec-head">■ §12　概略スケジュール（Solo 3 ヶ月ロードマップ）</div>
+  <table>
+    <thead><tr><th style="width:8%">Sprint</th><th style="width:18%">期間</th><th style="width:35%">主要タスク</th><th>合否判断ゲート</th></tr></thead>
+    <tbody>
+      <tr><td class="center">S0</td><td>Week 1（1 週）</td><td>BLE Spike：Phone → ESP32-S3 → Display 字幕表示</td><td>20 件連続表示 Pass / app→display &lt; 200 ms</td></tr>
+      <tr><td class="center">S1</td><td>Week 2〜3（2 週）</td><td>Mobile App ペアリング・字幕送信・診断画面</td><td>アプリからグラスに字幕が安定表示</td></tr>
+      <tr><td class="center">S2</td><td>Week 4〜6（2〜3 週）</td><td>STT + 翻訳 pipeline 遅延ベンチマーク</td><td>p50 ≤ 2.0s（スマートフォンマイク使用）</td></tr>
+      <tr><td class="center">S3</td><td>Week 7〜8（2 週）</td><td>OCR モード（スマートフォンカメラ → 字幕）</td><td>看板・メニュー翻訳 ≤ 3.0s 表示</td></tr>
+      <tr><td class="center">S4</td><td>Week 9〜12（2〜4 週）</td><td>AR dev kit / wearable mock 視認性テスト</td><td>屋外 80% 以上が「読める」・2h active 達成</td></tr>
+      <tr><td class="center">S5</td><td>Week 13〜16（2〜4 週）</td><td>5〜10 名パイロット・コスト計測</td><td>継続使用意向 ≥ 40% → Go/No-Go 判断</td></tr>
+    </tbody>
+  </table>
+
+  <div class="sec-head">■ §13　体制図・ステークホルダーマップ</div>
+  <div class="stk-grid">
+    <div class="stk-box">
+      <div class="stk-h">1次アクター（直接操作）</div>
+      ・エンドユーザー（旅行者・留学生・接客スタッフ・出張ビジネス）<br>
+      ・プロトタイプテスター（S4〜S5、5〜10 名）<br>
+      ・開発者（NGUYEN MINH TRI）
+    </div>
+    <div class="stk-box">
+      <div class="stk-h">2次アクター（間接関与）</div>
+      ・クラウド AI プロバイダ（OpenAI / DeepL / Google Vision 等）<br>
+      ・ハードウェアサプライヤ（Waveshare / Brilliant / Vuzix 等）<br>
+      ・AI agents（Claude / Gemini — 設計・コード・テスト補助）<br>
+      ・量産パートナー（Phase 3 以降）
+    </div>
+  </div>
+  <table style="margin-top:4px">
+    <thead><tr><th style="width:24%">役割</th><th style="width:28%">担当者</th><th>主な責務</th></tr></thead>
+    <tbody>
+      <tr><td>Product Lead / Founder</td><td>NGUYEN MINH TRI</td><td>要件・ロードマップ・全スプリントの意思決定</td></tr>
+      <tr><td>Firmware Engineer</td><td>NGUYEN MINH TRI（solo）</td><td>ESP32-S3・BLE・Display・電源管理</td></tr>
+      <tr><td>Mobile Engineer</td><td>NGUYEN MINH TRI（solo）</td><td>Flutter / React Native アプリ（ゲートウェイ）</td></tr>
+      <tr><td>Backend / AI Engineer</td><td>NGUYEN MINH TRI（solo）</td><td>WebSocket・STT/翻訳/OCR・ログ基盤</td></tr>
+      <tr><td>AI Agents（補助）</td><td>Claude / Gemini 等</td><td>仕様生成・コードスケルトン・テストケース・ログ分析</td></tr>
+      <tr><td>パイロットテスター</td><td>募集予定（S4〜S5）</td><td>視認性・遅延・装着感・フィードバック</td></tr>
+    </tbody>
+  </table>
+
+  <!-- Review -->
+  <div class="review-box">
+    <div class="sec-head" style="margin-top:0">■ レビュー・承認欄</div>
+    <div class="review-grid">
+      <div class="review-cell">
+        <div class="review-label">作成者</div>
+        氏名：NGUYEN MINH TRI<br>
+        日付：2026-05-12<br>
+        署名：＿＿＿＿＿＿＿＿
+      </div>
+      <div class="review-cell">
+        <div class="review-label">レビュー者</div>
+        氏名：＿＿＿＿＿＿<br>
+        日付：＿＿＿＿＿＿<br>
+        署名：＿＿＿＿＿＿＿＿
+      </div>
+      <div class="review-cell">
+        <div class="review-label">承認者</div>
+        氏名：＿＿＿＿＿＿<br>
+        日付：＿＿＿＿＿＿<br>
+        署名：＿＿＿＿＿＿＿＿
+      </div>
+    </div>
+    <div style="margin-top:6px; font-size:7px; color:#555;">
+      ※ 本ドキュメントは承認後に基本設計フェーズへ移行する。仕様変更が生じた場合は改訂履歴を更新の上、承認を再取得すること。次工程の成果物：基本設計書（DOC-ID: BD-LGA-001 予定）。
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span>DOC-ID: REQ-LGA-001　LingoGlass AR 要件定義書</span><span>- 7 -</span>
+  </div>
+</div>
+
+</body>
+</html>

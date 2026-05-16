@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>DB 設計書 / LingoGlass AR</title>
+<style>
+  @page { size: A4; margin: 14mm 12mm 18mm 12mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Yu Gothic", "Meiryo", "Hiragino Kaku Gothic Pro", sans-serif;
+         font-size: 8.5px; color: #000; background: #fff; }
+
+  .page {
+    width: 210mm; min-height: 297mm; padding: 12mm 10mm 16mm 10mm;
+    page-break-after: always; break-after: page;
+    position: relative; overflow: hidden;
+  }
+  .page:last-of-type { page-break-after: auto; break-after: auto; }
+
+  .page-header {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    border-bottom: 2px solid #000; padding-bottom: 4px; margin-bottom: 8px;
+  }
+  .page-header .doc-title { font-size: 13px; font-weight: bold; }
+  .page-header .header-right { font-size: 7.5px; text-align: right; line-height: 1.6; }
+  .page-footer {
+    position: absolute; bottom: 6mm; left: 12mm; right: 12mm;
+    border-top: 1px solid #999; padding-top: 3px;
+    display: flex; justify-content: space-between; font-size: 7px; color: #555;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+
+  .sec-head {
+    font-size: 10px; font-weight: bold; padding: 4px 8px;
+    border-left: 4px solid #000; background: #f0f0f0;
+    margin: 8px 0 5px 0;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    page-break-after: avoid; break-after: avoid;
+  }
+  .sub-head {
+    font-size: 8.5px; font-weight: bold; border-left: 3px solid #555;
+    padding-left: 6px; margin: 6px 0 3px 0;
+    page-break-after: avoid; break-after: avoid;
+  }
+
+  table { border-collapse: collapse; width: 100%; margin-bottom: 6px; }
+  th, td { border: 1px solid #888; padding: 2.5px 5px; vertical-align: top; line-height: 1.45; font-size: 7.5px; }
+  thead th {
+    background: #e8e8e8; font-weight: bold; text-align: center;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  tr { page-break-inside: avoid !important; break-inside: avoid !important; }
+  table { page-break-inside: auto; }
+  thead { display: table-header-group; }
+
+  .tbl-label { background: #f0f0f0; font-weight: bold;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .center { text-align: center; }
+  .right  { text-align: right; }
+  .mono { font-family: "Consolas", "Menlo", "Courier New", monospace; font-size: 7.5px; }
+
+  .pk { background: #fff4d6; font-weight: bold;
+        -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .fk { background: #e8f0ff;
+        -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .uq { background: #e8f5e8;
+        -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  /* Cover */
+  .cover-title { font-size: 26px; font-weight: bold; text-align: center; margin: 26mm 0 5mm 0; letter-spacing: 4px; }
+  .cover-sub   { font-size: 14px; text-align: center; margin-bottom: 14mm; color: #333; }
+  .cover-meta  { width: 130mm; margin: 0 auto; }
+  .cover-meta table td { border: none; padding: 3px 10px; font-size: 9px; }
+
+  .toc-item { display: flex; justify-content: space-between; padding: 2px 0;
+              border-bottom: 1px dotted #ccc; font-size: 8.5px; }
+
+  /* ER diagram */
+  .er-canvas { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px;
+               page-break-inside: avoid; break-inside: avoid; }
+  .er-box { border: 1.5px solid #000; padding: 0; font-size: 7px; background: #fff;
+            page-break-inside: avoid; break-inside: avoid; }
+  .er-title { background: #333; color: #fff; padding: 3px 6px; font-weight: bold; text-align: center; font-size: 8px;
+              -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .er-type { background: #ccc; padding: 1px 5px; font-size: 6.5px; text-align: center;
+              -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .er-cols { padding: 3px 6px; }
+  .er-cols div { padding: 1px 0; border-bottom: 1px dotted #ccc; }
+  .er-cols div:last-child { border-bottom: none; }
+  .er-rels { font-size: 6.5px; padding: 4px 6px; background: #fafafa; border-top: 1px solid #ccc; }
+
+  /* Code */
+  pre.code { font-family: "Consolas", "Menlo", "Courier New", monospace; font-size: 7.3px;
+             border: 1px solid #ccc; background: #fafafa; padding: 6px 8px; line-height: 1.45;
+             page-break-inside: avoid; break-inside: avoid; white-space: pre; overflow: hidden; }
+
+  /* Review */
+  .review-box { border: 1.5px solid #000; padding: 8px; margin-top: 8px;
+                page-break-inside: avoid; break-inside: avoid; }
+  .review-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-top: 4px; }
+  .review-cell { border: 1px solid #888; padding: 5px; font-size: 7.5px; line-height: 1.8; }
+  .review-label { font-size: 7.5px; font-weight: bold; border-bottom: 1px solid #ccc;
+                  padding-bottom: 2px; margin-bottom: 3px; }
+
+  p { margin-bottom: 3px; line-height: 1.55; }
+  ul { margin: 2px 0 4px 14px; }
+  li { line-height: 1.65; font-size: 7.5px; }
+
+  pre.code, .er-box, .review-box { page-break-inside: avoid; break-inside: avoid; }
+  .sec-head, .sub-head { page-break-after: avoid; break-after: avoid; }
+</style>
+</head>
+<body>
+
+<!-- ========== PAGE 1: COVER ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">DB 設計書 / LingoGlass AR</div>
+    <div class="header-right">
+      DOC-ID: DB-LGA-001　Rev 1.0　2026-05-12<br>
+      作成者: NGUYEN MINH TRI
+    </div>
+  </div>
+
+  <div class="cover-title">D B 設 計 書</div>
+  <div class="cover-sub">LingoGlass AR — ER 図 + テーブル定義書 + DDL + Index 戦略</div>
+
+  <div class="cover-meta">
+    <table>
+      <tr><td class="tbl-label">プロジェクト名</td><td>LingoGlass AR MVP</td></tr>
+      <tr><td class="tbl-label">ドキュメント ID</td><td>DB-LGA-001</td></tr>
+      <tr><td class="tbl-label">バージョン</td><td>Rev 1.0（S0実行承認版）</td></tr>
+      <tr><td class="tbl-label">作成日</td><td>2026-05-12</td></tr>
+      <tr><td class="tbl-label">対象 DBMS</td><td>PostgreSQL 16（東京リージョン nrt / Fly Postgres）</td></tr>
+      <tr><td class="tbl-label">ORM</td><td>Drizzle ORM 0.30+（TypeScript）</td></tr>
+      <tr><td class="tbl-label">マイグレーション</td><td><span class="mono">drizzle-kit migrate</span> ／ versioned SQL（services/api/db/migrations/）</td></tr>
+      <tr><td class="tbl-label">前提ドキュメント</td><td>REQ-LGA-001 Rev 1.0 ／ BD-LGA-001 §7 ／ DD-LGA-001 §3</td></tr>
+      <tr><td class="tbl-label">テーブル総数</td><td>7（マスタ 2 + トランザクション 5）</td></tr>
+    </table>
+  </div>
+
+  <div style="margin-top: 10mm;">
+    <div class="sec-head">■ 改訂履歴</div>
+    <table>
+      <thead><tr><th style="width:10%">Rev</th><th style="width:18%">日付</th><th style="width:22%">担当者</th><th>変更内容</th></tr></thead>
+      <tbody>
+        <tr><td class="center">0.1</td><td class="center">2026-05-12</td><td>NGUYEN MINH TRI</td><td>初版作成。BD §7 を入力に DDL・index・制約・パーティション戦略を詳細化。</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div style="margin-top: 8mm;">
+    <div class="sec-head">■ 目次</div>
+    <div class="toc-item"><span>§1　設計方針・命名規則・型ポリシー</span><span>p.2</span></div>
+    <div class="toc-item"><span>§2　全体 ER 図</span><span>p.2</span></div>
+    <div class="toc-item"><span>§3　テーブル一覧 + リテンションポリシー</span><span>p.2</span></div>
+    <div class="toc-item"><span>§4.1　テーブル定義書 — devices / testers（マスタ）</span><span>p.3</span></div>
+    <div class="toc-item"><span>§4.2　テーブル定義書 — sessions / session_events</span><span>p.4</span></div>
+    <div class="toc-item"><span>§4.3　テーブル定義書 — ocr_requests / error_logs / feedback</span><span>p.5</span></div>
+    <div class="toc-item"><span>§5　コード一覧（enum）+ CHECK 制約</span><span>p.6</span></div>
+    <div class="toc-item"><span>§6　インデックス設計</span><span>p.6</span></div>
+    <div class="toc-item"><span>§7　DDL サンプル（PostgreSQL）</span><span>p.6</span></div>
+    <div class="toc-item"><span>§8　バックアップ・アーカイブ・パーティション戦略</span><span>p.6</span></div>
+    <div class="toc-item"><span>　　　レビュー・承認欄</span><span>p.6</span></div>
+  </div>
+
+  <div class="page-footer">
+    <span>DOC-ID: DB-LGA-001　LingoGlass AR DB 設計書</span><span>- 1 -</span>
+  </div>
+</div>
+
+
+<!-- ========== PAGE 2: §1 + §2 ER + §3 ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">DB 設計書 / LingoGlass AR</div>
+    <div class="header-right">DOC-ID: DB-LGA-001　Rev 1.0　2026-05-12</div>
+  </div>
+
+  <div class="sec-head">■ §1　設計方針・命名規則・型ポリシー</div>
+  <table>
+    <tr><td class="tbl-label" style="width:20%">命名規則</td><td>
+      ・テーブル名：snake_case + <strong>複数形</strong>（例: <span class="mono">sessions</span>）<br>
+      ・主キー：<span class="mono">id</span>（UUID v4）<br>
+      ・外部キー：<span class="mono">[参照先単数形]_id</span>（例: <span class="mono">session_id</span>）<br>
+      ・タイムスタンプ：<span class="mono">created_at</span> / <span class="mono">updated_at</span>（TIMESTAMPTZ）必須<br>
+      ・フラグ：<span class="mono">is_</span> prefix（例: <span class="mono">is_active</span>）<br>
+      ・ステータス：<span class="mono">VARCHAR</span> + CHECK 制約（コード一覧 §5 と一致）<br>
+      ・ソフト削除は採用しない（プライバシー要件 NFR-08 のため物理削除）
+    </td></tr>
+    <tr><td class="tbl-label">型ポリシー</td><td>
+      ・ID：<span class="mono">UUID</span>（<span class="mono">uuid_generate_v7()</span> 推奨、移行用に <span class="mono">gen_random_uuid()</span> でも可）<br>
+      ・タイムスタンプ：<span class="mono">TIMESTAMPTZ</span>（UTC 保存、表示時 JST 変換）<br>
+      ・短いコード値：<span class="mono">VARCHAR(20)</span> + CHECK<br>
+      ・長いテキスト：<span class="mono">TEXT</span>（nullable）<br>
+      ・JSON：<span class="mono">JSONB</span>（インデックス可能）<br>
+      ・ハッシュ：<span class="mono">CHAR(64)</span>（SHA-256 hex）<br>
+      ・言語コード：<span class="mono">VARCHAR(5)</span>（BCP 47: ja / en / vi / ko / zh-CN）
+    </td></tr>
+    <tr><td class="tbl-label">トランザクション境界</td><td>原則 1 リクエスト 1 トランザクション。WSS セッションは長時間のため <strong>イベント単位</strong> で commit。<span class="mono">session_events</span> はバルク insert で性能維持</td></tr>
+    <tr><td class="tbl-label">マルチテナント</td><td>MVP では単一プロジェクト。将来 B2B 対応時に <span class="mono">org_id</span> 列追加 + RLS を導入（Rev 2.x で計画）</td></tr>
+    <tr><td class="tbl-label">プライバシー設計</td><td>
+      ・<span class="mono">sessions.retain_text=false</span> なら <span class="mono">session_events.payload_text</span> は NULL のまま<br>
+      ・<span class="mono">ocr_requests</span> は画像本体を保存せず <strong>SHA-256 ハッシュのみ</strong><br>
+      ・テスター匿名化：パイロット終了 + 90 日で <span class="mono">testers.nickname</span> を <span class="mono">'anon-{uuid8}'</span> に更新
+    </td></tr>
+  </table>
+
+  <div class="sec-head">■ §2　全体 ER 図</div>
+  <div class="er-canvas">
+    <div class="er-box">
+      <div class="er-title">devices</div><div class="er-type">マスタ</div>
+      <div class="er-cols">
+        <div class="pk">🔑 id (UUID) PK</div>
+        <div>device_type VARCHAR(30)</div>
+        <div>firmware_version VARCHAR(20)</div>
+        <div class="uq">ble_mac VARCHAR(17) UQ</div>
+        <div>is_active BOOL</div>
+        <div>last_seen_at TIMESTAMPTZ</div>
+        <div>created_at / updated_at</div>
+      </div>
+      <div class="er-rels">1 : N → sessions, ocr_requests, error_logs</div>
+    </div>
+
+    <div class="er-box">
+      <div class="er-title">testers</div><div class="er-type">マスタ</div>
+      <div class="er-cols">
+        <div class="pk">🔑 id (UUID) PK</div>
+        <div>nickname VARCHAR(50)</div>
+        <div>segment VARCHAR(20)</div>
+        <div>ui_language VARCHAR(5)</div>
+        <div>recruited_at DATE</div>
+        <div>anonymized_at TIMESTAMPTZ</div>
+        <div>created_at / updated_at</div>
+      </div>
+      <div class="er-rels">1 : N → sessions, feedback</div>
+    </div>
+
+    <div class="er-box">
+      <div class="er-title">sessions</div><div class="er-type">トランザクション</div>
+      <div class="er-cols">
+        <div class="pk">🔑 id (UUID) PK</div>
+        <div class="fk">device_id (FK)</div>
+        <div class="fk">tester_id (FK, NULL 可)</div>
+        <div>source_lang VARCHAR(5)</div>
+        <div>target_lang VARCHAR(5)</div>
+        <div>status VARCHAR(20)</div>
+        <div>retain_text BOOL DEFAULT false</div>
+        <div>started_at / ended_at</div>
+        <div>created_at / updated_at</div>
+      </div>
+      <div class="er-rels">1 : N → session_events, feedback</div>
+    </div>
+
+    <div class="er-box">
+      <div class="er-title">session_events</div><div class="er-type">トランザクション</div>
+      <div class="er-cols">
+        <div class="pk">🔑 id (UUID) PK</div>
+        <div class="fk">session_id (FK CASCADE)</div>
+        <div>seq_no INT</div>
+        <div>event_type VARCHAR(30)</div>
+        <div>duration_ms INT</div>
+        <div>payload_text TEXT (nullable)</div>
+        <div>metadata JSONB</div>
+        <div>created_at TIMESTAMPTZ</div>
+      </div>
+      <div class="er-rels">N : 1 → sessions（ON DELETE CASCADE）</div>
+    </div>
+
+    <div class="er-box">
+      <div class="er-title">ocr_requests</div><div class="er-type">トランザクション</div>
+      <div class="er-cols">
+        <div class="pk">🔑 id (UUID) PK</div>
+        <div class="fk">device_id (FK)</div>
+        <div>image_hash CHAR(64)</div>
+        <div>source_lang / target_lang</div>
+        <div>ocr_text_length INT</div>
+        <div>status VARCHAR(20)</div>
+        <div>duration_ms INT</div>
+        <div>created_at TIMESTAMPTZ</div>
+      </div>
+      <div class="er-rels">N : 1 → devices</div>
+    </div>
+
+    <div class="er-box">
+      <div class="er-title">error_logs</div><div class="er-type">トランザクション</div>
+      <div class="er-cols">
+        <div class="pk">🔑 id (UUID) PK</div>
+        <div class="fk">device_id (FK, nullable)</div>
+        <div class="fk">session_id (FK SET NULL)</div>
+        <div>severity VARCHAR(10)</div>
+        <div>error_code VARCHAR(30)</div>
+        <div>message TEXT</div>
+        <div>context JSONB</div>
+        <div>created_at TIMESTAMPTZ</div>
+      </div>
+      <div class="er-rels">N : 1 → devices / sessions</div>
+    </div>
+
+    <div class="er-box">
+      <div class="er-title">feedback</div><div class="er-type">トランザクション</div>
+      <div class="er-cols">
+        <div class="pk">🔑 id (UUID) PK</div>
+        <div class="fk">tester_id (FK)</div>
+        <div class="fk">session_id (FK, nullable)</div>
+        <div>would_recommend VARCHAR(10)</div>
+        <div>readability_score INT (1-5)</div>
+        <div>comment TEXT</div>
+        <div>created_at TIMESTAMPTZ</div>
+      </div>
+      <div class="er-rels">N : 1 → testers / sessions</div>
+    </div>
+
+    <div class="er-box" style="border-style: dashed;">
+      <div class="er-title" style="background:#888;">参考：Redis（任意）</div><div class="er-type">cache</div>
+      <div class="er-cols">
+        <div class="mono">session:{id}:state</div>
+        <div class="mono">device:{id}:heartbeat</div>
+        <div class="mono">quota:{device_id}:{date}</div>
+      </div>
+      <div class="er-rels">TTL 24h / 7d。MVP では PG のみで代替可</div>
+    </div>
+  </div>
+  <div style="font-size:7px; color:#555;">
+    凡例：<span class="pk" style="padding:1px 4px;">🔑 PK</span>　<span class="fk" style="padding:1px 4px;">FK</span>　<span class="uq" style="padding:1px 4px;">UQ</span>　／　破線 = 任意（Redis 採用は M3 以降で判断）
+  </div>
+
+  <div class="sec-head">■ §3　テーブル一覧 + リテンションポリシー</div>
+  <table>
+    <thead><tr><th style="width:6%">No</th><th style="width:18%">テーブル名</th><th style="width:12%">区分</th><th style="width:24%">主用途</th><th>保持期間 / アーカイブ方針</th></tr></thead>
+    <tbody>
+      <tr><td class="center">1</td><td class="mono">devices</td><td class="center">マスタ</td><td>ペアリング済みグラス</td><td>無期限。is_active=false で論理停止、物理削除なし</td></tr>
+      <tr><td class="center">2</td><td class="mono">testers</td><td class="center">マスタ</td><td>パイロット参加者</td><td>パイロット終了 + 90 日で匿名化（nickname を上書き）</td></tr>
+      <tr><td class="center">3</td><td class="mono">sessions</td><td class="center">トランザクション</td><td>会話セッション</td><td>90 日。日次 dump → B2 ストレージ。それ以降 cron で物理削除</td></tr>
+      <tr><td class="center">4</td><td class="mono">session_events</td><td class="center">トランザクション</td><td>各ステップ遅延ログ</td><td>30 日。月次で集計 → <span class="mono">latency_summary_{month}</span> マテビューに集約</td></tr>
+      <tr><td class="center">5</td><td class="mono">ocr_requests</td><td class="center">トランザクション</td><td>OCR リクエスト履歴</td><td>30 日。画像本体は保存しない（hash のみ）</td></tr>
+      <tr><td class="center">6</td><td class="mono">error_logs</td><td class="center">トランザクション</td><td>エラー / 警告ログ</td><td>30 日。severity=critical のみ 1 年保持</td></tr>
+      <tr><td class="center">7</td><td class="mono">feedback</td><td class="center">トランザクション</td><td>パイロットフィードバック</td><td>無期限（匿名化後 Go/No-Go レポートに使用）</td></tr>
+    </tbody>
+  </table>
+
+  <div class="page-footer">
+    <span>DOC-ID: DB-LGA-001　LingoGlass AR DB 設計書</span><span>- 2 -</span>
+  </div>
+</div>
+
+
+<!-- ========== PAGE 3: §4.1 devices + testers ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">DB 設計書 / LingoGlass AR</div>
+    <div class="header-right">DOC-ID: DB-LGA-001　Rev 1.0　2026-05-12</div>
+  </div>
+
+  <div class="sec-head">■ §4.1　テーブル定義書 — マスタ</div>
+
+  <div class="sub-head">4.1.1　<span class="mono">devices</span>（ペアリング済みグラス）</div>
+  <table>
+    <thead>
+      <tr><th style="width:6%">No</th><th style="width:18%">列名</th><th style="width:18%">型</th><th style="width:6%">NULL</th><th style="width:18%">デフォルト</th><th style="width:8%">区分</th><th>説明 / 制約</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="center">1</td><td class="mono">id</td><td class="mono">UUID</td><td class="center">NO</td><td class="mono">gen_random_uuid()</td><td class="pk center">PK</td><td>主キー。クライアントは <span class="mono">X-Device-Id</span> ヘッダで送信</td></tr>
+      <tr><td class="center">2</td><td class="mono">device_type</td><td class="mono">VARCHAR(30)</td><td class="center">NO</td><td class="mono">'prototype_v1'</td><td class="center">—</td><td>CHECK IN ('prototype_v1', 'prototype_v2')</td></tr>
+      <tr><td class="center">3</td><td class="mono">firmware_version</td><td class="mono">VARCHAR(20)</td><td class="center">NO</td><td class="mono">'0.0.0'</td><td class="center">—</td><td>セマンティックバージョニング（例: 0.1.3）</td></tr>
+      <tr><td class="center">4</td><td class="mono">ble_mac</td><td class="mono">VARCHAR(17)</td><td class="center">NO</td><td>—</td><td class="uq center">UQ</td><td>形式: <span class="mono">AA:BB:CC:DD:EE:FF</span>。UNIQUE INDEX</td></tr>
+      <tr><td class="center">5</td><td class="mono">is_active</td><td class="mono">BOOL</td><td class="center">NO</td><td class="mono">true</td><td class="center">—</td><td>false でペアリング解除（FR-APP-09）</td></tr>
+      <tr><td class="center">6</td><td class="mono">last_seen_at</td><td class="mono">TIMESTAMPTZ</td><td class="center">YES</td><td>NULL</td><td class="center">—</td><td>最後の WSS / BLE heartbeat</td></tr>
+      <tr><td class="center">7</td><td class="mono">created_at</td><td class="mono">TIMESTAMPTZ</td><td class="center">NO</td><td class="mono">NOW()</td><td class="center">—</td><td>レコード作成日時</td></tr>
+      <tr><td class="center">8</td><td class="mono">updated_at</td><td class="mono">TIMESTAMPTZ</td><td class="center">NO</td><td class="mono">NOW()</td><td class="center">—</td><td>更新トリガで自動更新</td></tr>
+    </tbody>
+  </table>
+  <div style="font-size:7px;">
+    インデックス：<span class="mono">PRIMARY KEY (id)</span> ／ <span class="mono">UNIQUE INDEX devices_ble_mac_uq (ble_mac)</span> ／ <span class="mono">INDEX devices_last_seen_idx (last_seen_at DESC) WHERE is_active=true</span>（部分インデックス）
+  </div>
+
+  <div class="sub-head" style="margin-top:8px;">4.1.2　<span class="mono">testers</span>（パイロット参加者）</div>
+  <table>
+    <thead>
+      <tr><th style="width:6%">No</th><th style="width:18%">列名</th><th style="width:18%">型</th><th style="width:6%">NULL</th><th style="width:18%">デフォルト</th><th style="width:8%">区分</th><th>説明 / 制約</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="center">1</td><td class="mono">id</td><td class="mono">UUID</td><td class="center">NO</td><td class="mono">gen_random_uuid()</td><td class="pk center">PK</td><td>主キー</td></tr>
+      <tr><td class="center">2</td><td class="mono">nickname</td><td class="mono">VARCHAR(50)</td><td class="center">NO</td><td>—</td><td class="center">—</td><td>表示用ニックネーム。匿名化後は <span class="mono">anon-{uuid8}</span> に上書き</td></tr>
+      <tr><td class="center">3</td><td class="mono">segment</td><td class="mono">VARCHAR(20)</td><td class="center">NO</td><td>—</td><td class="center">—</td><td>CHECK IN ('tourist','student','staff','business')</td></tr>
+      <tr><td class="center">4</td><td class="mono">ui_language</td><td class="mono">VARCHAR(5)</td><td class="center">NO</td><td class="mono">'ja'</td><td class="center">—</td><td>CHECK IN ('ja','en','vi')</td></tr>
+      <tr><td class="center">5</td><td class="mono">recruited_at</td><td class="mono">DATE</td><td class="center">NO</td><td class="mono">CURRENT_DATE</td><td class="center">—</td><td>パイロット参加日</td></tr>
+      <tr><td class="center">6</td><td class="mono">anonymized_at</td><td class="mono">TIMESTAMPTZ</td><td class="center">YES</td><td>NULL</td><td class="center">—</td><td>匿名化済日時。NULL = まだ匿名化していない</td></tr>
+      <tr><td class="center">7</td><td class="mono">created_at</td><td class="mono">TIMESTAMPTZ</td><td class="center">NO</td><td class="mono">NOW()</td><td class="center">—</td><td>—</td></tr>
+      <tr><td class="center">8</td><td class="mono">updated_at</td><td class="mono">TIMESTAMPTZ</td><td class="center">NO</td><td class="mono">NOW()</td><td class="center">—</td><td>—</td></tr>
+    </tbody>
+  </table>
+  <div style="font-size:7px;">
+    インデックス：<span class="mono">PRIMARY KEY (id)</span> ／ <span class="mono">INDEX testers_segment_idx (segment)</span>（パイロットレポート集計用）
+  </div>
+
+  <div class="sub-head" style="margin-top:8px;">補足：マスタテーブル運用ルール</div>
+  <ul>
+    <li><strong>更新頻度</strong>：devices は週次（新規ペアリング時）、testers はパイロット期間のみ</li>
+    <li><strong>キャッシュ可否</strong>：両テーブルとも 1 時間 Redis にキャッシュ可（メモリ消費 1MB 未満）</li>
+    <li><strong>削除ポリシー</strong>：物理削除しない。devices.is_active / testers.anonymized_at で論理管理</li>
+    <li><strong>監査</strong>：UPDATE はトリガで <span class="mono">updated_at</span> 自動更新。重要な状態変化は <span class="mono">error_logs</span> に severity=info で記録</li>
+  </ul>
+
+  <div class="page-footer">
+    <span>DOC-ID: DB-LGA-001　LingoGlass AR DB 設計書</span><span>- 3 -</span>
+  </div>
+</div>
+
+
+<!-- ========== PAGE 4: §4.2 sessions + session_events ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">DB 設計書 / LingoGlass AR</div>
+    <div class="header-right">DOC-ID: DB-LGA-001　Rev 1.0　2026-05-12</div>
+  </div>
+
+  <div class="sec-head">■ §4.2　テーブル定義書 — トランザクション（コア）</div>
+
+  <div class="sub-head">4.2.1　<span class="mono">sessions</span>（会話セッション）</div>
+  <table>
+    <thead>
+      <tr><th style="width:6%">No</th><th style="width:18%">列名</th><th style="width:18%">型</th><th style="width:6%">NULL</th><th style="width:18%">デフォルト</th><th style="width:8%">区分</th><th>説明 / 制約</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="center">1</td><td class="mono">id</td><td class="mono">UUID</td><td class="center">NO</td><td class="mono">gen_random_uuid()</td><td class="pk center">PK</td><td>主キー。WSS で開始時に発行</td></tr>
+      <tr><td class="center">2</td><td class="mono">device_id</td><td class="mono">UUID</td><td class="center">NO</td><td>—</td><td class="fk center">FK</td><td>REFERENCES devices(id) ON DELETE RESTRICT</td></tr>
+      <tr><td class="center">3</td><td class="mono">tester_id</td><td class="mono">UUID</td><td class="center">YES</td><td>NULL</td><td class="fk center">FK</td><td>REFERENCES testers(id) ON DELETE SET NULL（パイロット時のみ）</td></tr>
+      <tr><td class="center">4</td><td class="mono">source_lang</td><td class="mono">VARCHAR(5)</td><td class="center">NO</td><td>—</td><td class="center">—</td><td>CHECK IN ('ja','en','vi','ko','zh-CN')</td></tr>
+      <tr><td class="center">5</td><td class="mono">target_lang</td><td class="mono">VARCHAR(5)</td><td class="center">NO</td><td>—</td><td class="center">—</td><td>同上。source ≠ target を CHECK で強制</td></tr>
+      <tr><td class="center">6</td><td class="mono">status</td><td class="mono">VARCHAR(20)</td><td class="center">NO</td><td class="mono">'active'</td><td class="center">—</td><td>CHECK IN ('active','ended','error')</td></tr>
+      <tr><td class="center">7</td><td class="mono">retain_text</td><td class="mono">BOOL</td><td class="center">NO</td><td class="mono">false</td><td class="center">—</td><td>false なら session_events.payload_text を保存しない（NFR-08）</td></tr>
+      <tr><td class="center">8</td><td class="mono">started_at</td><td class="mono">TIMESTAMPTZ</td><td class="center">NO</td><td class="mono">NOW()</td><td class="center">—</td><td>WS 接続成立時刻</td></tr>
+      <tr><td class="center">9</td><td class="mono">ended_at</td><td class="mono">TIMESTAMPTZ</td><td class="center">YES</td><td>NULL</td><td class="center">—</td><td>正常終了 or タイムアウト時刻</td></tr>
+      <tr><td class="center">10</td><td class="mono">created_at</td><td class="mono">TIMESTAMPTZ</td><td class="center">NO</td><td class="mono">NOW()</td><td class="center">—</td><td>—</td></tr>
+      <tr><td class="center">11</td><td class="mono">updated_at</td><td class="mono">TIMESTAMPTZ</td><td class="center">NO</td><td class="mono">NOW()</td><td class="center">—</td><td>—</td></tr>
+    </tbody>
+  </table>
+  <div style="font-size:7px;">
+    インデックス：<span class="mono">PRIMARY KEY (id)</span> ／ <span class="mono">INDEX sessions_device_started_idx (device_id, started_at DESC)</span>（履歴照会）／ <span class="mono">INDEX sessions_tester_idx (tester_id)</span>（パイロット集計）／ <span class="mono">INDEX sessions_status_idx (status) WHERE status='active'</span>（部分）
+  </div>
+
+  <div class="sub-head" style="margin-top:8px;">4.2.2　<span class="mono">session_events</span>（各ステップの遅延ログ）</div>
+  <table>
+    <thead>
+      <tr><th style="width:6%">No</th><th style="width:18%">列名</th><th style="width:18%">型</th><th style="width:6%">NULL</th><th style="width:18%">デフォルト</th><th style="width:8%">区分</th><th>説明 / 制約</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="center">1</td><td class="mono">id</td><td class="mono">UUID</td><td class="center">NO</td><td class="mono">gen_random_uuid()</td><td class="pk center">PK</td><td>—</td></tr>
+      <tr><td class="center">2</td><td class="mono">session_id</td><td class="mono">UUID</td><td class="center">NO</td><td>—</td><td class="fk center">FK</td><td>REFERENCES sessions(id) <strong>ON DELETE CASCADE</strong></td></tr>
+      <tr><td class="center">3</td><td class="mono">seq_no</td><td class="mono">INT</td><td class="center">NO</td><td>—</td><td class="center">—</td><td>セッション内の連番（1 から）</td></tr>
+      <tr><td class="center">4</td><td class="mono">event_type</td><td class="mono">VARCHAR(30)</td><td class="center">NO</td><td>—</td><td class="center">—</td><td>CHECK IN ('vad_start','vad_end','stt_done','translate_done','ble_sent','displayed','error')</td></tr>
+      <tr><td class="center">5</td><td class="mono">duration_ms</td><td class="mono">INT</td><td class="center">YES</td><td>NULL</td><td class="center">—</td><td>当該ステップの所要ms。最初の event は NULL 可</td></tr>
+      <tr><td class="center">6</td><td class="mono">payload_text</td><td class="mono">TEXT</td><td class="center">YES</td><td>NULL</td><td class="center">—</td><td>翻訳テキスト等。<span class="mono">sessions.retain_text=true</span> 時のみ保存</td></tr>
+      <tr><td class="center">7</td><td class="mono">metadata</td><td class="mono">JSONB</td><td class="center">YES</td><td class="mono">'{}'</td><td class="center">—</td><td>provider 名・MTU・サンプリングレート等</td></tr>
+      <tr><td class="center">8</td><td class="mono">created_at</td><td class="mono">TIMESTAMPTZ</td><td class="center">NO</td><td class="mono">NOW()</td><td class="center">—</td><td>—</td></tr>
+    </tbody>
+  </table>
+  <div style="font-size:7px;">
+    インデックス：<span class="mono">PRIMARY KEY (id)</span> ／ <span class="mono">UNIQUE INDEX se_session_seq_uq (session_id, seq_no)</span>（同一連番の重複防止）／ <span class="mono">INDEX se_event_type_idx (event_type)</span> ／ <span class="mono">INDEX se_session_created_idx (session_id, created_at)</span>（p50/p95 集計用）
+  </div>
+  <div style="font-size:7px;">
+    <strong>パフォーマンス考慮</strong>：session_events は最も書込が多い（1 セッション × 約 5 イベント × 10 発話 = 50 行）。<span class="mono">COPY</span> または <span class="mono">INSERT ... VALUES (..),(..)</span> のバルク挿入で 1 トランザクション化。月次で <span class="mono">latency_summary_{YYYY-MM}</span> マテビューに集約後、原本は削除可。
+  </div>
+
+  <div class="page-footer">
+    <span>DOC-ID: DB-LGA-001　LingoGlass AR DB 設計書</span><span>- 4 -</span>
+  </div>
+</div>
+
+
+<!-- ========== PAGE 5: §4.3 ocr_requests + error_logs + feedback ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">DB 設計書 / LingoGlass AR</div>
+    <div class="header-right">DOC-ID: DB-LGA-001　Rev 1.0　2026-05-12</div>
+  </div>
+
+  <div class="sec-head">■ §4.3　テーブル定義書 — トランザクション（補助）</div>
+
+  <div class="sub-head">4.3.1　<span class="mono">ocr_requests</span>（OCR リクエスト履歴）</div>
+  <table>
+    <thead>
+      <tr><th style="width:6%">No</th><th style="width:18%">列名</th><th style="width:18%">型</th><th style="width:6%">NULL</th><th style="width:18%">デフォルト</th><th style="width:8%">区分</th><th>説明 / 制約</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="center">1</td><td class="mono">id</td><td class="mono">UUID</td><td class="center">NO</td><td class="mono">gen_random_uuid()</td><td class="pk center">PK</td><td>—</td></tr>
+      <tr><td class="center">2</td><td class="mono">device_id</td><td class="mono">UUID</td><td class="center">NO</td><td>—</td><td class="fk center">FK</td><td>REFERENCES devices(id) ON DELETE RESTRICT</td></tr>
+      <tr><td class="center">3</td><td class="mono">image_hash</td><td class="mono">CHAR(64)</td><td class="center">NO</td><td>—</td><td class="center">—</td><td>SHA-256 hex（画像本体は保存しない）</td></tr>
+      <tr><td class="center">4</td><td class="mono">source_lang</td><td class="mono">VARCHAR(5)</td><td class="center">NO</td><td>—</td><td class="center">—</td><td>OCR 検出言語（'auto' 含む）</td></tr>
+      <tr><td class="center">5</td><td class="mono">target_lang</td><td class="mono">VARCHAR(5)</td><td class="center">NO</td><td>—</td><td class="center">—</td><td>翻訳先言語</td></tr>
+      <tr><td class="center">6</td><td class="mono">ocr_text_length</td><td class="mono">INT</td><td class="center">YES</td><td>NULL</td><td class="center">—</td><td>OCR 結果テキストの文字数（成功時のみ）</td></tr>
+      <tr><td class="center">7</td><td class="mono">status</td><td class="mono">VARCHAR(20)</td><td class="center">NO</td><td class="mono">'pending'</td><td class="center">—</td><td>CHECK IN ('pending','success','failed')</td></tr>
+      <tr><td class="center">8</td><td class="mono">duration_ms</td><td class="mono">INT</td><td class="center">YES</td><td>NULL</td><td class="center">—</td><td>受信〜結果返却の所要 ms</td></tr>
+      <tr><td class="center">9</td><td class="mono">created_at</td><td class="mono">TIMESTAMPTZ</td><td class="center">NO</td><td class="mono">NOW()</td><td class="center">—</td><td>—</td></tr>
+    </tbody>
+  </table>
+  <div style="font-size:7px;">
+    インデックス：<span class="mono">PRIMARY KEY (id)</span> ／ <span class="mono">INDEX ocr_device_created_idx (device_id, created_at DESC)</span> ／ <span class="mono">INDEX ocr_status_idx (status) WHERE status='failed'</span>（部分、運用監視用）
+  </div>
+
+  <div class="sub-head" style="margin-top:8px;">4.3.2　<span class="mono">error_logs</span>（エラー / 警告ログ）</div>
+  <table>
+    <thead>
+      <tr><th style="width:6%">No</th><th style="width:18%">列名</th><th style="width:18%">型</th><th style="width:6%">NULL</th><th style="width:18%">デフォルト</th><th style="width:8%">区分</th><th>説明 / 制約</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="center">1</td><td class="mono">id</td><td class="mono">UUID</td><td class="center">NO</td><td class="mono">gen_random_uuid()</td><td class="pk center">PK</td><td>—</td></tr>
+      <tr><td class="center">2</td><td class="mono">device_id</td><td class="mono">UUID</td><td class="center">YES</td><td>NULL</td><td class="fk center">FK</td><td>REFERENCES devices(id) ON DELETE SET NULL</td></tr>
+      <tr><td class="center">3</td><td class="mono">session_id</td><td class="mono">UUID</td><td class="center">YES</td><td>NULL</td><td class="fk center">FK</td><td>REFERENCES sessions(id) ON DELETE SET NULL</td></tr>
+      <tr><td class="center">4</td><td class="mono">severity</td><td class="mono">VARCHAR(10)</td><td class="center">NO</td><td>—</td><td class="center">—</td><td>CHECK IN ('info','warn','error','critical')</td></tr>
+      <tr><td class="center">5</td><td class="mono">error_code</td><td class="mono">VARCHAR(30)</td><td class="center">NO</td><td>—</td><td class="center">—</td><td>例: <span class="mono">STT_TIMEOUT</span>, <span class="mono">QUOTA_EXCEEDED</span>（DD §5.5）</td></tr>
+      <tr><td class="center">6</td><td class="mono">message</td><td class="mono">TEXT</td><td class="center">NO</td><td>—</td><td class="center">—</td><td>人が読めるメッセージ</td></tr>
+      <tr><td class="center">7</td><td class="mono">context</td><td class="mono">JSONB</td><td class="center">YES</td><td class="mono">'{}'</td><td class="center">—</td><td>request_id / stack trace / provider 等</td></tr>
+      <tr><td class="center">8</td><td class="mono">created_at</td><td class="mono">TIMESTAMPTZ</td><td class="center">NO</td><td class="mono">NOW()</td><td class="center">—</td><td>—</td></tr>
+    </tbody>
+  </table>
+  <div style="font-size:7px;">
+    インデックス：<span class="mono">PRIMARY KEY (id)</span> ／ <span class="mono">INDEX err_severity_created_idx (severity, created_at DESC)</span> ／ <span class="mono">INDEX err_session_idx (session_id) WHERE session_id IS NOT NULL</span> ／ <span class="mono">GIN INDEX err_context_gin ON context</span>（JSONB 検索）
+  </div>
+
+  <div class="sub-head" style="margin-top:8px;">4.3.3　<span class="mono">feedback</span>（パイロットフィードバック）</div>
+  <table>
+    <thead>
+      <tr><th style="width:6%">No</th><th style="width:18%">列名</th><th style="width:18%">型</th><th style="width:6%">NULL</th><th style="width:18%">デフォルト</th><th style="width:8%">区分</th><th>説明 / 制約</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="center">1</td><td class="mono">id</td><td class="mono">UUID</td><td class="center">NO</td><td class="mono">gen_random_uuid()</td><td class="pk center">PK</td><td>—</td></tr>
+      <tr><td class="center">2</td><td class="mono">tester_id</td><td class="mono">UUID</td><td class="center">NO</td><td>—</td><td class="fk center">FK</td><td>REFERENCES testers(id) ON DELETE RESTRICT</td></tr>
+      <tr><td class="center">3</td><td class="mono">session_id</td><td class="mono">UUID</td><td class="center">YES</td><td>NULL</td><td class="fk center">FK</td><td>REFERENCES sessions(id) ON DELETE SET NULL</td></tr>
+      <tr><td class="center">4</td><td class="mono">would_recommend</td><td class="mono">VARCHAR(10)</td><td class="center">NO</td><td>—</td><td class="center">—</td><td>CHECK IN ('yes','no','maybe')。K-08 集計</td></tr>
+      <tr><td class="center">5</td><td class="mono">readability_score</td><td class="mono">SMALLINT</td><td class="center">YES</td><td>NULL</td><td class="center">—</td><td>CHECK (1 ≤ readability_score ≤ 5)</td></tr>
+      <tr><td class="center">6</td><td class="mono">comment</td><td class="mono">TEXT</td><td class="center">YES</td><td>NULL</td><td class="center">—</td><td>自由記述。最大 2000 文字（アプリ側 validation）</td></tr>
+      <tr><td class="center">7</td><td class="mono">created_at</td><td class="mono">TIMESTAMPTZ</td><td class="center">NO</td><td class="mono">NOW()</td><td class="center">—</td><td>—</td></tr>
+    </tbody>
+  </table>
+  <div style="font-size:7px;">
+    インデックス：<span class="mono">PRIMARY KEY (id)</span> ／ <span class="mono">INDEX fb_tester_idx (tester_id)</span> ／ <span class="mono">INDEX fb_created_idx (created_at DESC)</span>
+  </div>
+
+  <div class="page-footer">
+    <span>DOC-ID: DB-LGA-001　LingoGlass AR DB 設計書</span><span>- 5 -</span>
+  </div>
+</div>
+
+
+<!-- ========== PAGE 6: §5-8 + Review ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">DB 設計書 / LingoGlass AR</div>
+    <div class="header-right">DOC-ID: DB-LGA-001　Rev 1.0　2026-05-12</div>
+  </div>
+
+  <div class="sec-head">■ §5　コード一覧（enum）+ CHECK 制約</div>
+  <table>
+    <thead><tr><th style="width:22%">テーブル.列</th><th style="width:24%">値</th><th>意味 / 用途</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">devices.device_type</td><td class="mono">prototype_v1, prototype_v2</td><td>ハードウェア世代</td></tr>
+      <tr><td class="mono">testers.segment</td><td class="mono">tourist, student, staff, business</td><td>REQ §2.2 ヒアリング 4 セグメントと一致</td></tr>
+      <tr><td class="mono">testers.ui_language</td><td class="mono">ja, en, vi</td><td>FR-APP-12 と一致</td></tr>
+      <tr><td class="mono">sessions.status</td><td class="mono">active, ended, error</td><td>進行中 / 正常終了 / 異常終了</td></tr>
+      <tr><td class="mono">sessions.source_lang / target_lang</td><td class="mono">ja, en, vi, ko, zh-CN</td><td>MVP 対応 5 言語。source ≠ target を CHECK</td></tr>
+      <tr><td class="mono">session_events.event_type</td><td class="mono">vad_start, vad_end, stt_done, translate_done, ble_sent, displayed, error</td><td>遅延計測のステップ</td></tr>
+      <tr><td class="mono">ocr_requests.status</td><td class="mono">pending, success, failed</td><td>OCR + 翻訳の処理結果</td></tr>
+      <tr><td class="mono">error_logs.severity</td><td class="mono">info, warn, error, critical</td><td>監視ダッシュボードのフィルタ</td></tr>
+      <tr><td class="mono">feedback.would_recommend</td><td class="mono">yes, no, maybe</td><td>K-08 継続意向</td></tr>
+    </tbody>
+  </table>
+
+  <div class="sec-head">■ §6　インデックス設計サマリー</div>
+  <table>
+    <thead><tr><th style="width:18%">テーブル</th><th style="width:30%">インデックス</th><th style="width:10%">種別</th><th>目的 / 想定クエリ</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">devices</td><td class="mono">devices_ble_mac_uq</td><td>UNIQUE</td><td>BLE MAC の重複登録防止</td></tr>
+      <tr><td class="mono">devices</td><td class="mono">devices_last_seen_idx (partial)</td><td>B-tree</td><td>WHERE is_active=true ORDER BY last_seen_at DESC</td></tr>
+      <tr><td class="mono">sessions</td><td class="mono">sessions_device_started_idx</td><td>B-tree</td><td>SCR-05 履歴一覧 (device 単位、新しい順)</td></tr>
+      <tr><td class="mono">sessions</td><td class="mono">sessions_status_idx (partial)</td><td>B-tree</td><td>active セッション列挙（運用ダッシュボード）</td></tr>
+      <tr><td class="mono">session_events</td><td class="mono">se_session_seq_uq</td><td>UNIQUE</td><td>(session_id, seq_no) で重複防止</td></tr>
+      <tr><td class="mono">session_events</td><td class="mono">se_session_created_idx</td><td>B-tree</td><td>p50/p95 集計（session 内 timeline）</td></tr>
+      <tr><td class="mono">ocr_requests</td><td class="mono">ocr_device_created_idx</td><td>B-tree</td><td>device 別 OCR 履歴</td></tr>
+      <tr><td class="mono">error_logs</td><td class="mono">err_severity_created_idx</td><td>B-tree</td><td>severity 別の最近のエラー</td></tr>
+      <tr><td class="mono">error_logs</td><td class="mono">err_context_gin</td><td>GIN</td><td>JSONB 内のキー検索（request_id 等）</td></tr>
+      <tr><td class="mono">feedback</td><td class="mono">fb_tester_idx</td><td>B-tree</td><td>テスター別フィードバック集計</td></tr>
+    </tbody>
+  </table>
+
+  <div class="sec-head">■ §7　DDL サンプル（PostgreSQL 16）</div>
+  <pre class="code">-- 拡張機能（UUID v7 推奨。なければ random で代替）
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- マスタ：devices
+CREATE TABLE devices (
+  id               UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  device_type      VARCHAR(30)  NOT NULL DEFAULT 'prototype_v1'
+                                CHECK (device_type IN ('prototype_v1','prototype_v2')),
+  firmware_version VARCHAR(20)  NOT NULL DEFAULT '0.0.0',
+  ble_mac          VARCHAR(17)  NOT NULL UNIQUE,
+  is_active        BOOLEAN      NOT NULL DEFAULT true,
+  last_seen_at     TIMESTAMPTZ,
+  created_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  updated_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX devices_last_seen_idx ON devices (last_seen_at DESC) WHERE is_active = true;
+
+-- マスタ：testers（パイロット参加者、匿名化前提）
+CREATE TABLE testers (
+  id            UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  tester_code   VARCHAR(30)  NOT NULL UNIQUE,
+  segment       VARCHAR(20)  NOT NULL CHECK (segment IN ('tourist','student','staff','business')),
+  ui_language   VARCHAR(5)   NOT NULL DEFAULT 'ja' CHECK (ui_language IN ('ja','en','vi')),
+  consent_at    TIMESTAMPTZ  NOT NULL,
+  anonymized_at TIMESTAMPTZ,
+  created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  updated_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX testers_segment_idx ON testers (segment);
+
+-- トランザクション：sessions
+CREATE TABLE sessions (
+  id           UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  device_id    UUID         NOT NULL REFERENCES devices(id) ON DELETE RESTRICT,
+  tester_id    UUID         REFERENCES testers(id) ON DELETE SET NULL,
+  source_lang  VARCHAR(5)   NOT NULL CHECK (source_lang IN ('ja','en','vi','ko','zh-CN')),
+  target_lang  VARCHAR(5)   NOT NULL CHECK (target_lang IN ('ja','en','vi','ko','zh-CN')),
+  status       VARCHAR(20)  NOT NULL DEFAULT 'active'
+                            CHECK (status IN ('active','ended','error')),
+  retain_text  BOOLEAN      NOT NULL DEFAULT false,
+  started_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  ended_at     TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  CONSTRAINT sessions_lang_diff CHECK (source_lang &lt;&gt; target_lang)
+);
+CREATE INDEX sessions_device_started_idx ON sessions (device_id, started_at DESC);
+CREATE INDEX sessions_tester_idx ON sessions (tester_id) WHERE tester_id IS NOT NULL;
+CREATE INDEX sessions_status_idx ON sessions (status) WHERE status = 'active';
+
+-- トランザクション：session_events（最も書込が多い）
+CREATE TABLE session_events (
+  id           UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id   UUID         NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  seq_no       INTEGER      NOT NULL,
+  event_type   VARCHAR(30)  NOT NULL CHECK (event_type IN
+                  ('vad_start','vad_end','stt_done','translate_done','ble_sent','displayed','error')),
+  duration_ms  INTEGER,
+  payload_text TEXT,
+  metadata     JSONB        NOT NULL DEFAULT '{}',
+  created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  UNIQUE (session_id, seq_no)
+);
+CREATE INDEX se_event_type_idx ON session_events (event_type);
+CREATE INDEX se_session_created_idx ON session_events (session_id, created_at);
+
+-- トランザクション：ocr_requests（画像本体は保存しない）
+CREATE TABLE ocr_requests (
+  id              UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  device_id       UUID         NOT NULL REFERENCES devices(id) ON DELETE RESTRICT,
+  image_hash      CHAR(64)     NOT NULL,
+  source_lang     VARCHAR(5)   NOT NULL CHECK (source_lang IN ('auto','ja','en','vi','ko','zh-CN')),
+  target_lang     VARCHAR(5)   NOT NULL CHECK (target_lang IN ('ja','en','vi','ko','zh-CN')),
+  ocr_text_length INTEGER,
+  status          VARCHAR(20)  NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','success','failed')),
+  duration_ms     INTEGER,
+  created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  CONSTRAINT ocr_lang_diff CHECK (source_lang = 'auto' OR source_lang &lt;&gt; target_lang)
+);
+CREATE INDEX ocr_device_created_idx ON ocr_requests (device_id, created_at DESC);
+CREATE INDEX ocr_status_idx ON ocr_requests (status) WHERE status = 'failed';
+
+-- トランザクション：error_logs
+CREATE TABLE error_logs (
+  id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  device_id   UUID         REFERENCES devices(id) ON DELETE SET NULL,
+  session_id  UUID         REFERENCES sessions(id) ON DELETE SET NULL,
+  severity    VARCHAR(20)  NOT NULL CHECK (severity IN ('info','warn','error','critical')),
+  error_code  VARCHAR(50)  NOT NULL,
+  message     TEXT         NOT NULL,
+  context     JSONB        NOT NULL DEFAULT '{}',
+  created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX err_severity_created_idx ON error_logs (severity, created_at DESC);
+CREATE INDEX err_session_idx ON error_logs (session_id) WHERE session_id IS NOT NULL;
+CREATE INDEX err_context_gin ON error_logs USING GIN (context);
+
+-- トランザクション：feedback（パイロット評価）
+CREATE TABLE feedback (
+  id              UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  tester_id       UUID         REFERENCES testers(id) ON DELETE SET NULL,
+  session_id      UUID         REFERENCES sessions(id) ON DELETE SET NULL,
+  rating          INTEGER      CHECK (rating BETWEEN 1 AND 5),
+  would_recommend VARCHAR(10)  NOT NULL CHECK (would_recommend IN ('yes','no','maybe')),
+  comment         TEXT,
+  created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX fb_tester_idx ON feedback (tester_id);
+CREATE INDEX fb_created_idx ON feedback (created_at DESC);
+
+-- updated_at 自動更新トリガ（共通関数）
+CREATE OR REPLACE FUNCTION set_updated_at() RETURNS TRIGGER AS $$
+BEGIN NEW.updated_at = NOW(); RETURN NEW; END; $$ LANGUAGE plpgsql;
+
+CREATE TRIGGER devices_updated_at  BEFORE UPDATE ON devices  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+CREATE TRIGGER testers_updated_at  BEFORE UPDATE ON testers  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+CREATE TRIGGER sessions_updated_at BEFORE UPDATE ON sessions FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+-- 他テーブルにも同様のトリガを設定</pre>
+
+  <div class="sec-head">■ §8　バックアップ・アーカイブ・パーティション戦略</div>
+  <table>
+    <thead><tr><th style="width:18%">対象</th><th style="width:18%">頻度</th><th style="width:22%">手段</th><th>保管 / 復旧目標</th></tr></thead>
+    <tbody>
+      <tr><td>全テーブル（論理 dump）</td><td>日次 03:00 JST</td><td class="mono">pg_dump -Fc</td><td>B2 互換ストレージへ転送。30 日保管。RPO 24h / RTO 2h</td></tr>
+      <tr><td>WAL アーカイブ</td><td>連続</td><td>Fly Postgres 標準</td><td>PITR 7 日間。重大障害時の最終手段</td></tr>
+      <tr><td>session_events 集約</td><td>月次 1 日 04:00</td><td>マテビュー <span class="mono">latency_summary_{YYYY-MM}</span></td><td>p50/p90/p95 を月次に集約 → 原本は 30 日後物理削除</td></tr>
+      <tr><td>sessions 物理削除</td><td>日次 04:30</td><td><span class="mono">DELETE WHERE ended_at &lt; NOW() - INTERVAL '90 days'</span></td><td>CASCADE で session_events も削除</td></tr>
+      <tr><td>パーティション（任意）</td><td>—</td><td>session_events の月次パーティション</td><td>パイロット規模では未採用。本番化時に検討</td></tr>
+      <tr><td>テスター匿名化</td><td>cron</td><td><span class="mono">UPDATE testers SET nickname='anon-'||substr(id::text,1,8), anonymized_at=NOW() WHERE recruited_at &lt; NOW() - INTERVAL '90 days'</span></td><td>パイロット終了 + 90 日</td></tr>
+    </tbody>
+  </table>
+
+  <!-- Review -->
+  <div class="review-box">
+    <div class="sec-head" style="margin-top:0">■ レビュー・承認欄</div>
+    <div class="review-grid">
+      <div class="review-cell">
+        <div class="review-label">作成者</div>
+        氏名：NGUYEN MINH TRI<br>
+        日付：2026-05-12<br>
+        署名：＿＿＿＿＿＿＿＿
+      </div>
+      <div class="review-cell">
+        <div class="review-label">レビュー者</div>
+        氏名：＿＿＿＿＿＿<br>
+        日付：＿＿＿＿＿＿<br>
+        署名：＿＿＿＿＿＿＿＿
+      </div>
+      <div class="review-cell">
+        <div class="review-label">承認者</div>
+        氏名：＿＿＿＿＿＿<br>
+        日付：＿＿＿＿＿＿<br>
+        署名：＿＿＿＿＿＿＿＿
+      </div>
+    </div>
+    <div style="margin-top:6px; font-size:7px; color:#555;">
+      ※ Rev 1.0 としてS0実行を承認済み。マイグレーション初版を <span class="mono">services/api/db/migrations/0001_initial.sql</span> として作成し、M2（WBS 3.1.2）の作業に着手する。
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span>DOC-ID: DB-LGA-001　LingoGlass AR DB 設計書</span><span>- 6 -</span>
+  </div>
+</div>
+
+</body>
+</html>

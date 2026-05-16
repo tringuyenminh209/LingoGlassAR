@@ -1,0 +1,964 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>基本設計書 / LingoGlass AR</title>
+<style>
+  @page { size: A4; margin: 14mm 14mm 18mm 14mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Yu Gothic", "Meiryo", "Hiragino Kaku Gothic Pro", sans-serif;
+         font-size: 8.5px; color: #000; background: #fff; }
+
+  .page {
+    width: 210mm; min-height: 297mm; padding: 12mm 12mm 16mm 12mm;
+    page-break-after: always; break-after: page;
+    position: relative; overflow: hidden;
+  }
+  .page:last-of-type { page-break-after: auto; break-after: auto; }
+
+  /* Header */
+  .page-header {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    border-bottom: 2px solid #000; padding-bottom: 4px; margin-bottom: 8px;
+  }
+  .page-header .doc-title { font-size: 13px; font-weight: bold; }
+  .page-header .header-right { font-size: 7.5px; text-align: right; line-height: 1.6; }
+
+  /* Footer */
+  .page-footer {
+    position: absolute; bottom: 6mm; left: 12mm; right: 12mm;
+    border-top: 1px solid #999; padding-top: 3px;
+    display: flex; justify-content: space-between; font-size: 7px; color: #555;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+
+  /* Section */
+  .sec-head {
+    font-size: 10px; font-weight: bold; padding: 4px 8px;
+    border-left: 4px solid #000; background: #f0f0f0;
+    margin: 8px 0 5px 0;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    page-break-after: avoid; break-after: avoid;
+  }
+  .sub-head {
+    font-size: 8.5px; font-weight: bold; border-left: 3px solid #555;
+    padding-left: 6px; margin: 6px 0 3px 0;
+    page-break-after: avoid; break-after: avoid;
+  }
+
+  /* Table */
+  table { border-collapse: collapse; width: 100%; margin-bottom: 6px; }
+  th, td { border: 1px solid #888; padding: 2.5px 5px; vertical-align: top; line-height: 1.45; font-size: 8px; }
+  thead th {
+    background: #e8e8e8; font-weight: bold; text-align: center;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  tr { page-break-inside: avoid !important; break-inside: avoid !important; }
+  table { page-break-inside: auto; }
+  thead { display: table-header-group; }
+
+  .tbl-label { background: #f0f0f0; font-weight: bold;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .center { text-align: center; }
+  .right  { text-align: right; }
+  .nowrap { white-space: nowrap; }
+  .mono { font-family: "Consolas", "Menlo", "Courier New", monospace; font-size: 7.5px; }
+
+  .pri-h { background: #333; color: #fff; font-weight: bold; text-align: center;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .pri-m { background: #888; color: #fff; font-weight: bold; text-align: center;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .pri-l { background: #ccc; text-align: center;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  /* Cover */
+  .cover-title { font-size: 26px; font-weight: bold; text-align: center; margin: 26mm 0 5mm 0; letter-spacing: 4px; }
+  .cover-sub   { font-size: 14px; text-align: center; margin-bottom: 14mm; color: #333; }
+  .cover-meta  { width: 130mm; margin: 0 auto; }
+  .cover-meta table td { border: none; padding: 3px 10px; font-size: 9px; }
+
+  /* TOC */
+  .toc-item { display: flex; justify-content: space-between; padding: 2px 0;
+              border-bottom: 1px dotted #ccc; font-size: 8.5px; }
+
+  /* ER table boxes */
+  .er-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .er-box { border: 1.5px solid #000; padding: 0; font-size: 7.5px;
+            page-break-inside: avoid; break-inside: avoid; background: #fff; }
+  .er-title { background: #333; color: #fff; padding: 3px 6px; font-weight: bold; text-align: center; font-size: 8px;
+              -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .er-type { background: #ccc; padding: 1px 5px; font-size: 6.5px; text-align: center;
+              -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .er-cols { padding: 3px 6px; }
+  .er-cols div { padding: 1px 0; border-bottom: 1px dotted #ccc; }
+  .er-cols div:last-child { border-bottom: none; }
+  .er-pk { font-weight: bold; }
+  .er-fk { color: #444; font-style: italic; }
+  .er-rels { font-size: 7px; padding: 4px 6px; background: #fafafa; border-top: 1px solid #ccc; }
+
+  /* Network diagram layers */
+  .nw-layer { border: 1.5px solid #000; padding: 6px 8px; margin-bottom: 4px;
+              page-break-inside: avoid; break-inside: avoid; }
+  .nw-layer-h { font-weight: bold; font-size: 8.5px; margin-bottom: 4px; padding-bottom: 2px; border-bottom: 1px solid #ccc; }
+  .nw-nodes { display: flex; flex-wrap: wrap; gap: 6px; }
+  .nw-node { border: 1px solid #555; padding: 3px 8px; font-size: 7.5px; background: #fafafa;
+              -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .nw-arrow { text-align: center; font-size: 14px; margin: -2px 0; color: #555; }
+
+  /* Wireframe */
+  .wf-frame { border: 2px solid #000; padding: 6px; margin: 4px 0;
+              page-break-inside: avoid; break-inside: avoid; background: #fff;
+              width: 88mm; }
+  .wf-cap { font-weight: bold; font-size: 8px; margin-bottom: 3px; }
+  .wf-row { background: #eee; padding: 4px 6px; margin: 3px 0; font-size: 7.5px;
+              -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .wf-btn { display: inline-block; border: 1.5px solid #000; padding: 3px 12px; font-size: 7.5px; margin: 2px; background: #ddd;
+              -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .wf-btn-prim { background: #333; color: #fff; }
+  .wf-icon { font-size: 12px; }
+
+  /* Screen transition diagram */
+  .tx-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;
+             page-break-inside: avoid; break-inside: avoid; }
+  .tx-box { border: 1.5px solid #000; padding: 4px 6px; font-size: 7.5px; text-align: center;
+             min-height: 28px; display: flex; flex-direction: column; justify-content: center; }
+  .tx-box.dashed { border-style: dashed; }
+  .tx-arrow { text-align: center; font-size: 11px; color: #555; }
+
+  /* Code block */
+  pre.code { font-family: "Consolas", "Menlo", "Courier New", monospace; font-size: 7.5px;
+             border: 1px solid #ccc; background: #fafafa; padding: 6px 8px; line-height: 1.5;
+             page-break-inside: avoid; break-inside: avoid; white-space: pre-wrap; }
+
+  /* Review */
+  .review-box { border: 1.5px solid #000; padding: 8px; margin-top: 8px;
+                page-break-inside: avoid; break-inside: avoid; }
+  .review-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-top: 4px; }
+  .review-cell { border: 1px solid #888; padding: 5px; font-size: 7.5px; line-height: 1.8; }
+  .review-label { font-size: 7.5px; font-weight: bold; border-bottom: 1px solid #ccc;
+                  padding-bottom: 2px; margin-bottom: 3px; }
+
+  p { margin-bottom: 3px; line-height: 1.55; }
+  ul { margin: 2px 0 4px 14px; }
+  li { line-height: 1.65; font-size: 8px; }
+
+  /* Page break rules */
+  pre.code, .er-box, .nw-layer, .wf-frame, .tx-grid, .review-box,
+  .tree, .sec, .box { page-break-inside: avoid; break-inside: avoid; }
+  .sec-head, .sub-head { page-break-after: avoid; break-after: avoid; }
+</style>
+</head>
+<body>
+
+<!-- ========== PAGE 1: COVER ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">基本設計書 / LingoGlass AR</div>
+    <div class="header-right">
+      DOC-ID: BD-LGA-001　Rev 1.0　2026-05-12<br>
+      作成者: NGUYEN MINH TRI
+    </div>
+  </div>
+
+  <div class="cover-title">基 本 設 計 書</div>
+  <div class="cover-sub">LingoGlass AR — リアルタイム字幕表示 AR グラス</div>
+
+  <div class="cover-meta">
+    <table>
+      <tr><td class="tbl-label">プロジェクト名</td><td>LingoGlass AR</td></tr>
+      <tr><td class="tbl-label">ドキュメント ID</td><td>BD-LGA-001</td></tr>
+      <tr><td class="tbl-label">バージョン</td><td>Rev 1.0（S0実行承認版）</td></tr>
+      <tr><td class="tbl-label">作成日</td><td>2026-05-12</td></tr>
+      <tr><td class="tbl-label">作成者</td><td>NGUYEN MINH TRI</td></tr>
+      <tr><td class="tbl-label">対象フェーズ</td><td>基本設計（外部設計）— What the user sees</td></tr>
+      <tr><td class="tbl-label">前提ドキュメント</td><td>要件定義書 REQ-LGA-001 Rev 1.0 (2026-05-12)</td></tr>
+      <tr><td class="tbl-label">次工程ドキュメント</td><td>詳細設計書 DD-LGA-001（予定）</td></tr>
+    </table>
+  </div>
+
+  <div style="margin-top: 12mm;">
+    <div class="sec-head">■ 改訂履歴</div>
+    <table>
+      <thead><tr><th style="width:10%">Rev</th><th style="width:18%">日付</th><th style="width:22%">担当者</th><th>変更内容</th></tr></thead>
+      <tbody>
+        <tr><td class="center">0.1</td><td class="center">2026-05-12</td><td>NGUYEN MINH TRI</td><td>初版作成（ドラフト）。REQ-LGA-001 Rev 1.0 を入力として 8 ページ構成で起草。</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div style="margin-top: 8mm;">
+    <div class="sec-head">■ 目次</div>
+    <div class="toc-item"><span>§1　本書の位置づけ・命名規則</span><span>p.2</span></div>
+    <div class="toc-item"><span>§2　全体システム構成</span><span>p.2</span></div>
+    <div class="toc-item"><span>§3　画面一覧</span><span>p.2</span></div>
+    <div class="toc-item"><span>§4　画面遷移図</span><span>p.3</span></div>
+    <div class="toc-item"><span>§5　画面レイアウト（主要画面ワイヤーフレーム）</span><span>p.3–4</span></div>
+    <div class="toc-item"><span>§6　機能一覧表（画面 × FR 紐付け）</span><span>p.4</span></div>
+    <div class="toc-item"><span>§7　データ設計（テーブル一覧・定義書・ER 図）</span><span>p.5</span></div>
+    <div class="toc-item"><span>§8　コード一覧（enum / 区分値）</span><span>p.5</span></div>
+    <div class="toc-item"><span>§9　外部インターフェース一覧</span><span>p.6</span></div>
+    <div class="toc-item"><span>§10　BLE 字幕プロトコル仕様</span><span>p.6</span></div>
+    <div class="toc-item"><span>§11　ネットワーク構成図</span><span>p.7</span></div>
+    <div class="toc-item"><span>§12　画面 × DB 処理マッピング</span><span>p.7</span></div>
+    <div class="toc-item"><span>§13　ファイル一覧（ログ・エクスポート）</span><span>p.8</span></div>
+    <div class="toc-item"><span>§14　設計判断表</span><span>p.8</span></div>
+    <div class="toc-item"><span>　　　レビュー・承認欄</span><span>p.8</span></div>
+  </div>
+
+  <div class="page-footer">
+    <span>DOC-ID: BD-LGA-001　LingoGlass AR 基本設計書</span><span>- 1 -</span>
+  </div>
+</div>
+
+
+<!-- ========== PAGE 2: §1〜§3 ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">基本設計書 / LingoGlass AR</div>
+    <div class="header-right">DOC-ID: BD-LGA-001　Rev 1.0　2026-05-12</div>
+  </div>
+
+  <div class="sec-head">■ §1　本書の位置づけ・命名規則</div>
+  <table>
+    <tr><td class="tbl-label" style="width:20%">本書の対象</td>
+        <td>LingoGlass AR MVP プロトタイプにおける「ユーザーから見える部分」の外部設計を確定する。詳細実装（クラス・関数シグネチャ）は次工程の詳細設計書 DD-LGA-001 で扱う。</td></tr>
+    <tr><td class="tbl-label">読者</td>
+        <td>Product Lead、Firmware / Mobile / Backend Engineer、パイロットレビュー担当、AI agents</td></tr>
+    <tr><td class="tbl-label">対象範囲</td>
+        <td>モバイルアプリ（6 画面）／ バックエンド API（WebSocket + REST 3 本）／ BLE プロトコル ／ データ設計 ／ クラウド AI 連携。グラス側ファームウェアの詳細実装は対象外（詳細設計書で扱う）。</td></tr>
+    <tr><td class="tbl-label">命名規則</td>
+        <td>
+          ・テーブル：snake_case、複数形（例: <span class="mono">sessions</span>）<br>
+          ・主キー：<span class="mono">id</span>（UUID v4）<br>
+          ・外部キー：<span class="mono">[参照先単数形]_id</span>（例: <span class="mono">session_id</span>）<br>
+          ・タイムスタンプ：<span class="mono">created_at</span> / <span class="mono">updated_at</span>（TIMESTAMPTZ）必須<br>
+          ・フラグ：<span class="mono">is_</span> prefix／ステータス：VARCHAR + CHECK 制約（enum はコード一覧と一致）<br>
+          ・画面 ID：<span class="mono">SCR-NN</span> ／ 機能 ID：<span class="mono">FR-{HW|APP|BE|OPS}-NN</span> ／ API：<span class="mono">/api/v1/...</span>
+        </td></tr>
+  </table>
+
+  <div class="sec-head">■ §2　全体システム構成</div>
+  <pre class="code">┌──────────────┐   BLE GATT     ┌────────────────┐   WSS / HTTPS    ┌──────────────────┐
+│  LingoGlass  │ ◀──────────── │  Mobile App    │ ─────────────── ▶│  Backend API     │
+│  ESPr S3 +   │   字幕 packet   │  (Flutter /    │   音声/画像/ログ │  Node.js + WS     │
+│  I2C OLED    │ ──────────── ▶│   React Native) │ ◀───────────── │  + PostgreSQL    │
+└──────────────┘  battery/state  └────────────────┘   字幕テキスト    └────────┬─────────┘
+                                                                                │
+                                                                                ▼
+                                                                ┌──────────────────────────┐
+                                                                │  Cloud AI Providers       │
+                                                                │  ・STT  (Faster-Whisper / │
+                                                                │          OpenAI Realtime) │
+                                                                │  ・翻訳 (OpenAI / DeepL)  │
+                                                                │  ・OCR  (Google Vision)   │
+                                                                └──────────────────────────┘</pre>
+  <div style="font-size:7.5px; margin-bottom:4px;">
+    要件定義書 REQ-LGA-001 §1 で確定したアーキテクチャを基本設計で具体化。グラスにはマイク・カメラを搭載せず、すべてスマートフォンを経由する。
+  </div>
+
+  <div class="sec-head">■ §3　画面一覧</div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:8%">画面 ID</th>
+        <th style="width:18%">画面名</th>
+        <th style="width:14%">パス（Deep Link）</th>
+        <th style="width:10%">種別</th>
+        <th style="width:10%">認証</th>
+        <th style="width:14%">UI 方式</th>
+        <th>役割・概要</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td class="center mono">SCR-01</td><td>スプラッシュ / 初回ペアリング</td><td class="mono">/onboarding</td><td class="center">公開</td><td class="center">不要</td><td class="center">TOUI</td><td>初回起動時の BLE デバイス検索・ペアリング。完了後 SCR-02 へ。</td></tr>
+      <tr><td class="center mono">SCR-02</td><td>ホーム（モード選択）</td><td class="mono">/home</td><td class="center">保護</td><td class="center">不要*</td><td class="center">OOUI</td><td>会話字幕 / OCR / 設定 / 診断の 4 モードを選択。接続状態・バッテリーを上部表示。</td></tr>
+      <tr><td class="center mono">SCR-03</td><td>会話字幕モード</td><td class="mono">/translate/voice</td><td class="center">保護</td><td class="center">不要*</td><td class="center">TOUI</td><td>収音状態・翻訳テキストをリアルタイム表示。Push-to-Talk トグルを含む。メイン画面。</td></tr>
+      <tr><td class="center mono">SCR-04</td><td>OCR 翻訳モード</td><td class="mono">/translate/ocr</td><td class="center">保護</td><td class="center">不要*</td><td class="center">TOUI</td><td>カメラプレビュー → 撮影 → OCR 結果プレビュー → グラス送信。</td></tr>
+      <tr><td class="center mono">SCR-05</td><td>設定</td><td class="mono">/settings</td><td class="center">保護</td><td class="center">不要*</td><td class="center">OOUI</td><td>言語・PTT・履歴・プライバシー・UI 言語（ja/en/vi）設定。</td></tr>
+      <tr><td class="center mono">SCR-06</td><td>診断ログ</td><td class="mono">/diagnostics</td><td class="center">保護</td><td class="center">不要*</td><td class="center">OOUI</td><td>遅延 p50/p90/p95、バッテリー、温度、接続エラーを可視化。CSV / JSON エクスポート。</td></tr>
+      <tr><td class="center mono">MOD-01</td><td>言語選択モーダル</td><td class="mono">/settings#lang</td><td class="center">モーダル</td><td class="center">不要*</td><td class="center">TOUI</td><td>SCR-05 から呼び出される言語選択ダイアログ。</td></tr>
+      <tr><td class="center mono">MOD-02</td><td>履歴削除確認</td><td class="mono">/settings#clear</td><td class="center">モーダル</td><td class="center">不要*</td><td class="center">TOUI</td><td>履歴一括削除の確認ダイアログ。破壊的操作のため二段階確認。</td></tr>
+    </tbody>
+  </table>
+  <div style="font-size:7px; color:#555;">* MVP では認証なし（ローカル device pairing のみ）。パイロット時にデバイス ID で識別。</div>
+
+  <div class="page-footer">
+    <span>DOC-ID: BD-LGA-001　LingoGlass AR 基本設計書</span><span>- 2 -</span>
+  </div>
+</div>
+
+
+<!-- ========== PAGE 3: §4 画面遷移図 + §5 画面レイアウト前半 ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">基本設計書 / LingoGlass AR</div>
+    <div class="header-right">DOC-ID: BD-LGA-001　Rev 1.0　2026-05-12</div>
+  </div>
+
+  <div class="sec-head">■ §4　画面遷移図</div>
+
+  <div style="border: 1.5px dashed #555; padding: 8px; margin-bottom: 4px;">
+    <div style="font-weight: bold; font-size: 8px; margin-bottom: 6px;">【領域：未ペアリング】</div>
+    <div class="tx-grid" style="grid-template-columns: 1fr 1fr 1fr;">
+      <div class="tx-box">[SCR-01]<br>スプラッシュ<br>BLE 検索</div>
+      <div class="tx-arrow" style="align-self:center;">─ ペアリング成功 →</div>
+      <div></div>
+    </div>
+  </div>
+
+  <div style="border: 1.5px solid #000; padding: 8px;">
+    <div style="font-weight: bold; font-size: 8px; margin-bottom: 6px;">【領域：ペアリング済み（保護領域）】</div>
+    <div class="tx-grid">
+      <div></div>
+      <div class="tx-box" style="font-weight:bold;">[SCR-02]<br>ホーム<br>（モード選択）</div>
+      <div></div>
+    </div>
+    <div class="tx-arrow">↓ tap each mode</div>
+    <div class="tx-grid" style="grid-template-columns: 1fr 1fr 1fr 1fr;">
+      <div class="tx-box">[SCR-03]<br>会話字幕モード<br>↑↓ back</div>
+      <div class="tx-box">[SCR-04]<br>OCR 翻訳モード<br>↑↓ back</div>
+      <div class="tx-box">[SCR-05]<br>設定<br>↑↓ back</div>
+      <div class="tx-box">[SCR-06]<br>診断ログ<br>↑↓ back</div>
+    </div>
+    <div class="tx-arrow">↓ from SCR-05</div>
+    <div class="tx-grid">
+      <div class="tx-box dashed">[MOD-01]<br>言語選択モーダル<br>(言語タップで閉じる)</div>
+      <div></div>
+      <div class="tx-box dashed">[MOD-02]<br>履歴削除確認<br>(キャンセル/削除)</div>
+    </div>
+  </div>
+  <div style="font-size:7px; color:#555; margin-top:3px;">
+    実線枠 = 通常画面、破線枠 = モーダル。BLE 切断時は SCR-02〜06 に「再接続中…」バナーを上部に表示し、操作はブロックしない（FR-HW-03 自動再接続）。
+  </div>
+
+  <div class="sec-head">■ §5　画面レイアウト（主要画面ワイヤーフレーム）</div>
+
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+    <div>
+      <div class="sub-head">5.1　SCR-03 会話字幕モード（375px）</div>
+      <div class="wf-frame">
+        <div class="wf-cap">[SCR-03] /translate/voice</div>
+        <div class="wf-row" style="display:flex; justify-content:space-between;">
+          <span>◀ ホーム</span><span>● BLE接続中　🔋 68%</span>
+        </div>
+        <div class="wf-row" style="text-align:center; background:#ddd;">
+          <span class="wf-icon">🎤</span> 収音中（LED 点灯中）
+        </div>
+        <div class="wf-row" style="min-height: 50px; background:#fff; border:1px solid #888;">
+          <strong>EN → JA</strong><br>
+          "How can I help you today?"<br>
+          → 「本日はいかがされましたか？」
+        </div>
+        <div class="wf-row" style="min-height: 40px; background:#fafafa; border:1px solid #ccc;">
+          ［翻訳履歴：直近 3 件］<br>
+          ・…<br>・…
+        </div>
+        <div style="text-align: center; margin-top:6px;">
+          <span class="wf-btn">PTT モード</span>
+          <span class="wf-btn wf-btn-prim">⏸ 停止</span>
+        </div>
+        <div class="wf-row" style="margin-top:4px;">
+          <span>履歴を保存　[ON ◯●]　← デフォルト OFF（FR-APP-09）</span>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="sub-head">5.2　SCR-04 OCR 翻訳モード（375px）</div>
+      <div class="wf-frame">
+        <div class="wf-cap">[SCR-04] /translate/ocr</div>
+        <div class="wf-row" style="display:flex; justify-content:space-between;">
+          <span>◀ ホーム</span><span>● BLE接続中　🔋 68%</span>
+        </div>
+        <div class="wf-row" style="height: 60px; background:#222; color:#fff; text-align:center; line-height:60px;
+                                    -webkit-print-color-adjust:exact; print-color-adjust:exact;">
+          📷 カメラプレビュー
+        </div>
+        <div style="text-align:center; margin-top:6px;">
+          <span class="wf-btn">⚙ 言語</span>
+          <span class="wf-btn wf-btn-prim">⭘ 撮影</span>
+          <span class="wf-btn">⏏ ライト</span>
+        </div>
+        <div class="wf-row" style="min-height: 36px; margin-top:4px; background:#fff; border:1px solid #888;">
+          <strong>翻訳結果プレビュー</strong><br>
+          「本日のランチ：唐揚げ定食」<br>
+          → "Today's lunch: Fried chicken set"
+        </div>
+        <div style="text-align: center; margin-top:4px;">
+          <span class="wf-btn">再撮影</span>
+          <span class="wf-btn wf-btn-prim">グラスへ送信</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span>DOC-ID: BD-LGA-001　LingoGlass AR 基本設計書</span><span>- 3 -</span>
+  </div>
+</div>
+
+
+<!-- ========== PAGE 4: §5 続き + §6 機能一覧 ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">基本設計書 / LingoGlass AR</div>
+    <div class="header-right">DOC-ID: BD-LGA-001　Rev 1.0　2026-05-12</div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+    <div>
+      <div class="sub-head">5.3　SCR-05 設定（375px）</div>
+      <div class="wf-frame">
+        <div class="wf-cap">[SCR-05] /settings</div>
+        <div class="wf-row" style="display:flex; justify-content:space-between;">
+          <span>◀ ホーム</span><span>設定</span>
+        </div>
+        <div class="wf-row">ソース言語　　&nbsp;　&nbsp;[ English ▾ ]</div>
+        <div class="wf-row">ターゲット言語　[ 日本語 ▾ ]</div>
+        <div class="wf-row">UI 言語　　　　&nbsp;[ 日本語 ▾ ] <span style="color:#555">ja / en / vi</span></div>
+        <div class="wf-row">Push-to-Talk　&nbsp;&nbsp;[OFF ●◯]</div>
+        <div class="wf-row">翻訳履歴を保存　[OFF ●◯] <span style="color:#555">(default)</span></div>
+        <div class="wf-row" style="background:#ffe;">
+          プライバシー<br>
+          <span class="wf-btn">履歴を表示</span>
+          <span class="wf-btn" style="border-color:#900; color:#900;">履歴を全削除</span>
+        </div>
+        <div class="wf-row">ペアリング解除　<span class="wf-btn" style="border-color:#900; color:#900;">解除</span></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="sub-head">5.4　SCR-06 診断ログ（375px）</div>
+      <div class="wf-frame">
+        <div class="wf-cap">[SCR-06] /diagnostics</div>
+        <div class="wf-row" style="display:flex; justify-content:space-between;">
+          <span>◀ ホーム</span><span>診断</span>
+        </div>
+        <div class="wf-row">
+          <strong>遅延（直近 20 件）</strong><br>
+          p50: <strong>1,820 ms</strong>　p90: 2,640　p95: 3,210<br>
+          [ ▓▓▓▓▓░░░░░ ] グラフプレースホルダ
+        </div>
+        <div class="wf-row">
+          <strong>グラスステータス</strong><br>
+          🔋 68% ／ 🌡 32°C ／ ● BLE 接続中
+        </div>
+        <div class="wf-row">
+          <strong>接続エラー（30 分）</strong><br>
+          ・10:24 BLE timeout (auto-recovered 12s)<br>
+          ・—
+        </div>
+        <div style="text-align:center; margin-top:6px;">
+          <span class="wf-btn">CSV 出力</span>
+          <span class="wf-btn">JSON 出力</span>
+          <span class="wf-btn">ログをサーバーに送信</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec-head">■ §6　機能一覧表（画面 × 機能要件 紐付け）</div>
+  <table>
+    <thead>
+      <tr><th style="width:10%">機能 ID</th><th style="width:10%">画面 ID</th><th style="width:20%">機能名</th><th style="width:30%">基本設計レベルの動作</th><th style="width:10%">優先度</th><th>関連 API / プロトコル</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="mono">FR-APP-01</td><td class="mono">SCR-01</td><td>BLE デバイス検索・接続</td><td>BLE スキャン 5 秒。ペアリング成功で <span class="mono">devices</span> テーブルに登録</td><td class="pri-h center">高</td><td>BLE GATT</td></tr>
+      <tr><td class="mono">FR-APP-02</td><td class="mono">SCR-02,03,04</td><td>接続・バッテリー表示</td><td>2 秒以内に状態変化を UI 反映。BLE notify を購読</td><td class="pri-m center">中</td><td>BLE GATT (notify)</td></tr>
+      <tr><td class="mono">FR-APP-03</td><td class="mono">SCR-03</td><td>音声収音・VAD</td><td>マイク収音 → VAD で発話区間切出し → buffer flush</td><td class="pri-h center">高</td><td>—（端末内）</td></tr>
+      <tr><td class="mono">FR-APP-04</td><td class="mono">SCR-03</td><td>STT・翻訳リクエスト</td><td>音声バイナリを WSS で送信 → STT → 翻訳結果を受信</td><td class="pri-h center">高</td><td>WSS <span class="mono">/api/v1/session</span></td></tr>
+      <tr><td class="mono">FR-APP-05</td><td class="mono">SCR-03,04</td><td>字幕グラス送信</td><td>翻訳テキストを BLE フラグメントに分割し送信</td><td class="pri-h center">高</td><td>BLE custom protocol (§10)</td></tr>
+      <tr><td class="mono">FR-APP-06</td><td class="mono">SCR-04</td><td>撮影・OCR 送信</td><td>カメラ撮影 → クロップ → multipart POST</td><td class="pri-h center">高</td><td>POST <span class="mono">/api/v1/ocr</span></td></tr>
+      <tr><td class="mono">FR-APP-07</td><td class="mono">SCR-04</td><td>OCR 結果表示</td><td>翻訳テキストをプレビュー → ユーザー確認後 BLE 送信</td><td class="pri-h center">高</td><td>BLE custom protocol</td></tr>
+      <tr><td class="mono">FR-APP-08</td><td class="mono">SCR-05</td><td>言語設定</td><td>SharedPrefs / SecureStorage に保存。次回 STT/翻訳から反映</td><td class="pri-m center">中</td><td>—</td></tr>
+      <tr><td class="mono">FR-APP-09</td><td class="mono">SCR-05</td><td>履歴・プライバシー</td><td>履歴 ON/OFF、一括削除。サーバー側は <span class="mono">sessions.retain_text=false</span> なら破棄</td><td class="pri-m center">中</td><td>POST <span class="mono">/api/v1/sessions/:id/purge</span></td></tr>
+      <tr><td class="mono">FR-APP-10</td><td class="mono">SCR-06</td><td>診断画面</td><td>セッションイベントから p50/p90/p95 を集計。CSV/JSON エクスポート</td><td class="pri-h center">高</td><td>GET <span class="mono">/api/v1/sessions/:id/events</span></td></tr>
+      <tr><td class="mono">FR-APP-11</td><td class="mono">SCR-03,05</td><td>Push-to-Talk</td><td>PTT トグル ON 時：ボタン押下中のみ収音・LED 点灯</td><td class="pri-l center">低</td><td>—</td></tr>
+      <tr><td class="mono">FR-APP-12</td><td class="mono">全画面</td><td>UI 言語切替</td><td>i18n: ja / en / vi。SCR-05 で切替後 UI を即時再描画</td><td class="pri-l center">低</td><td>—</td></tr>
+      <tr><td class="mono">FR-BE-01</td><td>—</td><td>WebSocket セッション</td><td>音声ストリーム受信・STT chunk → 翻訳 → 結果を逆方向にストリーム</td><td class="pri-h center">高</td><td>WSS <span class="mono">/api/v1/session</span></td></tr>
+      <tr><td class="mono">FR-BE-02</td><td>—</td><td>OCR エンドポイント</td><td>multipart 画像受信 → Google Vision → 翻訳 → 結果返却</td><td class="pri-h center">高</td><td>POST <span class="mono">/api/v1/ocr</span></td></tr>
+      <tr><td class="mono">FR-BE-03</td><td>—</td><td>遅延ログ収集</td><td>各ステップ timestamp を <span class="mono">session_events</span> に保存</td><td class="pri-h center">高</td><td>POST <span class="mono">/api/v1/logs</span></td></tr>
+      <tr><td class="mono">FR-BE-04</td><td>—</td><td>使用量上限</td><td>device_id × 1 日 1,000 リクエスト超過で 429 返却</td><td class="pri-m center">中</td><td>すべての API</td></tr>
+      <tr><td class="mono">FR-BE-05</td><td>—</td><td>モデルルーティング</td><td>環境変数 <span class="mono">STT_PROVIDER</span> / <span class="mono">TRANSLATE_PROVIDER</span> で切替</td><td class="pri-m center">中</td><td>—</td></tr>
+    </tbody>
+  </table>
+
+  <div class="page-footer">
+    <span>DOC-ID: BD-LGA-001　LingoGlass AR 基本設計書</span><span>- 4 -</span>
+  </div>
+</div>
+
+
+<!-- ========== PAGE 5: §7 データ設計 + §8 コード一覧 ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">基本設計書 / LingoGlass AR</div>
+    <div class="header-right">DOC-ID: BD-LGA-001　Rev 1.0　2026-05-12</div>
+  </div>
+
+  <div class="sec-head">■ §7　データ設計</div>
+  <div class="sub-head">7.1　テーブル一覧（PostgreSQL 16）</div>
+  <table>
+    <thead><tr><th style="width:6%">No</th><th style="width:18%">テーブル名</th><th style="width:14%">区分</th><th style="width:14%">主用途</th><th>保持期間 / バックアップ方針</th></tr></thead>
+    <tbody>
+      <tr><td class="center">1</td><td class="mono">devices</td><td class="center">マスタ</td><td>ペアリング済みグラス</td><td>無期限（device 単位で論理削除）</td></tr>
+      <tr><td class="center">2</td><td class="mono">testers</td><td class="center">マスタ</td><td>パイロット参加者</td><td>パイロット終了 + 90 日で匿名化</td></tr>
+      <tr><td class="center">3</td><td class="mono">sessions</td><td class="center">トランザクション</td><td>会話セッション</td><td>90 日 / 日次 dump → S3 互換</td></tr>
+      <tr><td class="center">4</td><td class="mono">session_events</td><td class="center">トランザクション</td><td>各ステップ遅延ログ</td><td>30 日（集計後アーカイブ）</td></tr>
+      <tr><td class="center">5</td><td class="mono">ocr_requests</td><td class="center">トランザクション</td><td>OCR リクエスト履歴</td><td>30 日。画像本体は保存しない（ハッシュのみ）</td></tr>
+      <tr><td class="center">6</td><td class="mono">error_logs</td><td class="center">トランザクション</td><td>エラー / 警告ログ</td><td>30 日</td></tr>
+      <tr><td class="center">7</td><td class="mono">feedback</td><td class="center">トランザクション</td><td>パイロットフィードバック</td><td>無期限（匿名化後 Go/No-Go レポートに使用）</td></tr>
+    </tbody>
+  </table>
+
+  <div class="sub-head">7.2　ER 図</div>
+  <div class="er-grid">
+    <div class="er-box">
+      <div class="er-title">devices</div><div class="er-type">マスタ</div>
+      <div class="er-cols">
+        <div class="er-pk">🔑 id (UUID) PK</div>
+        <div>device_type VARCHAR(30)</div>
+        <div>firmware_version VARCHAR(20)</div>
+        <div>ble_mac VARCHAR(17) UQ</div>
+        <div>is_active BOOL</div>
+        <div>last_seen_at TIMESTAMPTZ</div>
+        <div>created_at / updated_at</div>
+      </div>
+      <div class="er-rels">→ 1 : N sessions</div>
+    </div>
+
+    <div class="er-box">
+      <div class="er-title">testers</div><div class="er-type">マスタ</div>
+      <div class="er-cols">
+        <div class="er-pk">🔑 id (UUID) PK</div>
+        <div>nickname VARCHAR(50)</div>
+        <div>segment VARCHAR(20)</div>
+        <div>ui_language VARCHAR(5)</div>
+        <div>recruited_at DATE</div>
+        <div>created_at / updated_at</div>
+      </div>
+      <div class="er-rels">→ 1 : N sessions, feedback</div>
+    </div>
+
+    <div class="er-box">
+      <div class="er-title">sessions</div><div class="er-type">トランザクション</div>
+      <div class="er-cols">
+        <div class="er-pk">🔑 id (UUID) PK</div>
+        <div class="er-fk">device_id (FK)</div>
+        <div class="er-fk">tester_id (FK, NULL 可)</div>
+        <div>source_lang VARCHAR(5)</div>
+        <div>target_lang VARCHAR(5)</div>
+        <div>status VARCHAR(20)</div>
+        <div>retain_text BOOL DEFAULT false</div>
+        <div>started_at / ended_at</div>
+        <div>created_at / updated_at</div>
+      </div>
+      <div class="er-rels">→ 1 : N session_events</div>
+    </div>
+
+    <div class="er-box">
+      <div class="er-title">session_events</div><div class="er-type">トランザクション</div>
+      <div class="er-cols">
+        <div class="er-pk">🔑 id (UUID) PK</div>
+        <div class="er-fk">session_id (FK)</div>
+        <div>seq_no INT</div>
+        <div>event_type VARCHAR(30)</div>
+        <div>duration_ms INT</div>
+        <div>payload_text TEXT (nullable)</div>
+        <div>created_at</div>
+      </div>
+      <div class="er-rels">→ N : 1 sessions</div>
+    </div>
+
+    <div class="er-box">
+      <div class="er-title">ocr_requests</div><div class="er-type">トランザクション</div>
+      <div class="er-cols">
+        <div class="er-pk">🔑 id (UUID) PK</div>
+        <div class="er-fk">device_id (FK)</div>
+        <div>image_hash CHAR(64)</div>
+        <div>source_lang / target_lang</div>
+        <div>ocr_text_length INT</div>
+        <div>status VARCHAR(20)</div>
+        <div>duration_ms INT</div>
+        <div>created_at</div>
+      </div>
+      <div class="er-rels">→ N : 1 devices</div>
+    </div>
+
+    <div class="er-box">
+      <div class="er-title">error_logs</div><div class="er-type">トランザクション</div>
+      <div class="er-cols">
+        <div class="er-pk">🔑 id (UUID) PK</div>
+        <div class="er-fk">device_id (FK, nullable)</div>
+        <div class="er-fk">session_id (FK, nullable)</div>
+        <div>severity VARCHAR(10)</div>
+        <div>error_code VARCHAR(30)</div>
+        <div>message TEXT</div>
+        <div>created_at</div>
+      </div>
+      <div class="er-rels">→ N : 1 devices / sessions</div>
+    </div>
+
+    <div class="er-box">
+      <div class="er-title">feedback</div><div class="er-type">トランザクション</div>
+      <div class="er-cols">
+        <div class="er-pk">🔑 id (UUID) PK</div>
+        <div class="er-fk">tester_id (FK)</div>
+        <div class="er-fk">session_id (FK, nullable)</div>
+        <div>would_recommend VARCHAR(10)</div>
+        <div>readability_score INT (1-5)</div>
+        <div>comment TEXT</div>
+        <div>created_at</div>
+      </div>
+      <div class="er-rels">→ N : 1 testers</div>
+    </div>
+
+    <div class="er-box" style="border-style: dashed;">
+      <div class="er-title" style="background:#888;">参考：Redis (任意)</div><div class="er-type">cache</div>
+      <div class="er-cols">
+        <div>session:{id}:state</div>
+        <div>device:{id}:last_heartbeat</div>
+        <div>quota:{device_id}:daily</div>
+      </div>
+      <div class="er-rels">TTL: 24h / 7d。MVP では PostgreSQL のみで代替可。</div>
+    </div>
+  </div>
+
+  <div class="sec-head">■ §8　コード一覧（enum / 区分値）</div>
+  <table>
+    <thead><tr><th style="width:18%">コード分類</th><th style="width:14%">テーブル.列</th><th style="width:18%">値（コード）</th><th style="width:22%">表記（ja / en）</th><th>意味</th></tr></thead>
+    <tbody>
+      <tr><td>セッションステータス</td><td class="mono">sessions.status</td><td class="mono">active</td><td>進行中 / Active</td><td>会話セッションが進行中</td></tr>
+      <tr><td></td><td></td><td class="mono">ended</td><td>終了 / Ended</td><td>正常終了</td></tr>
+      <tr><td></td><td></td><td class="mono">error</td><td>エラー終了 / Error</td><td>異常終了（タイムアウト・サーバー側エラー等）</td></tr>
+      <tr><td>イベント種別</td><td class="mono">session_events.event_type</td><td class="mono">vad_start</td><td>収音開始 / VAD start</td><td>音声区間検出開始</td></tr>
+      <tr><td></td><td></td><td class="mono">vad_end</td><td>収音終了 / VAD end</td><td>音声区間検出終了</td></tr>
+      <tr><td></td><td></td><td class="mono">stt_done</td><td>STT 完了</td><td>音声→テキスト変換完了</td></tr>
+      <tr><td></td><td></td><td class="mono">translate_done</td><td>翻訳完了</td><td>翻訳結果到達</td></tr>
+      <tr><td></td><td></td><td class="mono">ble_sent</td><td>BLE 送信</td><td>グラスへパケット送信完了</td></tr>
+      <tr><td></td><td></td><td class="mono">displayed</td><td>表示完了</td><td>グラス側で字幕レンダリング完了（ACK 受信時）</td></tr>
+      <tr><td>OCR ステータス</td><td class="mono">ocr_requests.status</td><td class="mono">pending / success / failed</td><td>処理中 / 成功 / 失敗</td><td>OCR + 翻訳の処理結果</td></tr>
+      <tr><td>エラー重要度</td><td class="mono">error_logs.severity</td><td class="mono">info / warn / error / critical</td><td>情報 / 警告 / エラー / 致命</td><td>運用ダッシュボードでフィルタに使用</td></tr>
+      <tr><td>デバイス種別</td><td class="mono">devices.device_type</td><td class="mono">prototype_v1 / prototype_v2</td><td>試作 v1 / v2</td><td>ハードウェア世代</td></tr>
+      <tr><td>テスターセグメント</td><td class="mono">testers.segment</td><td class="mono">tourist / student / staff / business</td><td>旅行者 / 学生 / 接客 / ビジネス</td><td>要件定義書 §2.2 と一致</td></tr>
+      <tr><td>推奨意向</td><td class="mono">feedback.would_recommend</td><td class="mono">yes / no / maybe</td><td>はい / いいえ / どちらでも</td><td>K-08 継続使用意向の集計に使用</td></tr>
+      <tr><td>UI / 翻訳言語</td><td class="mono">testers.ui_language</td><td class="mono">ja / en / vi</td><td>日本語 / English / Tiếng Việt</td><td>FR-APP-12 と一致</td></tr>
+    </tbody>
+  </table>
+
+  <div class="page-footer">
+    <span>DOC-ID: BD-LGA-001　LingoGlass AR 基本設計書</span><span>- 5 -</span>
+  </div>
+</div>
+
+
+<!-- ========== PAGE 6: §9 外部I/F + §10 BLE Protocol ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">基本設計書 / LingoGlass AR</div>
+    <div class="header-right">DOC-ID: BD-LGA-001　Rev 1.0　2026-05-12</div>
+  </div>
+
+  <div class="sec-head">■ §9　外部インターフェース一覧</div>
+  <table>
+    <thead>
+      <tr><th style="width:6%">No</th><th style="width:14%">連携先</th><th style="width:10%">方向</th><th style="width:12%">プロトコル</th><th style="width:18%">エンドポイント / 識別子</th><th style="width:14%">データ形式</th><th>用途・備考</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="center">EXT-01</td><td>LingoGlass（ESP32-S3）</td><td class="center">App ⇄ Glass</td><td>BLE 5.0 GATT</td><td><span class="mono">9f3a0001-7b2c-4d6e-9a11-0f8c2d4e5f60</span></td><td>Binary packet（§10）</td><td>字幕送信・バッテリー通知。MTU 20/185/247 で動作確認必須</td></tr>
+      <tr><td class="center">EXT-02</td><td>Backend API</td><td class="center">App → Server</td><td>WSS</td><td class="mono">wss://api.lingoglass.app/api/v1/session</td><td>音声 (Opus 16kHz)、JSON</td><td>双方向ストリーミング会話セッション</td></tr>
+      <tr><td class="center">EXT-03</td><td>Backend API</td><td class="center">App → Server</td><td>HTTPS</td><td class="mono">POST /api/v1/ocr</td><td>multipart/form-data, JSON</td><td>OCR 撮影画像送信・翻訳結果取得</td></tr>
+      <tr><td class="center">EXT-04</td><td>Backend API</td><td class="center">App → Server</td><td>HTTPS</td><td class="mono">POST /api/v1/logs</td><td>JSON (NDJSON 任意)</td><td>遅延・エラーログのバッチ送信</td></tr>
+      <tr><td class="center">EXT-05</td><td>OpenAI / Faster-Whisper</td><td class="center">Server → External</td><td>HTTPS / WSS</td><td>provider 依存</td><td>音声バイナリ → JSON</td><td>STT。<span class="mono">STT_PROVIDER</span> で切替（FR-BE-05）</td></tr>
+      <tr><td class="center">EXT-06</td><td>OpenAI GPT / DeepL</td><td class="center">Server → External</td><td>HTTPS</td><td>provider 依存</td><td>JSON</td><td>翻訳。<span class="mono">TRANSLATE_PROVIDER</span> で切替</td></tr>
+      <tr><td class="center">EXT-07</td><td>Google Vision API</td><td class="center">Server → External</td><td>HTTPS</td><td class="mono">vision.googleapis.com</td><td>画像 → JSON</td><td>OCR テキスト抽出</td></tr>
+      <tr><td class="center">EXT-08</td><td>監視（Sentry）</td><td class="center">Server → External</td><td>HTTPS</td><td>provider 依存</td><td>JSON</td><td>サーバー側エラー・パフォーマンス監視</td></tr>
+    </tbody>
+  </table>
+
+  <div class="sub-head">9.1　Backend API サマリー</div>
+  <table>
+    <thead><tr><th style="width:10%">No</th><th style="width:18%">エンドポイント</th><th style="width:8%">Method</th><th>主リクエスト</th><th>主レスポンス</th><th style="width:14%">主要エラー</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">API-01</td><td class="mono">/api/v1/session</td><td class="center">WSS</td>
+        <td>音声 chunk (Opus)、メタ JSON（device_id, source_lang, target_lang）</td>
+        <td>STT 中間/最終結果、翻訳テキスト、session_id</td>
+        <td>1006 切断、4001 quota</td></tr>
+      <tr><td class="mono">API-02</td><td class="mono">/api/v1/ocr</td><td class="center">POST</td>
+        <td>image (multipart)、source_lang、target_lang</td>
+        <td>200 { ocr_text, translated_text, duration_ms }</td>
+        <td>413 too large、429 quota</td></tr>
+      <tr><td class="mono">API-03</td><td class="mono">/api/v1/logs</td><td class="center">POST</td>
+        <td>events[] (session_id, event_type, duration_ms, ts)</td>
+        <td>200 { accepted: N }</td>
+        <td>400 schema、429 quota</td></tr>
+      <tr><td class="mono">API-04</td><td class="mono">/api/v1/sessions/:id/events</td><td class="center">GET</td>
+        <td>—</td>
+        <td>200 events[]（診断画面用）</td>
+        <td>404 not found</td></tr>
+      <tr><td class="mono">API-05</td><td class="mono">/api/v1/sessions/:id/purge</td><td class="center">POST</td>
+        <td>—（FR-APP-09 一括削除）</td>
+        <td>200 { deleted: true }</td>
+        <td>404 not found</td></tr>
+      <tr><td class="mono">API-06</td><td class="mono">/api/v1/feedback</td><td class="center">POST</td>
+        <td>tester_id, session_id, would_recommend, readability_score, comment</td>
+        <td>201 { id }</td>
+        <td>400 schema</td></tr>
+      <tr><td class="mono">API-07</td><td class="mono">/api/v1/healthz</td><td class="center">GET</td>
+        <td>—</td>
+        <td>200 { status: ok, version }</td>
+        <td>—</td></tr>
+    </tbody>
+  </table>
+  <div style="font-size:7px; color:#555;">
+    認証：MVP では <span class="mono">X-Device-Id</span> ヘッダ（UUID）のみ。本番化フェーズで JWT に置換予定。レスポンス envelope：<span class="mono">{ success, data | error: { code, message } }</span>。REST契約は <span class="mono">docs/api-contract/openapi.yaml</span>、WSS契約は <span class="mono">docs/api-contract/ws-events.schema.json</span> を正とする。
+  </div>
+
+  <div class="sec-head">■ §10　BLE 字幕プロトコル仕様（カスタム GATT）</div>
+  <div style="display: grid; grid-template-columns: 1.1fr 1fr; gap: 8px;">
+    <div>
+      <div class="sub-head">10.1　パケット構造</div>
+      <pre class="code">┌─────────────────────────────────────────────┐
+│ 0  version          (1 byte)  — 0x01        │
+│ 1  message_type     (1 byte)  — see 10.2    │
+│ 2  sequence_id      (2 bytes) — uint16 BE   │
+│ 4  fragment_index   (1 byte)  — 0-based     │
+│ 5  fragment_count   (1 byte)  — total       │
+│ 6  payload_length   (1 byte)  — N (0-238)   │
+│ 7  payload          (N bytes) — UTF-8       │
+│ 7+N crc8            (1 byte)  — CCITT       │
+└─────────────────────────────────────────────┘
+最大ペイロード 1 パケット：238 bytes (@ MTU 247)
+                          176 bytes (@ MTU 185)
+                           11 bytes (@ MTU 20)</pre>
+    </div>
+    <div>
+      <div class="sub-head">10.2　メッセージタイプ</div>
+      <table>
+        <thead><tr><th style="width:18%">値</th><th style="width:30%">名前</th><th>方向</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">0x10</td><td>SUBTITLE_TEXT</td><td>App → Glass</td></tr>
+          <tr><td class="mono">0x11</td><td>SUBTITLE_CLEAR</td><td>App → Glass</td></tr>
+          <tr><td class="mono">0x20</td><td>BATTERY_REPORT</td><td>Glass → App</td></tr>
+          <tr><td class="mono">0x21</td><td>STATUS_REPORT</td><td>Glass → App</td></tr>
+          <tr><td class="mono">0x30</td><td>ACK</td><td>Both</td></tr>
+          <tr><td class="mono">0x31</td><td>NAK (retry req)</td><td>Both</td></tr>
+          <tr><td class="mono">0x40</td><td>OTA_UPDATE</td><td>App → Glass</td></tr>
+        </tbody>
+      </table>
+      <div class="sub-head" style="margin-top:6px;">10.3　レンダリングルール</div>
+      <ul>
+        <li>全 fragment が揃った時点で初めて描画する</li>
+        <li>新 <span class="mono">sequence_id</span> 受信時、進行中の旧 sequence は破棄</li>
+        <li>CRC8 不一致は NAK 返信し、最大 2 回まで再送</li>
+        <li>5 秒以上 fragment 待ちで sequence タイムアウト破棄</li>
+        <li>MVP 字幕上限 100 文字（UTF-8 で約 300 bytes）= 最大 2 fragment</li>
+      </ul>
+      <div class="sub-head" style="margin-top:6px;">10.4　実装固定値（S0/S1）</div>
+      <table>
+        <tbody>
+          <tr><td class="tbl-label">Service UUID</td><td class="mono">9f3a0001-7b2c-4d6e-9a11-0f8c2d4e5f60</td></tr>
+          <tr><td class="tbl-label">Write Characteristic</td><td class="mono">9f3a0002-7b2c-4d6e-9a11-0f8c2d4e5f60</td></tr>
+          <tr><td class="tbl-label">Notify Characteristic</td><td class="mono">9f3a0003-7b2c-4d6e-9a11-0f8c2d4e5f60</td></tr>
+          <tr><td class="tbl-label">Endian</td><td>全 multi-byte integer は big-endian。<span class="mono">sequence_id</span> は uint16 rollover 可</td></tr>
+          <tr><td class="tbl-label">CRC8</td><td>CRC-8/CCITT: poly <span class="mono">0x07</span>, init <span class="mono">0x00</span>, xorout <span class="mono">0x00</span>。対象は byte 0 〜 payload end</td></tr>
+          <tr><td class="tbl-label">ACK / NAK</td><td>ACK: <span class="mono">0x30 + sequence_id + fragment_index</span>。NAK: <span class="mono">0x31 + sequence_id + fragment_index + reason</span>（0x01 CRC, 0x02 timeout, 0x03 unsupported）</td></tr>
+          <tr><td class="tbl-label">Retry</td><td>App は NAK または ACK timeout 300ms で再送。最大 2 retry。失敗時は次 sequence に進む</td></tr>
+          <tr><td class="tbl-label">MTU</td><td>接続後に 247 を要求。失敗時は negotiated MTU を使用し、20 / 185 / 247 の全パスをテスト</td></tr>
+          <tr><td class="tbl-label">Text</td><td>UTF-8 NFC 正規化。上限 100 Unicode scalar / 300 bytes。表示不能 glyph は <span class="mono">□</span> に置換</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span>DOC-ID: BD-LGA-001　LingoGlass AR 基本設計書</span><span>- 6 -</span>
+  </div>
+</div>
+
+
+<!-- ========== PAGE 7: §11 ネットワーク + §12 画面×DBマッピング ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">基本設計書 / LingoGlass AR</div>
+    <div class="header-right">DOC-ID: BD-LGA-001　Rev 1.0　2026-05-12</div>
+  </div>
+
+  <div class="sec-head">■ §11　ネットワーク構成図（5 層 + 運用層）</div>
+
+  <div class="nw-layer">
+    <div class="nw-layer-h">層 1：外部系（External Providers）</div>
+    <div class="nw-nodes">
+      <div class="nw-node">OpenAI Realtime API<br>（STT・翻訳）</div>
+      <div class="nw-node">DeepL API<br>（翻訳代替）</div>
+      <div class="nw-node">Google Vision API<br>（OCR）</div>
+      <div class="nw-node">Faster-Whisper<br>（self-host 検討）</div>
+    </div>
+  </div>
+  <div class="nw-arrow">▲▼ HTTPS / WSS（API キーは Server 側で保持）</div>
+
+  <div class="nw-layer">
+    <div class="nw-layer-h">層 2：アプリ層（Application）— Fly.io or AWS Lightsail</div>
+    <div class="nw-nodes">
+      <div class="nw-node">Node.js 20 (WS Server)<br>Express + ws</div>
+      <div class="nw-node">REST API<br>(OCR / logs / feedback)</div>
+      <div class="nw-node">Provider Router<br>(STT_PROVIDER / TRANSLATE_PROVIDER)</div>
+      <div class="nw-node">Quota Middleware<br>(429 限制)</div>
+    </div>
+  </div>
+  <div class="nw-arrow">▲▼ TCP (内部 VPC)</div>
+
+  <div class="nw-layer">
+    <div class="nw-layer-h">層 3：データ層（Data）</div>
+    <div class="nw-nodes">
+      <div class="nw-node">PostgreSQL 16<br>devices / sessions / events / ocr / errors / feedback / testers</div>
+      <div class="nw-node">Redis 7（任意）<br>session state / quota counter</div>
+      <div class="nw-node">Object Storage<br>(S3 互換、日次 dump アーカイブ)</div>
+    </div>
+  </div>
+  <div class="nw-arrow">▲▼ HTTPS / WSS（TLS 1.3）</div>
+
+  <div class="nw-layer">
+    <div class="nw-layer-h">層 4：CDN・Edge（任意）</div>
+    <div class="nw-nodes">
+      <div class="nw-node">Cloudflare（任意）<br>TLS termination / DDoS 防御 / 静的アセット</div>
+    </div>
+  </div>
+  <div class="nw-arrow">▲▼ Public Internet</div>
+
+  <div class="nw-layer">
+    <div class="nw-layer-h">層 5：エンドユーザー</div>
+    <div class="nw-nodes">
+      <div class="nw-node">📱 Mobile App<br>Flutter / React Native（iOS / Android）</div>
+      <div class="nw-node" style="background:#eee;">↔ BLE 5.0 GATT ↔</div>
+      <div class="nw-node">🕶 LingoGlass S0<br>ESPr Developer S3 + 0.96" I2C OLED</div>
+      <div class="nw-node">👤 ユーザー</div>
+    </div>
+  </div>
+
+  <div class="nw-layer" style="background:#f8f8f8; border-style: dashed;
+                                -webkit-print-color-adjust:exact; print-color-adjust:exact;">
+    <div class="nw-layer-h">運用・観測層（横断）</div>
+    <div class="nw-nodes">
+      <div class="nw-node">Sentry<br>（エラー監視）</div>
+      <div class="nw-node">Grafana / Prometheus<br>（遅延ダッシュボード）</div>
+      <div class="nw-node">GitHub Actions<br>（CI/CD）</div>
+      <div class="nw-node">Cost Monitor<br>（usage cap・$550/月制限）</div>
+    </div>
+  </div>
+
+  <div class="sec-head">■ §12　画面 × DB 処理マッピング</div>
+  <table>
+    <thead>
+      <tr><th style="width:8%">画面 ID</th><th style="width:14%">画面名</th><th style="width:18%">主機能</th><th style="width:6%">CRUD</th><th style="width:24%">対象テーブル</th><th>備考（認可・制約）</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="mono center" rowspan="2">SCR-01</td><td rowspan="2">スプラッシュ</td>
+          <td>BLE デバイス登録</td><td class="center">C</td><td class="mono">devices</td><td>ble_mac UNIQUE 制約。重複時は <span class="mono">last_seen_at</span> 更新のみ</td></tr>
+      <tr><td>初回テスター登録（任意）</td><td class="center">C</td><td class="mono">testers</td><td>パイロット参加者のみ。匿名 OK</td></tr>
+
+      <tr><td class="mono center">SCR-02</td><td>ホーム</td>
+          <td>接続状態取得</td><td class="center">R</td><td class="mono">devices</td><td>WHERE id = :current_device_id</td></tr>
+
+      <tr><td class="mono center" rowspan="3">SCR-03</td><td rowspan="3">会話字幕モード</td>
+          <td>セッション開始</td><td class="center">C</td><td class="mono">sessions</td><td>status='active', retain_text = ユーザー設定に従う</td></tr>
+      <tr><td>イベント記録</td><td class="center">C</td><td class="mono">session_events</td><td>vad_start / stt_done / translate_done / ble_sent / displayed</td></tr>
+      <tr><td>セッション終了</td><td class="center">U</td><td class="mono">sessions</td><td>status='ended', ended_at = NOW()</td></tr>
+
+      <tr><td class="mono center">SCR-04</td><td>OCR 翻訳</td>
+          <td>OCR 履歴記録</td><td class="center">C</td><td class="mono">ocr_requests</td><td>画像本体は保存せず SHA-256 のみ。プライバシー要件 NFR-08</td></tr>
+
+      <tr><td class="mono center" rowspan="3">SCR-05</td><td rowspan="3">設定</td>
+          <td>履歴閲覧</td><td class="center">R</td><td class="mono">sessions, session_events</td><td>WHERE device_id = :current_device_id AND retain_text = true</td></tr>
+      <tr><td>履歴一括削除</td><td class="center">D</td><td class="mono">sessions, session_events</td><td>CASCADE 削除。論理削除ではなく物理削除</td></tr>
+      <tr><td>ペアリング解除</td><td class="center">U</td><td class="mono">devices</td><td>is_active = false（履歴は保持）</td></tr>
+
+      <tr><td class="mono center" rowspan="2">SCR-06</td><td rowspan="2">診断ログ</td>
+          <td>p50/p90/p95 集計</td><td class="center">R</td><td class="mono">session_events</td><td>直近 N セッションを集計（クライアント側 or サーバー側）</td></tr>
+      <tr><td>エラーログ参照</td><td class="center">R</td><td class="mono">error_logs</td><td>WHERE device_id = :current_device_id AND severity >= 'warn'</td></tr>
+    </tbody>
+  </table>
+
+  <div class="page-footer">
+    <span>DOC-ID: BD-LGA-001　LingoGlass AR 基本設計書</span><span>- 7 -</span>
+  </div>
+</div>
+
+
+<!-- ========== PAGE 8: §13 ファイル + §14 設計判断 + Review ========== -->
+<div class="page">
+  <div class="page-header">
+    <div class="doc-title">基本設計書 / LingoGlass AR</div>
+    <div class="header-right">DOC-ID: BD-LGA-001　Rev 1.0　2026-05-12</div>
+  </div>
+
+  <div class="sec-head">■ §13　ファイル一覧（ログ・エクスポート）</div>
+  <table>
+    <thead>
+      <tr><th style="width:10%">ファイル ID</th><th style="width:22%">ファイル名（例）</th><th style="width:10%">出力元</th><th style="width:14%">形式</th><th style="width:18%">出力タイミング</th><th>用途</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="mono">F-01</td><td class="mono">session_events_{date}.csv</td><td>SCR-06</td><td>CSV (UTF-8 BOM)</td><td>ユーザー操作（エクスポートボタン）</td><td>診断画面で表示中の遅延データを CSV 出力</td></tr>
+      <tr><td class="mono">F-02</td><td class="mono">session_events_{date}.json</td><td>SCR-06</td><td>JSON</td><td>ユーザー操作</td><td>同上の JSON 版（AI agents 解析向け）</td></tr>
+      <tr><td class="mono">F-03</td><td class="mono">app_log_{date}.log</td><td>Mobile App</td><td>NDJSON</td><td>常時（ローテーション 7 日）</td><td>クラッシュ調査用。端末内 SecureStorage 配下</td></tr>
+      <tr><td class="mono">F-04</td><td class="mono">server_log_{date}.log</td><td>Backend</td><td>NDJSON</td><td>常時（30 日保持）</td><td>サーバーアプリログ。Sentry に同期</td></tr>
+      <tr><td class="mono">F-05</td><td class="mono">pilot_report_{batch}.pdf</td><td>FR-OPS-02</td><td>PDF</td><td>パイロット終了時</td><td>Go/No-Go 判断用レポート（テスター別 p50/p95、継続意向）</td></tr>
+      <tr><td class="mono">F-06</td><td class="mono">db_dump_{date}.sql.gz</td><td>cron (daily)</td><td>gzip SQL</td><td>毎日 03:00 JST</td><td>PostgreSQL 全体 dump。S3 互換ストレージへ転送</td></tr>
+      <tr><td class="mono">F-07</td><td class="mono">cost_summary_{month}.csv</td><td>Cost Monitor</td><td>CSV</td><td>毎月 1 日</td><td>STT / 翻訳 / OCR の月次コスト集計。$550 cap 監視</td></tr>
+    </tbody>
+  </table>
+
+  <div class="sec-head">■ §14　設計判断表（主要トレードオフ）</div>
+  <table>
+    <thead>
+      <tr><th style="width:6%">No</th><th style="width:18%">判断項目</th><th style="width:14%">採用</th><th style="width:14%">代替案</th><th>選定理由・トレードオフ</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="center">D-01</td><td>グラス↔アプリ通信</td><td>BLE 5.0 GATT</td><td>Wi-Fi Direct</td><td>BLE：低消費電力で字幕（短ペイロード）に十分。Wi-Fi はバッテリーと熱が課題。Wi-Fi はデバッグ・OTA フォールバック用に留保</td></tr>
+      <tr><td class="center">D-02</td><td>コントローラ</td><td>ESP32-S3</td><td>ESP32-P4 / STM32 / RP2040</td><td>BLE 5、Wi-Fi 内蔵、ESP-IDF 安定、価格・在庫が良好。P4 は新しすぎ、STM32 は BLE 外付けが必要</td></tr>
+      <tr><td class="center">D-03</td><td>マイク位置</td><td>スマートフォン</td><td>グラス搭載マイクアレイ</td><td>MVP では codec/I2S/電源/ビームフォーミングのリスクを排除。グラス搭載は Phase 3 で再検討</td></tr>
+      <tr><td class="center">D-04</td><td>カメラ位置</td><td>スマートフォン</td><td>グラス搭載カメラ</td><td>同上。グラスカメラは消費電力＋プライバシーリスク（撮影通知 UX が未確立）</td></tr>
+      <tr><td class="center">D-05</td><td>会話プロトコル</td><td>WebSocket（双方向）</td><td>HTTP polling / gRPC</td><td>ストリーミング STT との親和性。gRPC はモバイルクライアント実装コストが高い</td></tr>
+      <tr><td class="center">D-06</td><td>DB</td><td>PostgreSQL 16</td><td>SQLite / MongoDB</td><td>パイロット時に複数デバイス同時接続あり。集計クエリ・JSONB ともに対応。SQLite はマルチライターで弱い</td></tr>
+      <tr><td class="center">D-07</td><td>翻訳プロバイダ</td><td>OpenAI / DeepL を切替</td><td>Google Translate 固定</td><td>言語ペアごとに品質と価格が異なる。FR-BE-05 でルーティング切替可能にして A/B 検証</td></tr>
+      <tr><td class="center">D-08</td><td>プライバシー LED</td><td>物理 LED 必須</td><td>OLED 上アイコンのみ</td><td>周囲の人が認識可能なのは物理 LED のみ。Ray-Ban Meta の指摘事例を踏襲</td></tr>
+      <tr><td class="center">D-09</td><td>履歴保存</td><td>デフォルト OFF</td><td>デフォルト ON（オプトアウト）</td><td>NFR-08。生録音は一切保存しない方針。テキストもオプトイン</td></tr>
+      <tr><td class="center">D-10</td><td>BLE ペアリング</td><td>Bonded pairing</td><td>Just Works</td><td>NFR-10。未承認端末からの接続を防止。MITM 攻撃面の縮小</td></tr>
+    </tbody>
+  </table>
+
+  <!-- Review -->
+  <div class="review-box">
+    <div class="sec-head" style="margin-top:0">■ レビュー・承認欄</div>
+    <div class="review-grid">
+      <div class="review-cell">
+        <div class="review-label">作成者</div>
+        氏名：NGUYEN MINH TRI<br>
+        日付：2026-05-12<br>
+        署名：＿＿＿＿＿＿＿＿
+      </div>
+      <div class="review-cell">
+        <div class="review-label">レビュー者</div>
+        氏名：＿＿＿＿＿＿<br>
+        日付：＿＿＿＿＿＿<br>
+        署名：＿＿＿＿＿＿＿＿
+      </div>
+      <div class="review-cell">
+        <div class="review-label">承認者</div>
+        氏名：＿＿＿＿＿＿<br>
+        日付：＿＿＿＿＿＿<br>
+        署名：＿＿＿＿＿＿＿＿
+      </div>
+    </div>
+    <div style="margin-top:6px; font-size:7px; color:#555;">
+      ※ Rev 1.0 としてS0実行を承認済み。次工程「詳細設計書」（DOC-ID: DD-LGA-001 予定）へ移行する。仕様変更が生じた場合は改訂履歴を更新の上、関係者の承認を再取得すること。
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span>DOC-ID: BD-LGA-001　LingoGlass AR 基本設計書</span><span>- 8 -</span>
+  </div>
+</div>
+
+</body>
+</html>
