@@ -58,7 +58,7 @@ The packet layout, CRC8 algorithm, fragmentation rule, and render rule are in `.
 ## Sprint hooks
 
 - S0 Phase B (done 2026-05-17): OLED render. `lib/oled_view/` wraps `U8G2_SSD1306_128X64_NONAME_F_HW_I2C`, font `u8g2_font_6x10_tf`, two-line layout at y=0 and y=16. Caller owns `Wire.begin(SDA, SCL)`. Default address 0x3C, override via `oled_view::begin(0x3D)` if needed. ASCII only; Japanese font is S1+.
-- S0 Phase C: NimBLE server. Service + 2 characteristics above. Notify on ACK.
+- S0 Phase C (in progress 2026-05-17): NimBLE server. `lib/ble_server/` exposes `begin(name, on_write_callback)` / `is_connected()` / `notify_ack(data, len)`. Auto-restarts advertising on disconnect. Requested MTU 247. Write callback in `main.cpp` only logs raw bytes (no decode yet). Verify with nRF Connect: device name `LingoGlass-S0` visible, service `7c3d8b00-...` exposed, write to char `7c3d8b01-...` triggers `[ble] rx[N]: ...` on Serial. ACK notify on `7c3d8b02-...` ready but not wired (Phase D).
 - S0 Phase D-E: wire `ble_protocol::decode_fragment` into the write callback. Fragment buffer keyed by `sequence_id`. Drop stale buffer when a higher `sequence_id` arrives.
 - S0 Phase F: timestamp `millis()` at write callback entry, include in ACK payload after subtitle is fully rendered.
 

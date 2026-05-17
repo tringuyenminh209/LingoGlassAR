@@ -1,8 +1,9 @@
 // LingoGlass AR S0 firmware entry point.
 //
 // Phase A: I2C scan + board info on Serial. Carried over from Test/Test.ino.
-// Phase B (current): U8g2 OLED text render.
-// Phase C: NimBLE GATT receiver.
+// Phase B: U8g2 OLED text render.
+// Phase C (current): NimBLE GATT receiver. Write callback logs raw bytes;
+//                    Phase D wires ble_protocol::decode_fragment + ACK.
 // Phase D-E: subtitle packet parser + fragmentation + ACK.
 //
 // Hardware: ESPr Developer S3 + 0.96 inch I2C OLED 128x64.
@@ -11,18 +12,23 @@
 #include <Arduino.h>
 #include <Wire.h>
 
+#include "ble_server.h"
 #include "oled_view.h"
 
 static const int I2C_SDA_PIN = 8;
 static const int I2C_SCL_PIN = 9;
 static const uint32_t SERIAL_BAUD = 115200;
 static const uint8_t OLED_ADDRESS_7BIT = 0x3C;
+static const char* BLE_DEVICE_NAME = "LingoGlass-S0";
 
 #if defined(LED_BUILTIN)
 static const int STATUS_LED_PIN = LED_BUILTIN;
 #else
 static const int STATUS_LED_PIN = -1;
 #endif
+
+static volatile uint32_t g_total_write_bytes = 0;
+static volatile uint32_t g_total_write_count = 0;
 
 static void printBoardInfo() {
   Serial.println();
@@ -74,6 +80,19 @@ static bool scanI2C() {
   return foundOled;
 }
 
+// Phase C subtitle handler: log only. Phase D will decode + ACK.
+static void onSubtitleWrite(const uint8_t* data, size_t length) {
+  g_total_write_count++;
+  g_total_write_bytes += static_cast<uint32_t>(length);
+  Serial.printf("[ble] rx[%u]:", static_cast<unsigned>(length));
+  const size_t preview = length > 16 ? 16 : length;
+  for (size_t i = 0; i < preview; ++i) {
+    Serial.printf(" %02X", data[i]);
+  }
+  if (length > preview) Serial.print(" ...");
+  Serial.println();
+}
+
 void setup() {
   Serial.begin(SERIAL_BAUD);
   delay(2000);
@@ -91,12 +110,19 @@ void setup() {
   if (oledPresent) {
     if (oled_view::begin(OLED_ADDRESS_7BIT)) {
       Serial.println("[oled] init ok");
-      oled_view::show_status("LingoGlass S0", "Phase B: OLED ok");
+      oled_view::show_status("LingoGlass S0", "BLE init...");
     } else {
       Serial.println("[oled] init FAILED after I2C detect");
     }
   } else {
     Serial.println("[oled] skipped: 0x3C not detected on I2C bus");
+  }
+
+  if (!ble_server::begin(BLE_DEVICE_NAME, onSubtitleWrite)) {
+    Serial.println("[ble] init FAILED");
+    oled_view::show_status("LingoGlass S0", "BLE init FAIL");
+  } else {
+    oled_view::show_status("LingoGlass S0", "Adv: LingoGlass-S0");
   }
 
   Serial.println();
@@ -112,9 +138,22 @@ void loop() {
     digitalWrite(STATUS_LED_PIN, ledOn ? HIGH : LOW);
   }
 
-  Serial.printf("Heartbeat %lu | free heap: %u\n",
-                (unsigned long)counter, ESP.getFreeHeap());
-  oled_view::show_heartbeat(counter);
+  const bool connected = ble_server::is_connected();
+  Serial.printf("Heartbeat %lu | heap=%u | ble=%s | rx_count=%lu rx_bytes=%lu\n",
+                (unsigned long)counter, ESP.getFreeHeap(),
+                connected ? "CONNECTED" : "adv",
+                (unsigned long)g_total_write_count,
+                (unsigned long)g_total_write_bytes);
+
+  char line2[24];
+  if (connected) {
+    snprintf(line2, sizeof(line2), "BLE OK rx=%lu",
+             (unsigned long)g_total_write_count);
+  } else {
+    snprintf(line2, sizeof(line2), "Adv #%lu",
+             (unsigned long)counter);
+  }
+  oled_view::show_status("LingoGlass S0", line2);
 
   counter++;
   delay(1000);
