@@ -53,8 +53,8 @@ flutter run               # device must be connected; runs spike_screen
 
 ## Sprint hooks
 
-- S0 Phase D (done 2026-05-17): `lib/ble/ble_transport.dart` ships `BleTransport.scanAndConnect()` + `sendSubtitle(text, seq)` + ACK notify subscription. `SpikeScreen` wired: Scan button connects, Send Hello sends seq incrementing from 1. ACK arrival logs to UI. MTU 247 requested at connect; **actual negotiated MTU is stored in `_negotiatedMtu`** and used by `sendSubtitle` when caller does not pass an explicit `mtu` (default 23 = BLE minimum until requestMtu returns). UTF-8 via `dart:convert` `utf8.encode`. `AckEvent.isOk` is `status == 0x01`; status `0x02` = unsupported (multi-fragment in Phase D), `0x03` = decode error.
-- S0 Phase E: handle MTU negotiation result and split with `splitUtf8(text, mtu - 3 - packetOverhead)`.
+- S0 Phase D (done 2026-05-17): `lib/ble/ble_transport.dart` ships `BleTransport.scanAndConnect()` + `sendSubtitle(text, seq)` + ACK notify subscription. MTU 247 requested at connect; **actual negotiated MTU is stored in `_negotiatedMtu`** and used by `sendSubtitle` when caller does not pass an explicit `mtu` (default 23 = BLE minimum until requestMtu returns). UTF-8 via `dart:convert` `utf8.encode`. `AckEvent.isOk` is `status == 0x01`; `0x02` = unsupported, `0x03` = decode error.
+- S0 Phase E (done 2026-05-18): `SpikeScreen` adds **Send JA** (~100-char Japanese sample) and **MTU matrix 23/185/247** buttons. `_sendText(text, mtu:)` lets callers force a specific MTU per send (passes through to `BleTransport.sendSubtitle`). The matrix iterates `[23, 185, 247]` with a 1500 ms gap between sends so the firmware assembler can complete + ACK before the next sequence starts. Firmware-side reassembly verified by ACK status=0x01 carrying the original `sequence_id`. `splitUtf8` is unchanged from Phase D; codepoint-boundary correctness covered by `test/ble_protocol_test.dart`.
 - S0 Phase F: implement `LatencyLogger` that records `send_ts` per fragment, matches ACK by `sequence_id`, exports CSV with p50/p90/p95. Wire to `_onRun20Pressed`.
 
 ## Do not

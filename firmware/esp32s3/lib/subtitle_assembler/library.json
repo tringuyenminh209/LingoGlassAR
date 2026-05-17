@@ -1,0 +1,14 @@
+{
+  "name": "subtitle_assembler",
+  "version": "0.1.0",
+  "description": "Reassembles multi-fragment subtitle packets by sequence_id. Drops stale buffer on newer sequence.",
+  "frameworks": "*",
+  "platforms": "*",
+  "build": {
+    "srcDir": ".",
+    "includeDir": "."
+  },
+  "dependencies": {
+    "ble_protocol": "*"
+  }
+}

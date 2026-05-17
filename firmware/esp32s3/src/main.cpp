@@ -3,9 +3,11 @@
 // Phase A: I2C scan + board info on Serial. Carried over from Test/Test.ino.
 // Phase B: U8g2 OLED text render.
 // Phase C: NimBLE GATT receiver.
-// Phase D (current): decode subtitle fragments, render on OLED, ACK back.
-//                    Single-fragment only; multi-fragment assembler is Phase E.
-// Phase E: fragment buffer + sequence drop rule + MTU matrix.
+// Phase D: decode subtitle fragments, render on OLED, ACK back.
+// Phase E (current): SubtitleAssembler reassembles multi-fragment payloads
+//                    keyed by sequence_id. Newer sequence drops stale buffer.
+//                    ACK status=0x01 only on full assembly; per-fragment Incomplete
+//                    is silent. Errors (OutOfOrder/Inconsistent/Overflow) -> 0x03.
 // Phase F: latency harness + p50/p95.
 //
 // Hardware: ESPr Developer S3 + 0.96 inch I2C OLED 128x64.
@@ -17,6 +19,7 @@
 #include "ble_protocol.h"
 #include "ble_server.h"
 #include "oled_view.h"
+#include "subtitle_assembler.h"
 
 static const int I2C_SDA_PIN = 8;
 static const int I2C_SCL_PIN = 9;
@@ -34,7 +37,9 @@ static volatile uint32_t g_total_write_bytes = 0;
 static volatile uint32_t g_total_write_count = 0;
 static volatile uint32_t g_total_subtitles = 0;
 static volatile uint32_t g_total_decode_errors = 0;
-static char g_last_subtitle[64] = {0};  // null-terminated, latin only for Phase D
+static volatile uint32_t g_total_assembler_errors = 0;
+static char g_last_subtitle[128] = {0};  // null-terminated UTF-8
+static subtitle_assembler::SubtitleAssembler g_assembler;
 
 static void printBoardInfo() {
   Serial.println();
@@ -161,28 +166,47 @@ static void onSubtitleWrite(const uint8_t* data, size_t length) {
     return;
   }
 
-  if (h.fragment_count > 1) {
-    // Phase E will assemble multi-fragment. Phase D must NOT claim success
-    // (that would let the sender believe the subtitle was rendered). Report
-    // UNSUPPORTED so the sender can decide to skip or retry later.
-    Serial.printf("[decode] multi-fragment (cnt=%u) - deferred to Phase E\n",
-                  h.fragment_count);
-    sendAck(h.sequence_id, AckStatus::Unsupported);
-    return;
+  // Feed every subtitle fragment through the assembler. Single-fragment
+  // subtitles complete on the first call; multi-fragment accumulate until
+  // the final fragment_index == fragment_count - 1 arrives.
+  const auto feed_result = g_assembler.feed(
+      h.sequence_id, h.fragment_index, h.fragment_count,
+      packet.payload, h.payload_length);
+
+  switch (feed_result) {
+    case subtitle_assembler::FeedResult::Incomplete:
+      Serial.printf("[asm] frag %u/%u seq=%u accepted, waiting\n",
+                    h.fragment_index + 1, h.fragment_count, h.sequence_id);
+      // No ACK yet. Sender expects one ACK per sequence_id, on completion.
+      return;
+
+    case subtitle_assembler::FeedResult::Complete: {
+      const size_t asm_len = g_assembler.length();
+      const size_t copy_len = asm_len < sizeof(g_last_subtitle) - 1
+                                  ? asm_len
+                                  : sizeof(g_last_subtitle) - 1;
+      memcpy(g_last_subtitle, g_assembler.assembled(), copy_len);
+      g_last_subtitle[copy_len] = '\0';
+      g_total_subtitles++;
+
+      Serial.printf("[subtitle] seq=%u len=%u frags=%u text=\"%s\"\n",
+                    h.sequence_id, static_cast<unsigned>(asm_len),
+                    h.fragment_count, g_last_subtitle);
+      oled_view::show_status("LingoGlass S0", g_last_subtitle);
+      sendAck(h.sequence_id, AckStatus::Ok);
+      return;
+    }
+
+    case subtitle_assembler::FeedResult::OutOfOrder:
+    case subtitle_assembler::FeedResult::Inconsistent:
+    case subtitle_assembler::FeedResult::Overflow:
+      g_total_assembler_errors++;
+      Serial.printf("[asm] error %d on seq=%u frag=%u/%u\n",
+                    static_cast<int>(feed_result),
+                    h.sequence_id, h.fragment_index, h.fragment_count);
+      sendAck(h.sequence_id, AckStatus::DecodeError);
+      return;
   }
-
-  // Single fragment: copy payload to null-terminated buffer for OLED render.
-  const size_t copy_len = packet.payload_length < sizeof(g_last_subtitle) - 1
-                              ? packet.payload_length
-                              : sizeof(g_last_subtitle) - 1;
-  memcpy(g_last_subtitle, packet.payload, copy_len);
-  g_last_subtitle[copy_len] = '\0';
-  g_total_subtitles++;
-
-  Serial.printf("[subtitle] seq=%u text=\"%s\"\n", h.sequence_id, g_last_subtitle);
-  oled_view::show_status("LingoGlass S0", g_last_subtitle);
-
-  sendAck(h.sequence_id, AckStatus::Ok);
 }
 
 void setup() {
@@ -231,12 +255,14 @@ void loop() {
   }
 
   const bool connected = ble_server::is_connected();
-  Serial.printf("HB %lu | heap=%u | ble=%s | rx=%lu sub=%lu err=%lu | last=\"%s\"\n",
+  Serial.printf("HB %lu | heap=%u | ble=%s | rx=%lu sub=%lu derr=%lu aerr=%lu asm=%s | last=\"%s\"\n",
                 (unsigned long)counter, ESP.getFreeHeap(),
                 connected ? "CONN" : "adv",
                 (unsigned long)g_total_write_count,
                 (unsigned long)g_total_subtitles,
                 (unsigned long)g_total_decode_errors,
+                (unsigned long)g_total_assembler_errors,
+                g_assembler.is_assembling() ? "busy" : "idle",
                 g_last_subtitle);
 
   // If we have a rendered subtitle, keep it on screen. Otherwise show status.

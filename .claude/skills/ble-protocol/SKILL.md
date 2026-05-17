@@ -79,8 +79,8 @@ Sent over characteristic `7c3d8b02-...`. Format mirrors the subtitle packet:
 - `payload_length = 2`
 - `payload[0]` = status code:
   - `0x01` = OK, subtitle rendered on display
-  - `0x02` = UNSUPPORTED (e.g., multi-fragment before Phase E ships the assembler)
-  - `0x03` = DECODE_ERROR (CRC fail, length mismatch, unknown version)
+  - `0x02` = UNSUPPORTED (e.g., non-subtitle message_type the firmware does not handle yet)
+  - `0x03` = DECODE_ERROR (CRC fail, length mismatch, unknown version, or assembler error: out-of-order fragment, fragment_count change mid-sequence, assembled overflow)
 - `payload[1]` = reserved, must be `0x00`
 
 There is **no separate NAK message type**. Failures are signalled via the status code in the Ack payload. Mobile treats `payload[0] != 0x01` as failure and decides whether to retry.
@@ -89,11 +89,12 @@ There is **no separate NAK message type**. Failures are signalled via the status
 
 These rules are **mandatory** in the ESP32-S3 receiver:
 
-1. Buffer fragments keyed by `sequence_id`.
-2. Render only when **all** fragments of a `sequence_id` have been received and CRC passes on each.
-3. If a packet with a higher `sequence_id` arrives before the current one completes, **drop** the incomplete buffer and start the new sequence. Never render partial text.
-4. On CRC failure or other decode error, send Ack with `status = 0x03`. Do not render anything.
+1. Buffer fragments keyed by `sequence_id`. Fragments must arrive in `fragment_index` order; out-of-order is treated as an error (status `0x03`).
+2. Render only when **all** fragments of a `sequence_id` have been received and CRC passes on each. Send **one** Ack per `sequence_id`, on completion (not per fragment).
+3. If a packet with a different `sequence_id` arrives before the current one completes, **silently drop** the incomplete buffer and start the new sequence. Never render partial text.
+4. On CRC failure, length mismatch, unknown version, or assembler error (out-of-order, fragment_count change, overflow), send Ack with `status = 0x03`. Do not render anything.
 5. On full subtitle render, send Ack with `status = 0x01`.
+6. While a sequence is mid-assembly, do not send a partial Ack; the sender waits for completion or timeout.
 
 ## Sender rules (mobile / test harness)
 
