@@ -344,6 +344,26 @@ Review chi them 4 contract drift va config mismatch can sua truoc khi commit:
   - **MTU matrix 23/185/247** → 3 ACK status=0x01, moi cai voi seq tang.
   - **Disconnect mid-assembly**: gui frag 1/2 → tat app → mo lai → connect → gui Hello → phai work.
 
+### P2 fix sau senior review thu 2 (commit ke tiep `0350b41`)
+
+Sau khi commit `0350b41`, review them ra **mot bug nghiem trong** trong `SubtitleAssembler::feed`:
+
+- Code goc validate `fragment_count == 0` va `fragment_index >= fragment_count` **truoc** khi check stale.
+- Vi vay neu stale fragment ve voi `fragment_count = 0` (hoac index >= count - co the do sender retry, packet hong, hay attack), validation se chay truoc va goi `reset()` → **xoa luon active buffer cua sequence moi hon dang dang do**.
+- Vi du minh hoa user dua ra: active seq=10 frag 0/3, stale seq=9 frag 0/count=0 → ket qua sai = mat buffer seq=10.
+
+Fix:
+- Move stale check len truoc moi validation co the goi `reset()`. Khi `active_ && seq != current && !is_newer(seq, current)` → return `Stale` ngay, khong dung den fragment_count/fragment_index.
+- Vi older da bi short-circuit, nhanh `is_newer_seq` check trong vong active_ branch khong con can - simplify thanh else.
+- Them 2 regression test:
+  - `test_stale_older_seq_with_zero_count_preserves_active`: seq=10 frag 0/3 → seq=9 frag 0/count=0 → Stale, KHONG reset; seq=10 frag 1, 2 → Complete "ABC".
+  - `test_stale_older_seq_with_index_ge_count_preserves_active`: seq=10 frag 0/3 → seq=9 frag 5/count=3 (index>=count) → Stale, KHONG reset; seq=10 hoan thanh.
+- SKILL.md: them note "stale check MUST run before any validation that resets the buffer" trong phan render rules.
+
+Verify sau fix:
+- `pio run -e esp32s3`: SUCCESS. Flash khong doi (555553 byte) vi chi reorder logic.
+- Test file ship 16 case (truoc 14, them 2). Native test van chua chay duoc tren Windows.
+
 ### Phase F (con lai)
 
 - Latency harness: 20 subtitle lien tiep, log send_ts + ACK receivedAtMicros, export CSV p50/p90/p95.

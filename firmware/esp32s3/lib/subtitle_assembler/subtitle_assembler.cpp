@@ -35,6 +35,18 @@ FeedResult SubtitleAssembler::feed(uint16_t sequence_id,
                                    uint8_t fragment_count,
                                    const uint8_t* payload,
                                    uint8_t payload_length) {
+  // STALE CHECK MUST RUN BEFORE ANY VALIDATION THAT CALLS reset().
+  // A stale fragment may have garbage fragment_count / fragment_index fields
+  // (sender retry of a long-discarded sequence, or a hostile/malformed
+  // packet). If we validated first, a stale packet with fragment_count==0
+  // or fragment_index>=fragment_count would reset() the active buffer for
+  // the *current* (newer) sequence - destroying legitimate in-progress work.
+  // The fix is to classify by sequence_id first, then validate.
+  if (active_ && sequence_id != current_seq_ &&
+      !is_newer_seq(sequence_id, current_seq_)) {
+    return FeedResult::Stale;
+  }
+
   if (fragment_count == 0 || fragment_count > MAX_FRAGMENTS) {
     // Cannot represent. Treat as a contract violation by the sender.
     reset();
@@ -45,13 +57,11 @@ FeedResult SubtitleAssembler::feed(uint16_t sequence_id,
     return FeedResult::Inconsistent;
   }
 
-  // Sequence transition rules (see SKILL.md "Render rules"):
-  //   - Continuing current sequence: validate fragment_count + index in order.
-  //   - Newer sequence_id while assembling: silently drop old buffer, start
-  //     the new sequence (only legal if its fragment_index == 0).
-  //   - Older (stale) sequence_id while assembling: REJECT as Stale; do not
-  //     disturb the active buffer. The sender may be retrying a sequence we
-  //     have already moved past.
+  // Sequence transition rules (see SKILL.md "Render rules"). At this point
+  // we know any sequence_id mismatch is a NEWER sequence (older was already
+  // short-circuited above as Stale).
+  //   - Continuing current sequence: validate fragment_index in order.
+  //   - Newer sequence_id while assembling: drop old, start new at frag 0.
   //   - Not active: any fragment with index == 0 starts a fresh assembly.
   //     Non-zero index without context is OutOfOrder.
   if (active_) {
@@ -64,16 +74,14 @@ FeedResult SubtitleAssembler::feed(uint16_t sequence_id,
         reset();
         return FeedResult::OutOfOrder;
       }
-    } else if (is_newer_seq(sequence_id, current_seq_)) {
+    } else {
+      // Must be newer (older was returned as Stale above).
       if (fragment_index != 0) {
         // New sequence skipped its first fragment. Drop both and report.
         reset();
         return FeedResult::OutOfOrder;
       }
       start_new_sequence(sequence_id, fragment_count);
-    } else {
-      // Older sequence_id arrived while a newer one is mid-assembly.
-      return FeedResult::Stale;
     }
   } else {
     if (fragment_index != 0) {

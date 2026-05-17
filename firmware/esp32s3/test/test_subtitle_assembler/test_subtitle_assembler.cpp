@@ -151,6 +151,56 @@ static void test_stale_older_seq_does_not_disturb_active() {
   TEST_ASSERT_EQUAL_MEMORY(expected, asm_.assembled(), 6);
 }
 
+// Regression: a malformed stale fragment (fragment_count == 0) must be
+// classified as Stale and short-circuit BEFORE the count-validation that
+// would otherwise reset() the active buffer. The active newer sequence
+// must remain completable.
+static void test_stale_older_seq_with_zero_count_preserves_active() {
+  SubtitleAssembler asm_;
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(FeedResult::Incomplete),
+                        static_cast<int>(feed_vec(asm_, 10, 0, 3, {'A'})));
+  TEST_ASSERT_TRUE(asm_.is_assembling());
+
+  // Stale older seq with fragment_count = 0 (malformed). Must NOT reset.
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(FeedResult::Stale),
+                        static_cast<int>(feed_vec(asm_, 9, 0, 0, {'X'})));
+  TEST_ASSERT_TRUE(asm_.is_assembling());
+  TEST_ASSERT_EQUAL_size_t(1, asm_.length());  // 'A' still buffered
+
+  // Finish the original seq=10.
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(FeedResult::Incomplete),
+                        static_cast<int>(feed_vec(asm_, 10, 1, 3, {'B'})));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(FeedResult::Complete),
+                        static_cast<int>(feed_vec(asm_, 10, 2, 3, {'C'})));
+  TEST_ASSERT_EQUAL_UINT16(10, asm_.completed_sequence_id());
+  const char expected[] = "ABC";
+  TEST_ASSERT_EQUAL_MEMORY(expected, asm_.assembled(), 3);
+}
+
+// Regression: malformed stale fragment with fragment_index >= fragment_count
+// (e.g. index=5, count=3) must also be classified as Stale and short-circuit
+// before validation, preserving the active buffer.
+static void test_stale_older_seq_with_index_ge_count_preserves_active() {
+  SubtitleAssembler asm_;
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(FeedResult::Incomplete),
+                        static_cast<int>(feed_vec(asm_, 10, 0, 3, {'A'})));
+  TEST_ASSERT_TRUE(asm_.is_assembling());
+
+  // Stale older seq with index=5, count=3 (malformed). Must NOT reset.
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(FeedResult::Stale),
+                        static_cast<int>(feed_vec(asm_, 9, 5, 3, {'X'})));
+  TEST_ASSERT_TRUE(asm_.is_assembling());
+  TEST_ASSERT_EQUAL_size_t(1, asm_.length());
+
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(FeedResult::Incomplete),
+                        static_cast<int>(feed_vec(asm_, 10, 1, 3, {'B'})));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(FeedResult::Complete),
+                        static_cast<int>(feed_vec(asm_, 10, 2, 3, {'C'})));
+  TEST_ASSERT_EQUAL_UINT16(10, asm_.completed_sequence_id());
+  const char expected[] = "ABC";
+  TEST_ASSERT_EQUAL_MEMORY(expected, asm_.assembled(), 3);
+}
+
 static void test_newer_seq_mid_assembly_drops_old_starts_fresh() {
   SubtitleAssembler asm_;
   TEST_ASSERT_EQUAL_INT(static_cast<int>(FeedResult::Incomplete),
@@ -214,6 +264,8 @@ int main(int, char**) {
   RUN_TEST(test_overflow_returns_overflow);
   RUN_TEST(test_fragment_count_above_max_returns_inconsistent);
   RUN_TEST(test_stale_older_seq_does_not_disturb_active);
+  RUN_TEST(test_stale_older_seq_with_zero_count_preserves_active);
+  RUN_TEST(test_stale_older_seq_with_index_ge_count_preserves_active);
   RUN_TEST(test_newer_seq_mid_assembly_drops_old_starts_fresh);
   RUN_TEST(test_newer_seq_skipping_first_fragment_returns_outoforder);
   RUN_TEST(test_seq_wrap_around_treated_as_newer);
