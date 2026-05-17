@@ -2,9 +2,11 @@
 //
 // Phase A: I2C scan + board info on Serial. Carried over from Test/Test.ino.
 // Phase B: U8g2 OLED text render.
-// Phase C (current): NimBLE GATT receiver. Write callback logs raw bytes;
-//                    Phase D wires ble_protocol::decode_fragment + ACK.
-// Phase D-E: subtitle packet parser + fragmentation + ACK.
+// Phase C: NimBLE GATT receiver.
+// Phase D (current): decode subtitle fragments, render on OLED, ACK back.
+//                    Single-fragment only; multi-fragment assembler is Phase E.
+// Phase E: fragment buffer + sequence drop rule + MTU matrix.
+// Phase F: latency harness + p50/p95.
 //
 // Hardware: ESPr Developer S3 + 0.96 inch I2C OLED 128x64.
 // I2C: SDA = GPIO 8, SCL = GPIO 9.
@@ -12,6 +14,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 
+#include "ble_protocol.h"
 #include "ble_server.h"
 #include "oled_view.h"
 
@@ -29,6 +32,9 @@ static const int STATUS_LED_PIN = -1;
 
 static volatile uint32_t g_total_write_bytes = 0;
 static volatile uint32_t g_total_write_count = 0;
+static volatile uint32_t g_total_subtitles = 0;
+static volatile uint32_t g_total_decode_errors = 0;
+static char g_last_subtitle[64] = {0};  // null-terminated, latin only for Phase D
 
 static void printBoardInfo() {
   Serial.println();
@@ -80,10 +86,38 @@ static bool scanI2C() {
   return foundOled;
 }
 
-// Phase C subtitle handler: log only. Phase D will decode + ACK.
+// Build and send an ACK packet for the given subtitle sequence_id.
+// Phase D payload: [status=0x01 ok, reserved=0x00].
+static void sendAck(uint16_t sequence_id) {
+  uint8_t ack_buffer[ble_protocol::MAX_PACKET_SIZE];
+  const uint8_t ack_payload[2] = {0x01, 0x00};
+  const size_t written = ble_protocol::encode_fragment(
+      ble_protocol::MessageType::Ack,
+      sequence_id,
+      /*fragment_index=*/0,
+      /*fragment_count=*/1,
+      ack_payload,
+      sizeof(ack_payload),
+      ack_buffer,
+      sizeof(ack_buffer));
+  if (written == 0) {
+    Serial.println("[ack] encode FAILED");
+    return;
+  }
+  if (!ble_server::notify_ack(ack_buffer, written)) {
+    Serial.println("[ack] notify FAILED (no central?)");
+    return;
+  }
+  Serial.printf("[ack] notified seq=%u (%u bytes)\n", sequence_id,
+                static_cast<unsigned>(written));
+}
+
+// Phase D handler: decode subtitle, render on OLED, ACK back.
+// Single-fragment only - multi-fragment assembly is Phase E.
 static void onSubtitleWrite(const uint8_t* data, size_t length) {
   g_total_write_count++;
   g_total_write_bytes += static_cast<uint32_t>(length);
+
   Serial.printf("[ble] rx[%u]:", static_cast<unsigned>(length));
   const size_t preview = length > 16 ? 16 : length;
   for (size_t i = 0; i < preview; ++i) {
@@ -91,6 +125,47 @@ static void onSubtitleWrite(const uint8_t* data, size_t length) {
   }
   if (length > preview) Serial.print(" ...");
   Serial.println();
+
+  ble_protocol::DecodedPacket packet;
+  const ble_protocol::DecodeStatus status =
+      ble_protocol::decode_fragment(data, length, packet);
+  if (status != ble_protocol::DecodeStatus::Ok) {
+    g_total_decode_errors++;
+    Serial.printf("[decode] status=%d (not OK)\n", static_cast<int>(status));
+    return;
+  }
+
+  const auto& h = packet.header;
+  Serial.printf("[decode] type=%u seq=%u frag=%u/%u payload_len=%u\n",
+                h.message_type, h.sequence_id,
+                h.fragment_index + 1, h.fragment_count, h.payload_length);
+
+  if (h.message_type != static_cast<uint8_t>(ble_protocol::MessageType::Subtitle)) {
+    Serial.printf("[decode] ignoring non-subtitle type=%u\n", h.message_type);
+    return;
+  }
+
+  if (h.fragment_count > 1) {
+    // Phase E will assemble multi-fragment. Phase D acknowledges but does
+    // not render to avoid showing partial text.
+    Serial.printf("[decode] multi-fragment (cnt=%u) - deferred to Phase E\n",
+                  h.fragment_count);
+    sendAck(h.sequence_id);
+    return;
+  }
+
+  // Single fragment: copy payload to null-terminated buffer for OLED render.
+  const size_t copy_len = packet.payload_length < sizeof(g_last_subtitle) - 1
+                              ? packet.payload_length
+                              : sizeof(g_last_subtitle) - 1;
+  memcpy(g_last_subtitle, packet.payload, copy_len);
+  g_last_subtitle[copy_len] = '\0';
+  g_total_subtitles++;
+
+  Serial.printf("[subtitle] seq=%u text=\"%s\"\n", h.sequence_id, g_last_subtitle);
+  oled_view::show_status("LingoGlass S0", g_last_subtitle);
+
+  sendAck(h.sequence_id);
 }
 
 void setup() {
@@ -126,7 +201,7 @@ void setup() {
   }
 
   Serial.println();
-  Serial.println("Setup complete. Heartbeat every 1s.");
+  Serial.println("Setup complete.");
 }
 
 void loop() {
@@ -139,21 +214,27 @@ void loop() {
   }
 
   const bool connected = ble_server::is_connected();
-  Serial.printf("Heartbeat %lu | heap=%u | ble=%s | rx_count=%lu rx_bytes=%lu\n",
+  Serial.printf("HB %lu | heap=%u | ble=%s | rx=%lu sub=%lu err=%lu | last=\"%s\"\n",
                 (unsigned long)counter, ESP.getFreeHeap(),
-                connected ? "CONNECTED" : "adv",
+                connected ? "CONN" : "adv",
                 (unsigned long)g_total_write_count,
-                (unsigned long)g_total_write_bytes);
+                (unsigned long)g_total_subtitles,
+                (unsigned long)g_total_decode_errors,
+                g_last_subtitle);
 
-  char line2[24];
-  if (connected) {
-    snprintf(line2, sizeof(line2), "BLE OK rx=%lu",
-             (unsigned long)g_total_write_count);
-  } else {
-    snprintf(line2, sizeof(line2), "Adv #%lu",
-             (unsigned long)counter);
+  // If we have a rendered subtitle, keep it on screen. Otherwise show status.
+  if (g_total_subtitles == 0) {
+    char line2[24];
+    if (connected) {
+      snprintf(line2, sizeof(line2), "BLE conn heap=%uk",
+               static_cast<unsigned>(ESP.getFreeHeap() / 1024));
+    } else {
+      snprintf(line2, sizeof(line2), "Adv #%lu",
+               static_cast<unsigned long>(counter));
+    }
+    oled_view::show_status("LingoGlass S0", line2);
   }
-  oled_view::show_status("LingoGlass S0", line2);
+  // else: last subtitle stays on OLED until next one arrives.
 
   counter++;
   delay(1000);

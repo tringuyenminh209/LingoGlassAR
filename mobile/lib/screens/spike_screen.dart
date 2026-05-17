@@ -1,9 +1,10 @@
 // LingoGlass AR S0 spike screen.
-// Phase A: scaffolded UI shell. Functional BLE scan/connect/send + latency log
-// land in Phase C-F. The widget tree is laid out now so Phase C just fills the
-// callbacks.
+// Phase D: Scan / Send Hello wired through BleTransport.
+// Phase F: Run 20 will add latency CSV export.
 
 import 'package:flutter/material.dart';
+
+import '../ble/ble_transport.dart';
 
 class SpikeScreen extends StatefulWidget {
   const SpikeScreen({super.key});
@@ -14,28 +15,86 @@ class SpikeScreen extends StatefulWidget {
 
 class _SpikeScreenState extends State<SpikeScreen> {
   final List<String> _log = <String>[];
+  late final BleTransport _transport;
+  int _nextSeq = 1;
+  bool _busy = false;
 
-  void _onScanPressed() {
-    // TODO Phase C: trigger flutter_blue_plus scan for service UUID.
-    setState(() => _log.add('Scan not implemented yet (Phase C).'));
+  @override
+  void initState() {
+    super.initState();
+    _transport = BleTransport(log: _append);
+    _transport.acks.listen((ack) {
+      _append('< ACK seq=${ack.sequenceId} ok=${ack.isOk}');
+    });
   }
 
-  void _onSendPressed() {
-    // TODO Phase D: encode subtitle via ble_protocol, write characteristic.
-    setState(() => _log.add('Send not implemented yet (Phase D).'));
+  @override
+  void dispose() {
+    _transport.dispose();
+    super.dispose();
+  }
+
+  void _append(String line) {
+    if (!mounted) return;
+    setState(() => _log.add(line));
+  }
+
+  Future<void> _onScanPressed() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await _transport.scanAndConnect();
+    } on Exception catch (e) {
+      _append('scan/connect FAILED: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _onSendPressed() async {
+    if (_busy) return;
+    if (!_transport.isConnected) {
+      _append('not connected. tap Scan first.');
+      return;
+    }
+    setState(() => _busy = true);
+    final seq = _nextSeq++;
+    try {
+      final frags = await _transport.sendSubtitle('Hello', seq);
+      _append('> sent "Hello" seq=$seq frags=$frags');
+    } on Exception catch (e) {
+      _append('send FAILED: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   void _onRun20Pressed() {
     // TODO Phase F: send 20 subtitles, log latency, export CSV.
-    setState(
-      () => _log.add('Run-20 latency test not implemented yet (Phase F).'),
-    );
+    _append('Run-20 latency test not implemented yet (Phase F).');
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('LingoGlass S0 spike')),
+      appBar: AppBar(
+        title: const Text('LingoGlass S0 spike'),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Center(
+              child: Text(
+                _transport.isConnected ? 'CONN' : 'idle',
+                style: TextStyle(
+                  color: _transport.isConnected
+                      ? Colors.greenAccent
+                      : Colors.white70,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
       body: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
@@ -45,21 +104,21 @@ class _SpikeScreenState extends State<SpikeScreen> {
               children: [
                 Expanded(
                   child: FilledButton(
-                    onPressed: _onScanPressed,
+                    onPressed: _busy ? null : _onScanPressed,
                     child: const Text('Scan'),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: FilledButton(
-                    onPressed: _onSendPressed,
+                    onPressed: _busy ? null : _onSendPressed,
                     child: const Text('Send Hello'),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: FilledButton(
-                    onPressed: _onRun20Pressed,
+                    onPressed: _busy ? null : _onRun20Pressed,
                     child: const Text('Run 20'),
                   ),
                 ),
@@ -70,10 +129,11 @@ class _SpikeScreenState extends State<SpikeScreen> {
             const Divider(),
             Expanded(
               child: ListView.builder(
+                reverse: true,
                 itemCount: _log.length,
                 itemBuilder: (_, i) => Text(
-                  _log[i],
-                  style: const TextStyle(fontFamily: 'monospace'),
+                  _log[_log.length - 1 - i],
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
                 ),
               ),
             ),
