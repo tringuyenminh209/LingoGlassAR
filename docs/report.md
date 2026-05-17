@@ -25,7 +25,7 @@
 - Phat hien va sua loi quan trong: draft dau tien cua `.claude/skills/ble-protocol/SKILL.md` ghi sai CRC-8 vector (`0x3E` - dung phai la `0x5B`). Da implement CRC-8 bang PowerShell de double-check, sua Skill truoc khi generate code. Tranh duoc viec sai vector lan toa sang ca C++ va Dart.
 - Them quy tac `permissions.deny` trong `.claude/settings.local.json` chan `rm -rf docs*` / `firmware*` / `tests*` / `.claude*` cho ca Bash va PowerShell (tranh xoa nham docs va firmware artifact).
 
-## Bao cao ngay 2026/05/17 (S0 spike Phase A.1 wiring + Phase B OLED + Phase C BLE GATT)
+## Bao cao ngay 2026/05/17 (S0 spike: Phase A.1 wiring + Phase B OLED + Phase C BLE GATT + Phase D round-trip)
 
 ### Verify wiring OLED voi ESPr Developer S3 Type-C
 
@@ -146,21 +146,116 @@
 - Setup multi-root workspace: ngoai folder goc `LingoGlass AR/`, them folder `firmware/esp32s3/` qua "Add Folder to Workspace". Nho do PlatformIO IDE detect duoc `platformio.ini` va hien notification `Configuring project: Project has been successfully updated!`.
 - Loi `pio --version` khong nhan trong terminal: do PlatformIO IDE cai Core vao penv rieng (`~/.platformio/penv/Scripts/`), khong nam trong PATH global. Cach giai quyet: `Ctrl+Shift+P` → `PlatformIO: New Terminal` de mo terminal da co PATH. Hoac dung truc tiep nut `→ Upload` tren status bar.
 
+### Phase D: round-trip Hello tu dien thoai len OLED
+
+- **Muc tieu Phase D**: gui text "Hello" tu Flutter app → ESP nhan → decode → render len OLED → ACK ve app. Verify end-to-end single-fragment path tren MTU 247.
+
+#### Firmware: wire decode_fragment + ACK
+
+- Update `firmware/esp32s3/src/main.cpp` `onSubtitleWrite`:
+  - Goi `ble_protocol::decode_fragment(data, length, packet)` tren raw bytes vua nhan.
+  - Neu status != Ok → tang counter `g_total_decode_errors`, log status code, return.
+  - Neu type != Subtitle → log va bo qua.
+  - Neu `fragment_count > 1` → log "deferred to Phase E", van gui ACK nhung khong render (tranh hien text mot nua).
+  - Neu single fragment → copy payload sang buffer null-terminated `g_last_subtitle[64]`, render `oled_view::show_status("LingoGlass S0", g_last_subtitle)`, goi `sendAck(sequence_id)`.
+- Ham `sendAck(uint16_t seq)`:
+  - Dung `ble_protocol::encode_fragment` voi `MessageType::Ack`, payload 2 byte `[0x01, 0x00]` (status=ok, reserved).
+  - Goi `ble_server::notify_ack(buffer, written)`.
+- Track counters mo rong: `g_total_write_count`, `g_total_write_bytes`, `g_total_subtitles`, `g_total_decode_errors`. Heartbeat log moi giay in tat ca + `last="..."`.
+- Loop dynamic: neu chua co subtitle (`g_total_subtitles == 0`) thi hien "Adv #N" hoac "BLE conn heap=...k". Sau khi co subtitle thi giu nguyen text tren OLED toi luc nhan packet moi.
+
+#### Mobile: BleTransport + UI wire
+
+- Tao moi `mobile/lib/ble/ble_transport.dart`:
+  - `scanAndConnect()`: dung `FlutterBluePlus.scanResults` listen, filter `r.device.platformName == 'LingoGlass-S0'`, complete khi tim ra. Co timeout 5s + buffer 1s.
+  - Sau connect → `device.requestMtu(247)` (Android only, iOS auto-negotiate).
+  - `discoverServices()` → lay service `7c3d8b00-...`, sau do `firstWhere` 2 characteristic theo UUID.
+  - Bat notify cho ACK char, subscribe stream `onValueReceived.listen(_handleAck)`.
+  - `sendSubtitle(text, seq, mtu)`: encode UTF-8 bang `utf8.encode`, goi `splitUtf8(bytes, perFragment)` voi `perFragment = effectiveMtu - 3 - packetOverhead = 236`. Gui tung fragment voi `char.write(packet, withoutResponse: true)`.
+  - `_handleAck`: `decodeFragment` packet ACK, lay status byte 0, emit `AckEvent` co `receivedAtMicros` cho Phase F latency.
+- Update `mobile/lib/screens/spike_screen.dart`:
+  - State quan ly `_transport`, `_nextSeq`, `_busy`.
+  - `_onScanPressed` async goi `_transport.scanAndConnect()`, try/catch va disable nut khi busy.
+  - `_onSendPressed` async goi `_transport.sendSubtitle('Hello', seq++)`, log ket qua.
+  - Header AppBar hien `idle` / `CONN` (xanh) theo `_transport.isConnected`.
+  - Log ListView dao nguoc thu tu (line moi nhat o tren).
+- Sua loi `pubspec.yaml`: chuoi description co `S0 spike:` (dau hai cham) lam YAML parser fail. Quote bang `"..."`.
+- `flutter create . --project-name lingoglass_mobile --org com.lingoglass --platforms=android,ios` tao 70 file Android + iOS shells.
+- `flutter pub get` tai dependencies (flutter_blue_plus 1.36.8, permission_handler 11.4.0, va nhieu transitive deps).
+- Them 3 permission vao `android/app/src/main/AndroidManifest.xml`:
+  - `BLUETOOTH_SCAN` voi `usesPermissionFlags="neverForLocation"`
+  - `BLUETOOTH_CONNECT`
+  - `ACCESS_FINE_LOCATION` (Android 11 va thap hon)
+
+#### Verify Phase D end-to-end
+
+- Flash firmware moi len ESPr S3.
+- Cam dien thoai Samsung **SC-56B** qua USB, bat USB debugging.
+- `flutter run` build APK debug + install (~3-5 phut). App launch.
+- Warning bo qua duoc:
+  - `flutter_blue_plus_android requires NDK 27.0.12077973` (current 26.x). Khong chan build, fix optional sau bang `android { ndkVersion = "27.0.12077973" }` trong `build.gradle.kts`.
+  - `gralloc4 ERROR Format 38` la graphics warning cua Samsung device, khong anh huong app.
+- Test quy trinh:
+  1. Bam **Scan** → app hien permission popup (Bluetooth + Location) → Allow → log:
+     ```
+     scan start (filter: LingoGlass-S0)
+     connecting to LingoGlass-S0 (34:85:18:99:D2:3D)
+     mtu=247
+     connected, write+notify wired
+     ```
+     Header `idle` → **CONN** (xanh).
+  2. ESP Serial: `[ble] central connected` + `[ble] negotiated mtu=247`. OLED: `BLE conn heap=...k`.
+  3. Bam **Send Hello** → app log:
+     ```
+     send seq=1 len=5 frags=1 max_payload=236
+       frag 0/1 bytes=13
+     > sent "Hello" seq=1 frags=1
+     ack seq=1 status=0x1
+     < ACK seq=1 ok=true
+     ```
+     ESP Serial:
+     ```
+     [ble] write 13 bytes
+     [ble] rx[13]: 01 01 01 00 00 01 05 48 65 6C 6C 6F XX
+     [decode] type=1 seq=1 frag=1/1 payload_len=5
+     [subtitle] seq=1 text="Hello"
+     [ack] notified seq=1 (12 bytes)
+     ```
+  4. **OLED hien `LingoGlass S0` / `Hello`** ← Phase D milestone PASS.
+- Tat ca buoc PASS. **End-to-end Hello round-trip da hoat dong.**
+
+#### Commit Phase D va push
+
+- Commit `f036438` (feat(ble): Phase D round-trip - decode + render + ACK): 4 files thay doi (+383, -37). Files: firmware/esp32s3/src/main.cpp, mobile/CLAUDE.md, mobile/lib/ble/ble_transport.dart (moi), mobile/lib/screens/spike_screen.dart.
+- Push len GitHub: `85c9ce2..f036438`.
+
 ### Native unit test bi block
 
 - Chay `pio test -e native` bi loi `'gcc' khong duoc nhan dang` - may Windows chua co C++ compiler cho host (PlatformIO native env compile bang GCC cua host, khong dung cross-compiler).
 - Quyet dinh **defer**: khong cai MinGW-w64 ngay, di thang Phase C truoc. Protocol library da co 13 Dart test pass, va se duoc verify end-to-end qua Phase D-E (Hello round-trip + 100-char JP fragmentation).
 - Neu sau nay can debug protocol thi cai WinLibs portable (~150MB) va add PATH: `[Environment]::SetEnvironmentVariable("Path", $env:Path + ";C:\mingw64\bin", "User")`.
 
-### Viec can lam tiep (Phase D, Day 5-7)
+### Tom tat ngay 2026/05/17
 
-- Wire `ble_protocol::decode_fragment` vao `onSubtitleWrite` trong `firmware/esp32s3/src/main.cpp`. Sau khi decode → hien text len OLED + goi `ble_server::notify_ack`.
-- Quan ly buffer fragment theo `sequence_id`. Phase E moi stress test multi-fragment, nhung state machine phai san sang.
-- Implement `mobile/lib/ble/ble_transport.dart`:
-  - Scan filter theo service UUID `7c3d8b00-...` + ten `LingoGlass-S0`.
-  - Connect, request MTU 247, lay ra subtitle write characteristic.
-  - `sendSubtitle(String text, int sequenceId)`: dung `encodeFragment` tu `ble_protocol.dart`, gui qua write-no-response.
-  - Subscribe notify cho ACK char `7c3d8b02-...`.
-- Wire UI: nut "Send Hello" trong `SpikeScreen` → goi `BleTransport.sendSubtitle("Hello", 1)`.
-- Verify end-to-end: bam Send Hello tren app → ESP nhan → OLED hien "Hello" → app nhan ACK.
-- Sau Phase D verify thanh cong → commit + push, di tiep Phase E (fragmentation + MTU matrix 20/185/247).
+- **4 phase xong trong 1 ngay**: A.1 wiring + B OLED + C BLE GATT + D round-trip.
+- Plan ban dau S0 du kien 10-12 ngay → toc do thuc te nhanh hon nhieu nho AI-assisted dev loop, hardware da chot truoc, va commit/push tung phase nho.
+- 3 commit chinh:
+  - `d71237b` chore: initial commit S0 spike (Phase A + B)
+  - `9d53740` feat(ble): NimBLE GATT server for Phase C
+  - `f036438` feat(ble): Phase D round-trip - decode + render + ACK
+- Memory cap nhat:
+  - `espr-developer-s3-pinout-trap.md` (reference) - tranh nham VIN voi GND lan sau.
+  - `s0-spike-plan.md` (project) - mark Phase A→D done, con E va F.
+
+### Viec can lam tiep (Phase E, Day 8-9)
+
+- Firmware: them `SubtitleAssembler` class quan ly multi-fragment buffer theo `sequence_id`:
+  - Drop incomplete buffer khi nhan packet co `sequence_id` cao hon → render fragment moi.
+  - Maximum 4-8 fragment per subtitle (~1KB), du cho moi case tieng Nhat 100 char.
+  - Khi du tat ca fragment → render text len OLED, gui ACK.
+- Mobile: them nut "Send Japanese" gui chuoi tieng Nhat ~100 ky tu (vd "こんにちは、世界。今日は天気がいい。これはテストメッセージです。"). `splitUtf8` se tu split thanh 2-3 fragment voi max_payload theo MTU hien tai.
+- MTU matrix test: thu lan luot voi MTU 20 / 185 / 247 de verify split UTF-8 dung tai codepoint boundary:
+  - MTU 20 → max_payload = 20 - 3 - 8 = 9 byte per fragment. Chuoi 100 char JP (~300 byte UTF-8) chia ~34 fragment.
+  - MTU 185 → max_payload = 174 byte per fragment.
+  - MTU 247 → max_payload = 236 byte per fragment.
+- Phase F (Day 10-12) sau Phase E: latency harness, gui 20 subtitle lien tiep, log timestamp tu `BleTransport` (send_ts) va match voi ACK (`receivedAtMicros`), export CSV voi p50/p90/p95. Viet `docs/S0_spike_report.md` voi Go/No-Go decision.

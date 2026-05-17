@@ -1,5 +1,5 @@
 name: lingoglass_mobile
-description: LingoGlass AR sender app. S0 spike: scan, connect, send subtitle, log latency.
+description: "LingoGlass AR sender app. S0 spike: scan, connect, send subtitle, log latency."
 publish_to: none
 version: 0.1.0+1
 
