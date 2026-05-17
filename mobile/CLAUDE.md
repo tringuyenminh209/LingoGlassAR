@@ -53,7 +53,7 @@ flutter run               # device must be connected; runs spike_screen
 
 ## Sprint hooks
 
-- S0 Phase D (done 2026-05-17): `lib/ble/ble_transport.dart` ships `BleTransport.scanAndConnect()` + `sendSubtitle(text, seq)` + ACK notify subscription. `SpikeScreen` wired: Scan button connects, Send Hello sends seq incrementing from 1. ACK arrival logs to UI. MTU requested 247 (Android only; iOS auto). UTF-8 via `utf8.encode`.
+- S0 Phase D (done 2026-05-17): `lib/ble/ble_transport.dart` ships `BleTransport.scanAndConnect()` + `sendSubtitle(text, seq)` + ACK notify subscription. `SpikeScreen` wired: Scan button connects, Send Hello sends seq incrementing from 1. ACK arrival logs to UI. MTU 247 requested at connect; **actual negotiated MTU is stored in `_negotiatedMtu`** and used by `sendSubtitle` when caller does not pass an explicit `mtu` (default 23 = BLE minimum until requestMtu returns). UTF-8 via `dart:convert` `utf8.encode`. `AckEvent.isOk` is `status == 0x01`; status `0x02` = unsupported (multi-fragment in Phase D), `0x03` = decode error.
 - S0 Phase E: handle MTU negotiation result and split with `splitUtf8(text, mtu - 3 - packetOverhead)`.
 - S0 Phase F: implement `LatencyLogger` that records `send_ts` per fragment, matches ACK by `sequence_id`, exports CSV with p50/p90/p95. Wire to `_onRun20Pressed`.
 

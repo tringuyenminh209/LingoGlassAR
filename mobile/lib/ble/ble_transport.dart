@@ -54,6 +54,14 @@ class BleTransport {
   BluetoothCharacteristic? _ackChar;
   StreamSubscription<List<int>>? _ackSub;
 
+  // BLE minimum ATT MTU is 23. We update this after requestMtu returns.
+  // sendSubtitle uses this when the caller does not pass an explicit mtu.
+  int _negotiatedMtu = 23;
+
+  /// Actual MTU negotiated with the peripheral, or 23 (BLE minimum) until a
+  /// successful requestMtu has run.
+  int get negotiatedMtu => _negotiatedMtu;
+
   final StreamController<AckEvent> _ackController =
       StreamController<AckEvent>.broadcast();
 
@@ -100,12 +108,15 @@ class BleTransport {
     _log('connecting to ${device.platformName} (${device.remoteId})');
     await device.connect(timeout: const Duration(seconds: 10));
 
-    // Android-only MTU request. iOS negotiates automatically.
+    // Android-only MTU request. iOS negotiates automatically; on iOS we leave
+    // _negotiatedMtu at the BLE minimum until the first ACK comes back so we
+    // never over-fragment.
     try {
       final mtu = await device.requestMtu(247);
-      _log('mtu=$mtu');
+      _negotiatedMtu = mtu;
+      _log('mtu=$mtu (negotiated)');
     } on Exception catch (e) {
-      _log('requestMtu failed: $e (iOS auto-negotiates)');
+      _log('requestMtu failed: $e (iOS auto-negotiates, leaving mtu=23)');
     }
 
     final services = await device.discoverServices();
@@ -138,12 +149,16 @@ class BleTransport {
     _device = null;
     _subtitleChar = null;
     _ackChar = null;
+    _negotiatedMtu = 23;
     _log('disconnected');
   }
 
-  /// Encodes [text] as UTF-8, splits into fragments if needed, and writes
-  /// each fragment to the subtitle characteristic. Phase D path stays in the
-  /// single-fragment branch when text fits.
+  /// Encodes [text] as UTF-8, splits into fragments based on the negotiated
+  /// MTU (or [mtu] override), and writes each fragment to the subtitle
+  /// characteristic with write-without-response.
+  ///
+  /// If [mtu] is null, uses [negotiatedMtu] (default 23 = BLE minimum, updated
+  /// after requestMtu returns at connect time).
   ///
   /// Returns the number of fragments sent.
   Future<int> sendSubtitle(String text, int sequenceId, {int? mtu}) async {
@@ -153,8 +168,13 @@ class BleTransport {
     }
     final bytes = Uint8List.fromList(utf8.encode(text));
 
-    final effectiveMtu = mtu ?? 247;
+    final effectiveMtu = mtu ?? _negotiatedMtu;
     final perFragment = effectiveMtu - 3 - packetOverhead;
+    if (perFragment <= 0) {
+      throw StateError(
+        'mtu $effectiveMtu too small for protocol overhead $packetOverhead',
+      );
+    }
     final fragments = splitUtf8(bytes, perFragment);
     _log(
       'send seq=$sequenceId len=${bytes.length} '

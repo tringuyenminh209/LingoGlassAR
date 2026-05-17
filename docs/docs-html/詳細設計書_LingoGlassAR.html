@@ -717,12 +717,12 @@ export type ErrorCode =
     <tbody>
       <tr>
         <td>BLE write characteristic からのバイナリバッファ（最大 MTU - 3 bytes）</td>
-        <td>① CRC8 検証（失敗 → NAK 0x31 返信）<br>
-            ② version, type, seq, frag_index, frag_count, payload_len を解釈<br>
+        <td>① CRC8 検証（失敗 → ACK type=0x03 / status=0x03 返信）<br>
+            ② version, type, seq, frag_index, frag_count, payload_len を解釈（multi-byte は little-endian）<br>
             ③ PacketAssembler.feed(pkt)<br>
             ④ 新 sequence_id → 旧進行中破棄（discard_old）<br>
             ⑤ 全 fragment 揃ったら DisplayRenderer.render(text)<br>
-            ⑥ ACK 0x30 を返信</td>
+            ⑥ ACK type=0x03 / status=0x01 を返信</td>
         <td>① 字幕がディスプレイへ描画される<br>② ACK / NAK を BLE notify で送信<br>③ 5 秒タイムアウト：sequence 破棄ログ（任意）</td>
       </tr>
       <tr>

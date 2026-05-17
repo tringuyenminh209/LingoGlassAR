@@ -665,7 +665,7 @@
       <tr><th style="width:6%">No</th><th style="width:14%">連携先</th><th style="width:10%">方向</th><th style="width:12%">プロトコル</th><th style="width:18%">エンドポイント / 識別子</th><th style="width:14%">データ形式</th><th>用途・備考</th></tr>
     </thead>
     <tbody>
-      <tr><td class="center">EXT-01</td><td>LingoGlass（ESP32-S3）</td><td class="center">App ⇄ Glass</td><td>BLE 5.0 GATT</td><td><span class="mono">9f3a0001-7b2c-4d6e-9a11-0f8c2d4e5f60</span></td><td>Binary packet（§10）</td><td>字幕送信・バッテリー通知。MTU 20/185/247 で動作確認必須</td></tr>
+      <tr><td class="center">EXT-01</td><td>LingoGlass（ESP32-S3）</td><td class="center">App ⇄ Glass</td><td>BLE 5.0 GATT</td><td><span class="mono">7c3d8b00-9e8a-4f15-b6c3-1d2e3f4a5b6c</span></td><td>Binary packet（§10）</td><td>字幕送信・状態通知。MTU 23/185/247 で動作確認必須</td></tr>
       <tr><td class="center">EXT-02</td><td>Backend API</td><td class="center">App → Server</td><td>WSS</td><td class="mono">wss://api.lingoglass.app/api/v1/session</td><td>音声 (Opus 16kHz)、JSON</td><td>双方向ストリーミング会話セッション</td></tr>
       <tr><td class="center">EXT-03</td><td>Backend API</td><td class="center">App → Server</td><td>HTTPS</td><td class="mono">POST /api/v1/ocr</td><td>multipart/form-data, JSON</td><td>OCR 撮影画像送信・翻訳結果取得</td></tr>
       <tr><td class="center">EXT-04</td><td>Backend API</td><td class="center">App → Server</td><td>HTTPS</td><td class="mono">POST /api/v1/logs</td><td>JSON (NDJSON 任意)</td><td>遅延・エラーログのバッチ送信</td></tr>
@@ -721,50 +721,52 @@
       <pre class="code">┌─────────────────────────────────────────────┐
 │ 0  version          (1 byte)  — 0x01        │
 │ 1  message_type     (1 byte)  — see 10.2    │
-│ 2  sequence_id      (2 bytes) — uint16 BE   │
+│ 2  sequence_id      (2 bytes) — uint16 LE   │
 │ 4  fragment_index   (1 byte)  — 0-based     │
 │ 5  fragment_count   (1 byte)  — total       │
-│ 6  payload_length   (1 byte)  — N (0-238)   │
+│ 6  payload_length   (1 byte)  — N (0-236)   │
 │ 7  payload          (N bytes) — UTF-8       │
 │ 7+N crc8            (1 byte)  — CCITT       │
 └─────────────────────────────────────────────┘
-最大ペイロード 1 パケット：238 bytes (@ MTU 247)
-                          176 bytes (@ MTU 185)
-                           11 bytes (@ MTU 20)</pre>
+1 packet 全体 = 8 + payload_length bytes
+ATT MTU から payload_length 最大値を求める式：
+  max_payload = mtu - 3 (ATT) - 8 (本プロトコルヘッダ＋CRC)
+最大ペイロード 1 パケット：236 bytes (@ MTU 247)
+                          174 bytes (@ MTU 185)
+                           12 bytes (@ MTU 23 ＝ BLE 最小)</pre>
     </div>
     <div>
       <div class="sub-head">10.2　メッセージタイプ</div>
       <table>
         <thead><tr><th style="width:18%">値</th><th style="width:30%">名前</th><th>方向</th></tr></thead>
         <tbody>
-          <tr><td class="mono">0x10</td><td>SUBTITLE_TEXT</td><td>App → Glass</td></tr>
-          <tr><td class="mono">0x11</td><td>SUBTITLE_CLEAR</td><td>App → Glass</td></tr>
-          <tr><td class="mono">0x20</td><td>BATTERY_REPORT</td><td>Glass → App</td></tr>
-          <tr><td class="mono">0x21</td><td>STATUS_REPORT</td><td>Glass → App</td></tr>
-          <tr><td class="mono">0x30</td><td>ACK</td><td>Both</td></tr>
-          <tr><td class="mono">0x31</td><td>NAK (retry req)</td><td>Both</td></tr>
-          <tr><td class="mono">0x40</td><td>OTA_UPDATE</td><td>App → Glass</td></tr>
+          <tr><td class="mono">0x01</td><td>SUBTITLE</td><td>App → Glass</td></tr>
+          <tr><td class="mono">0x02</td><td>STATUS（バッテリー、温度など、Phase F+）</td><td>Glass → App</td></tr>
+          <tr><td class="mono">0x03</td><td>ACK（status code 付き、§10.4）</td><td>Glass → App</td></tr>
+          <tr><td class="mono">0x04</td><td>ERROR（予約、現状未使用）</td><td>Both</td></tr>
         </tbody>
       </table>
+      <p style="margin-top:4px;font-size:0.9em;">SUBTITLE_CLEAR / OTA_UPDATE / 専用 NAK type は MVP に含めない。失敗は ACK の status code で表現する（§10.4）。</p>
       <div class="sub-head" style="margin-top:6px;">10.3　レンダリングルール</div>
       <ul>
         <li>全 fragment が揃った時点で初めて描画する</li>
-        <li>新 <span class="mono">sequence_id</span> 受信時、進行中の旧 sequence は破棄</li>
-        <li>CRC8 不一致は NAK 返信し、最大 2 回まで再送</li>
-        <li>5 秒以上 fragment 待ちで sequence タイムアウト破棄</li>
-        <li>MVP 字幕上限 100 文字（UTF-8 で約 300 bytes）= 最大 2 fragment</li>
+        <li>新 <span class="mono">sequence_id</span> 受信時、進行中の旧 sequence は破棄（partial render しない）</li>
+        <li>CRC8 不一致は ACK <span class="mono">status=0x03</span> で返信、再送はアプリ側判断</li>
+        <li>fragment タイムアウトはアプリ側 300ms × 最大 2 retry でハンドリング</li>
+        <li>MVP 字幕上限 100 文字（UTF-8 で約 300 bytes）= 最大 2 fragment（MTU 247 時）</li>
       </ul>
       <div class="sub-head" style="margin-top:6px;">10.4　実装固定値（S0/S1）</div>
       <table>
         <tbody>
-          <tr><td class="tbl-label">Service UUID</td><td class="mono">9f3a0001-7b2c-4d6e-9a11-0f8c2d4e5f60</td></tr>
-          <tr><td class="tbl-label">Write Characteristic</td><td class="mono">9f3a0002-7b2c-4d6e-9a11-0f8c2d4e5f60</td></tr>
-          <tr><td class="tbl-label">Notify Characteristic</td><td class="mono">9f3a0003-7b2c-4d6e-9a11-0f8c2d4e5f60</td></tr>
-          <tr><td class="tbl-label">Endian</td><td>全 multi-byte integer は big-endian。<span class="mono">sequence_id</span> は uint16 rollover 可</td></tr>
-          <tr><td class="tbl-label">CRC8</td><td>CRC-8/CCITT: poly <span class="mono">0x07</span>, init <span class="mono">0x00</span>, xorout <span class="mono">0x00</span>。対象は byte 0 〜 payload end</td></tr>
-          <tr><td class="tbl-label">ACK / NAK</td><td>ACK: <span class="mono">0x30 + sequence_id + fragment_index</span>。NAK: <span class="mono">0x31 + sequence_id + fragment_index + reason</span>（0x01 CRC, 0x02 timeout, 0x03 unsupported）</td></tr>
-          <tr><td class="tbl-label">Retry</td><td>App は NAK または ACK timeout 300ms で再送。最大 2 retry。失敗時は次 sequence に進む</td></tr>
-          <tr><td class="tbl-label">MTU</td><td>接続後に 247 を要求。失敗時は negotiated MTU を使用し、20 / 185 / 247 の全パスをテスト</td></tr>
+          <tr><td class="tbl-label">Service UUID</td><td class="mono">7c3d8b00-9e8a-4f15-b6c3-1d2e3f4a5b6c</td></tr>
+          <tr><td class="tbl-label">Subtitle Write Char</td><td class="mono">7c3d8b01-9e8a-4f15-b6c3-1d2e3f4a5b6c</td></tr>
+          <tr><td class="tbl-label">ACK Notify Char</td><td class="mono">7c3d8b02-9e8a-4f15-b6c3-1d2e3f4a5b6c</td></tr>
+          <tr><td class="tbl-label">Advertise Name</td><td class="mono">LingoGlass-S0</td></tr>
+          <tr><td class="tbl-label">Endian</td><td>全 multi-byte integer は <strong>little-endian</strong>。<span class="mono">sequence_id</span> は uint16 rollover 可</td></tr>
+          <tr><td class="tbl-label">CRC8</td><td>CRC-8/CCITT: poly <span class="mono">0x07</span>, init <span class="mono">0x00</span>, xorout <span class="mono">0x00</span>。対象は byte 0 〜 payload end。テストベクター: <span class="mono">01 01 01 00 00 01 01 41</span> → <span class="mono">0x5B</span></td></tr>
+          <tr><td class="tbl-label">ACK 形式</td><td>type <span class="mono">0x03</span>、payload <span class="mono">[status, reserved]</span>（2 byte）。status: <span class="mono">0x01</span> OK / <span class="mono">0x02</span> UNSUPPORTED / <span class="mono">0x03</span> DECODE_ERROR</td></tr>
+          <tr><td class="tbl-label">Retry</td><td>App は ACK <span class="mono">status != 0x01</span> または timeout 300ms で再送。最大 2 retry。失敗時は次 sequence に進む</td></tr>
+          <tr><td class="tbl-label">MTU</td><td>接続後に 247 を要求。失敗時は negotiated MTU を採用し fragment size を再計算。23 / 185 / 247 の全パスをテスト</td></tr>
           <tr><td class="tbl-label">Text</td><td>UTF-8 NFC 正規化。上限 100 Unicode scalar / 300 bytes。表示不能 glyph は <span class="mono">□</span> に置換</td></tr>
         </tbody>
       </table>

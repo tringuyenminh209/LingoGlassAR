@@ -27,9 +27,9 @@ UT-APP-13,UT,normal,FR-APP-10,diagnostics stats,p50 p90 p95 rendered
 UT-APP-14,UT,normal,FR-APP-11,push-to-talk,state gates microphone capture
 UT-APP-15,UT,error,NFR-08,privacy history off,no text retained locally
 UT-FW-01,UT,normal,FR-HW-01,BLE service advertises,service uuid visible
-UT-FW-02,UT,normal,FR-HW-02,packet parse valid,fields decoded big-endian
-UT-FW-03,UT,error,FR-HW-02,packet parse bad version,NAK unsupported
-UT-FW-04,UT,error,FR-HW-02,packet parse bad crc,NAK crc
+UT-FW-02,UT,normal,FR-HW-02,packet parse valid,fields decoded little-endian
+UT-FW-03,UT,error,FR-HW-02,packet parse bad version,ACK status=0x03 (decode error)
+UT-FW-04,UT,error,FR-HW-02,packet parse bad crc,ACK status=0x03 (decode error)
 UT-FW-05,UT,normal,FR-HW-02,assembler three fragments,is_complete true
 UT-FW-06,UT,normal,FR-HW-02,assembler reverse order,reassembled text matches
 UT-FW-07,UT,normal,FR-HW-02,new sequence discards old,old buffer reset

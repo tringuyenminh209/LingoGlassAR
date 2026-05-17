@@ -86,11 +86,17 @@ static bool scanI2C() {
   return foundOled;
 }
 
-// Build and send an ACK packet for the given subtitle sequence_id.
-// Phase D payload: [status=0x01 ok, reserved=0x00].
-static void sendAck(uint16_t sequence_id) {
+// Status codes for the ACK payload. See .claude/skills/ble-protocol/SKILL.md.
+namespace AckStatus {
+constexpr uint8_t Ok            = 0x01;  // subtitle rendered on display
+constexpr uint8_t Unsupported   = 0x02;  // e.g., multi-fragment before Phase E
+constexpr uint8_t DecodeError   = 0x03;  // CRC / length / version failure
+}  // namespace AckStatus
+
+// Build and send an ACK packet with the given status byte.
+static void sendAck(uint16_t sequence_id, uint8_t status) {
   uint8_t ack_buffer[ble_protocol::MAX_PACKET_SIZE];
-  const uint8_t ack_payload[2] = {0x01, 0x00};
+  const uint8_t ack_payload[2] = {status, 0x00};
   const size_t written = ble_protocol::encode_fragment(
       ble_protocol::MessageType::Ack,
       sequence_id,
@@ -108,8 +114,8 @@ static void sendAck(uint16_t sequence_id) {
     Serial.println("[ack] notify FAILED (no central?)");
     return;
   }
-  Serial.printf("[ack] notified seq=%u (%u bytes)\n", sequence_id,
-                static_cast<unsigned>(written));
+  Serial.printf("[ack] notified seq=%u status=0x%02X (%u bytes)\n", sequence_id,
+                status, static_cast<unsigned>(written));
 }
 
 // Phase D handler: decode subtitle, render on OLED, ACK back.
@@ -132,6 +138,13 @@ static void onSubtitleWrite(const uint8_t* data, size_t length) {
   if (status != ble_protocol::DecodeStatus::Ok) {
     g_total_decode_errors++;
     Serial.printf("[decode] status=%d (not OK)\n", static_cast<int>(status));
+    // We don't have a reliable sequence_id since decode failed. Best-effort:
+    // try to read bytes 2-3 as little-endian seq if there are enough bytes,
+    // otherwise use 0xFFFF as a sentinel. Sender treats any status != 0x01
+    // as failure regardless of seq match.
+    const uint16_t seq_guess =
+        length >= 4 ? static_cast<uint16_t>(data[2] | (data[3] << 8)) : 0xFFFF;
+    sendAck(seq_guess, AckStatus::DecodeError);
     return;
   }
 
@@ -142,15 +155,19 @@ static void onSubtitleWrite(const uint8_t* data, size_t length) {
 
   if (h.message_type != static_cast<uint8_t>(ble_protocol::MessageType::Subtitle)) {
     Serial.printf("[decode] ignoring non-subtitle type=%u\n", h.message_type);
+    // Not an error from the sender's point of view - we just don't handle it.
+    // Phase F may add Status/Error handlers. For now, decline with Unsupported.
+    sendAck(h.sequence_id, AckStatus::Unsupported);
     return;
   }
 
   if (h.fragment_count > 1) {
-    // Phase E will assemble multi-fragment. Phase D acknowledges but does
-    // not render to avoid showing partial text.
+    // Phase E will assemble multi-fragment. Phase D must NOT claim success
+    // (that would let the sender believe the subtitle was rendered). Report
+    // UNSUPPORTED so the sender can decide to skip or retry later.
     Serial.printf("[decode] multi-fragment (cnt=%u) - deferred to Phase E\n",
                   h.fragment_count);
-    sendAck(h.sequence_id);
+    sendAck(h.sequence_id, AckStatus::Unsupported);
     return;
   }
 
@@ -165,7 +182,7 @@ static void onSubtitleWrite(const uint8_t* data, size_t length) {
   Serial.printf("[subtitle] seq=%u text=\"%s\"\n", h.sequence_id, g_last_subtitle);
   oled_view::show_status("LingoGlass S0", g_last_subtitle);
 
-  sendAck(h.sequence_id);
+  sendAck(h.sequence_id, AckStatus::Ok);
 }
 
 void setup() {
