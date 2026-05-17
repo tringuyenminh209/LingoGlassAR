@@ -30,6 +30,8 @@ constexpr uint8_t MAX_FRAGMENTS = 64;
 enum class FeedResult : uint8_t {
   Incomplete,     // fragment accepted, more expected
   Complete,       // assembled payload ready; read via assembled()/length()
+  Stale,          // sequence_id is older than the in-progress one; rejected
+                  // WITHOUT disturbing the active buffer
   OutOfOrder,     // fragment_index != next expected for this sequence
   Inconsistent,   // fragment_count changed mid-sequence, or count == 0
   Overflow,       // would exceed ASSEMBLED_MAX

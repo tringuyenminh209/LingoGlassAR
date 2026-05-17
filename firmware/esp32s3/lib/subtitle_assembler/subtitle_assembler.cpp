@@ -4,6 +4,15 @@
 
 namespace subtitle_assembler {
 
+namespace {
+// True if `candidate` is strictly newer than `reference` under 16-bit wrap.
+// Treats the half-circle (32768) as the boundary; older fragments arriving
+// late are rejected as Stale.
+bool is_newer_seq(uint16_t candidate, uint16_t reference) {
+  return static_cast<int16_t>(static_cast<uint16_t>(candidate - reference)) > 0;
+}
+}  // namespace
+
 void SubtitleAssembler::reset() {
   active_ = false;
   current_seq_ = 0;
@@ -36,29 +45,41 @@ FeedResult SubtitleAssembler::feed(uint16_t sequence_id,
     return FeedResult::Inconsistent;
   }
 
-  // Sequence transition rules:
-  //   - first fragment of a different sequence_id while assembling -> drop old
-  //   - sequence_id matches but we are not active -> only legal if fragment 0
-  //   - mid-sequence different sequence_id -> drop old, start fresh if frag 0
-  const bool sequence_changed = !active_ || (sequence_id != current_seq_);
-  if (sequence_changed) {
+  // Sequence transition rules (see SKILL.md "Render rules"):
+  //   - Continuing current sequence: validate fragment_count + index in order.
+  //   - Newer sequence_id while assembling: silently drop old buffer, start
+  //     the new sequence (only legal if its fragment_index == 0).
+  //   - Older (stale) sequence_id while assembling: REJECT as Stale; do not
+  //     disturb the active buffer. The sender may be retrying a sequence we
+  //     have already moved past.
+  //   - Not active: any fragment with index == 0 starts a fresh assembly.
+  //     Non-zero index without context is OutOfOrder.
+  if (active_) {
+    if (sequence_id == current_seq_) {
+      if (fragment_count != expected_fragment_count_) {
+        reset();
+        return FeedResult::Inconsistent;
+      }
+      if (fragment_index != next_expected_fragment_) {
+        reset();
+        return FeedResult::OutOfOrder;
+      }
+    } else if (is_newer_seq(sequence_id, current_seq_)) {
+      if (fragment_index != 0) {
+        // New sequence skipped its first fragment. Drop both and report.
+        reset();
+        return FeedResult::OutOfOrder;
+      }
+      start_new_sequence(sequence_id, fragment_count);
+    } else {
+      // Older sequence_id arrived while a newer one is mid-assembly.
+      return FeedResult::Stale;
+    }
+  } else {
     if (fragment_index != 0) {
-      // Sender sent a non-zero fragment without us having seen the start.
-      // Possible if we missed the first fragment or sender skipped.
-      reset();
       return FeedResult::OutOfOrder;
     }
     start_new_sequence(sequence_id, fragment_count);
-  } else {
-    // Continuing current sequence. Validate fragment_count is stable.
-    if (fragment_count != expected_fragment_count_) {
-      reset();
-      return FeedResult::Inconsistent;
-    }
-    if (fragment_index != next_expected_fragment_) {
-      reset();
-      return FeedResult::OutOfOrder;
-    }
   }
 
   // Append payload to assembled buffer.

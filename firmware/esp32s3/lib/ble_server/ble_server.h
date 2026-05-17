@@ -19,10 +19,18 @@ namespace ble_server {
 // only valid for the duration of the callback - copy if you need to retain.
 using SubtitleWriteCallback = void (*)(const uint8_t* data, size_t length);
 
+// Fired once each time a central disconnects, after advertising has been
+// restarted. Use this to reset per-connection state (e.g. SubtitleAssembler).
+using DisconnectCallback = void (*)();
+
 // Initializes NimBLE, registers the GATT service, and starts advertising.
 // device_name is what shows up in a phone's BLE scanner. Returns false if
 // the BLE stack failed to bring up.
 bool begin(const char* device_name, SubtitleWriteCallback on_subtitle);
+
+// Registers a hook called when the central disconnects. Pass nullptr to
+// clear. Safe to call before or after begin().
+void set_disconnect_callback(DisconnectCallback on_disconnect);
 
 // True while a central is connected.
 bool is_connected();

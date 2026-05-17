@@ -231,7 +231,7 @@ Checksum:
 - App phai chia fragment neu payload vuot MTU.
 - Firmware chi render khi nhan du fragment dung sequence.
 - Subtitle moi co sequence_id moi; subtitle cu bi huy neu co message moi hon.
-- Can test MTU 20 bytes, 185 bytes va 247 bytes de biet latency thuc te.
+- Can test MTU 23 bytes (BLE ATT minimum, ATT payload 20), 185 bytes va 247 bytes de biet latency thuc te.
 
 ## 8.3 Privacy indicator design
 
@@ -250,7 +250,7 @@ LED vat ly nen duoc xem la yeu cau MVP, khong phai tinh nang trang tri, vi no an
 | Loi spike | Dau hieu | Plan B |
 | --- | --- | --- |
 | BLE latency cao | App-to-display >200 ms voi text ngan | Tang MTU, toi uu packet binary, giam subtitle length, fallback Wi-Fi local |
-| BLE fragmentation loi | Text dai mat fragment/sai thu tu | Bat ACK/NAK don gian, retry theo sequence_id, gioi han 2 dong text |
+| BLE fragmentation loi | Text dai mat fragment/sai thu tu | ACK type=0x03 voi status code (0x01 OK / 0x03 error), retry theo sequence_id, gioi han 2 dong text |
 | ESP32-S3 render cham/treo | Cap nhat subtitle lien tuc bi freeze | Don gian hoa font/render, dung display driver co buffer, thu ESP32-P4/STM32/RP2040 |
 | OLED dev display qua nho | Khong danh gia duoc readability | Van dung de test pipeline, chuyen readability sang AR dev kit/phone mock |
 | Micro-OLED/waveguide khong doc duoc | Text mo, eyebox hep, sang ngoai troi kem | Thu module khac, giam target ngoai troi, dung Vuzix/Monocle cho pilot software |

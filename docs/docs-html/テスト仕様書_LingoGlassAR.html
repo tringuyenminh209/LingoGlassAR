@@ -257,7 +257,7 @@
     <tbody>
       <tr><td class="mono">UT-BE-01</td><td class="mono">PacketBuilder.ts</td><td>1 fragment で収まる字幕生成</td><td>text="hello", mtu=247</td><td>fragment_count=1, payload="hello", CRC8 一致</td><td class="center">正常</td><td>FR-HW-02 / §10 BD</td></tr>
       <tr><td class="mono">UT-BE-02</td><td class="mono">PacketBuilder.ts</td><td>2 fragment 分割</td><td>text=（300 bytes UTF-8）, mtu=185</td><td>fragment_count=2, 各 payload_length &lt; 178, 結合後一致</td><td class="center">正常</td><td>境界値テスト</td></tr>
-      <tr><td class="mono">UT-BE-03</td><td class="mono">PacketBuilder.ts</td><td>MTU 20（最小）</td><td>text="A", mtu=20</td><td>fragment_count=1, 例外なし</td><td class="center">境界</td><td>MTU 20/185/247 を 3 通り検証</td></tr>
+      <tr><td class="mono">UT-BE-03</td><td class="mono">PacketBuilder.ts</td><td>MTU 23（BLE ATT 最小）</td><td>text="A", mtu=23（usable payload 12 bytes per fragment）</td><td>fragment_count=1, 例外なし</td><td class="center">境界</td><td>MTU 23/185/247 を 3 通り検証（BLE ATT MTU 最小は 23、過去ドキュメントの「MTU 20」は ATT payload 値の誤記）</td></tr>
       <tr><td class="mono">UT-BE-04</td><td class="mono">PacketBuilder.ts</td><td>空文字列</td><td>text="", mtu=247</td><td>fragment_count=0 または 1（空ペイロード）, 例外なし</td><td class="center">異常</td><td>—</td></tr>
       <tr><td class="mono">UT-BE-05</td><td class="mono">PacketBuilder.ts</td><td>超過字幕（&gt; 100 文字）</td><td>text=（120 文字）</td><td>truncate されて 100 文字 + "..."、警告ログ</td><td class="center">異常</td><td>MVP 上限</td></tr>
       <tr><td class="mono">UT-BE-06</td><td class="mono">SessionService</td><td>正常な start → end</td><td>deviceId valid, src=en, tgt=ja</td><td>sessions.status='active' → 'ended'、events に start/end</td><td class="center">正常</td><td>DB は pg-mem</td></tr>
@@ -328,12 +328,12 @@
     <tbody>
       <tr><td class="mono">UT-FW-01</td><td class="mono">crc8.c</td><td>CRC8 計算正当性</td><td>RFC 3309 ベクター × 5</td><td>全て規格値と一致</td><td class="center">正常</td><td>—</td></tr>
       <tr><td class="mono">UT-FW-02</td><td class="mono">PacketParser</td><td>正常パケットの解析</td><td>fixtures/pkt_*.bin（10 種）</td><td>parse_result_t::OK, 各フィールド一致</td><td class="center">正常</td><td>—</td></tr>
-      <tr><td class="mono">UT-FW-03</td><td class="mono">PacketParser</td><td>CRC 不一致</td><td>fixtures/pkt_bad_crc.bin</td><td>parse_result_t::BAD_CRC, NAK 0x31 生成</td><td class="center">異常</td><td>—</td></tr>
-      <tr><td class="mono">UT-FW-04</td><td class="mono">PacketParser</td><td>未知の version</td><td>version=0x02</td><td>parse_result_t::UNSUPPORTED</td><td class="center">異常</td><td>後方互換確認</td></tr>
-      <tr><td class="mono">UT-FW-05</td><td class="mono">PacketAssembler</td><td>3 fragment 完成</td><td>seq=1, frag 0,1,2 順序</td><td>is_complete=true、結合テキスト一致</td><td class="center">正常</td><td>—</td></tr>
-      <tr><td class="mono">UT-FW-06</td><td class="mono">PacketAssembler</td><td>fragment 逆順</td><td>seq=1, frag 2,0,1</td><td>is_complete=true、結合 OK</td><td class="center">正常</td><td>順序非依存</td></tr>
-      <tr><td class="mono">UT-FW-07</td><td class="mono">PacketAssembler</td><td>新 sequence で旧破棄</td><td>seq=1 frag 0 → seq=2 frag 0</td><td>seq=1 buffer 破棄、seq=2 開始</td><td class="center">正常</td><td>§10 BD ルール</td></tr>
-      <tr><td class="mono">UT-FW-08</td><td class="mono">PacketAssembler</td><td>5s タイムアウト</td><td>frag 0 のみ → 6s 経過</td><td>tick(now) で buffer reset</td><td class="center">異常</td><td>—</td></tr>
+      <tr><td class="mono">UT-FW-03</td><td class="mono">PacketParser</td><td>CRC 不一致</td><td>fixtures/pkt_bad_crc.bin</td><td>DecodeStatus::CrcMismatch、ACK type=0x03 / status=0x03 (DECODE_ERROR) 生成</td><td class="center">異常</td><td>—</td></tr>
+      <tr><td class="mono">UT-FW-04</td><td class="mono">PacketParser</td><td>未知の version</td><td>version=0x02</td><td>DecodeStatus::UnknownVersion、ACK type=0x03 / status=0x03 生成</td><td class="center">異常</td><td>後方互換確認</td></tr>
+      <tr><td class="mono">UT-FW-05</td><td class="mono">SubtitleAssembler</td><td>3 fragment 順序通り完成</td><td>seq=1, frag 0,1,2 順序</td><td>FeedResult::Complete、結合テキスト一致、ACK status=0x01</td><td class="center">正常</td><td>—</td></tr>
+      <tr><td class="mono">UT-FW-06</td><td class="mono">SubtitleAssembler</td><td>fragment 逆順は拒否</td><td>seq=1, frag 0 → frag 2 (skip frag 1)</td><td>FeedResult::OutOfOrder、buffer reset、ACK status=0x03</td><td class="center">異常</td><td>S0 は in-order only（BLE write-no-response は順序保証）</td></tr>
+      <tr><td class="mono">UT-FW-07</td><td class="mono">SubtitleAssembler</td><td>より新しい sequence で旧破棄</td><td>seq=1 frag 0 → seq=2 frag 0</td><td>seq=1 buffer 破棄、seq=2 開始（newer 判定は 16-bit wrap-aware）</td><td class="center">正常</td><td>§10 BD ルール</td></tr>
+      <tr><td class="mono">UT-FW-08</td><td class="mono">SubtitleAssembler</td><td>古い sequence は active を保持</td><td>seq=10 frag 0,1 → seq=9 frag 0 → seq=10 frag 2</td><td>seq=9 は Stale で拒否（ACK status=0x03）、seq=10 が継続して Complete</td><td class="center">異常</td><td>古い fragment 到着で進行中の sequence を破壊しない</td></tr>
       <tr><td class="mono">UT-FW-09</td><td class="mono">DisplayRenderer</td><td>2 行字幕</td><td>text=（80 文字）</td><td>自動改行、はみ出しなし</td><td class="center">正常</td><td>1〜2 行制約</td></tr>
       <tr><td class="mono">UT-FW-10</td><td class="mono">LedController</td><td>BLE write 時 LED ON</td><td>SUBTITLE_TEXT 受信</td><td>led_on() が 100ms 以内に呼出</td><td class="center">正常</td><td>FR-HW-06 / NFR-08</td></tr>
     </tbody>
@@ -654,7 +654,7 @@
       <tr><td class="mono">ST-ERR-01</td><td>機内モード切替中の会話</td><td>会話中に機内モード ON → OFF</td><td>App が WSS 再接続、字幕「ネットワーク切断」を 1 回送信</td></tr>
       <tr><td class="mono">ST-ERR-02</td><td>API key 失効</td><td>OPENAI_API_KEY を無効化</td><td>error STT_FAILED、Sentry severity='error'、ダッシュボードに警告</td></tr>
       <tr><td class="mono">ST-ERR-03</td><td>低バッテリー（&lt; 5%）</td><td>グラス充電せず使用継続</td><td>LOW_POWER 状態へ遷移、輝度 50%、App に通知</td></tr>
-      <tr><td class="mono">ST-ERR-04</td><td>不正パケット送信（攻撃想定）</td><td>外部ツールで version=0xFF のパケットを送信</td><td>parse_result_t::UNSUPPORTED、NAK 返信、字幕レンダリングなし</td></tr>
+      <tr><td class="mono">ST-ERR-04</td><td>不正パケット送信（攻撃想定）</td><td>外部ツールで version=0xFF のパケットを送信</td><td>DecodeStatus::UnknownVersion、ACK type=0x03 / status=0x03 返信、字幕レンダリングなし</td></tr>
     </tbody>
   </table>
 
@@ -736,7 +736,7 @@
     </thead>
     <tbody>
       <tr><td class="mono">BUG-001</td><td>NGUYEN<br>2026-05-13</td>
-          <td>S0 spike: MTU 20 環境で fragment が稀に欠落（10 回中 1 回）。原因：notify バッファ枯渇</td>
+          <td>S0 spike: MTU 23（BLE ATT 最小、ATT payload 20）環境で fragment が稀に欠落（10 回中 1 回）。原因：notify バッファ枯渇</td>
           <td class="pri-h">重大</td><td>NGUYEN</td><td>対応中</td><td>—</td></tr>
       <tr><td class="mono">BUG-002</td><td>Tester A<br>2026-05-15</td>
           <td>UAT-01: ペアリング時にデバイスが 2 度表示される（重複）。再現：BLE スキャン 2 回連続</td>

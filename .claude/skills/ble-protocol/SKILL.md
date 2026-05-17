@@ -91,10 +91,15 @@ These rules are **mandatory** in the ESP32-S3 receiver:
 
 1. Buffer fragments keyed by `sequence_id`. Fragments must arrive in `fragment_index` order; out-of-order is treated as an error (status `0x03`).
 2. Render only when **all** fragments of a `sequence_id` have been received and CRC passes on each. Send **one** Ack per `sequence_id`, on completion (not per fragment).
-3. If a packet with a different `sequence_id` arrives before the current one completes, **silently drop** the incomplete buffer and start the new sequence. Never render partial text.
-4. On CRC failure, length mismatch, unknown version, or assembler error (out-of-order, fragment_count change, overflow), send Ack with `status = 0x03`. Do not render anything.
+3. Sequence transition rules while a buffer is in-progress:
+   - **Newer `sequence_id`** arrives (with `fragment_index == 0`): silently drop the in-progress buffer and start the new sequence. Never render partial text.
+   - **Newer `sequence_id`** arrives with `fragment_index != 0`: assembler error (status `0x03`). Both buffers dropped.
+   - **Older (stale) `sequence_id`** arrives: reject with Ack status `0x03` but **preserve** the in-progress buffer. The active newer sequence must still be completable. Use a wrap-aware comparison (signed 16-bit subtraction) so `0xFFFF -> 0x0000` is treated as newer.
+   - Same `sequence_id`, in-order: normal fragment append.
+4. On CRC failure, length mismatch, unknown version, or assembler error (out-of-order index, fragment_count change mid-sequence, fragment_count > assembler cap, overflow), send Ack with `status = 0x03`. Do not render anything.
 5. On full subtitle render, send Ack with `status = 0x01`.
 6. While a sequence is mid-assembly, do not send a partial Ack; the sender waits for completion or timeout.
+7. On central disconnect, the receiver **must** reset any in-progress assembler buffer so a reconnect starts clean.
 
 ## Sender rules (mobile / test harness)
 

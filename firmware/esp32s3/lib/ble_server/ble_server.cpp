@@ -15,6 +15,7 @@ constexpr const char* ACK_NOTIFY_UUID =
 constexpr uint16_t REQUESTED_MTU = 247;
 
 ble_server::SubtitleWriteCallback g_callback = nullptr;
+ble_server::DisconnectCallback g_disconnect_cb = nullptr;
 NimBLEServer* g_server = nullptr;
 NimBLECharacteristic* g_subtitle_char = nullptr;
 NimBLECharacteristic* g_ack_char = nullptr;
@@ -29,6 +30,9 @@ class ServerCallbacks : public NimBLEServerCallbacks {
     g_connected = false;
     Serial.println("[ble] central disconnected, restart advertising");
     NimBLEDevice::startAdvertising();
+    if (g_disconnect_cb != nullptr) {
+      g_disconnect_cb();
+    }
   }
   void onMTUChange(uint16_t mtu, ble_gap_conn_desc* /*desc*/) override {
     Serial.printf("[ble] negotiated mtu=%u\n", mtu);
@@ -90,6 +94,10 @@ bool begin(const char* device_name, SubtitleWriteCallback on_subtitle) {
   Serial.printf("[ble] advertising name=%s service=%s\n", device_name,
                 SERVICE_UUID);
   return true;
+}
+
+void set_disconnect_callback(DisconnectCallback on_disconnect) {
+  g_disconnect_cb = on_disconnect;
 }
 
 bool is_connected() { return g_connected; }

@@ -34,7 +34,7 @@ version(1) | message_type(1) | sequence_id(2) | fragment_index(1) |
 fragment_count(1) | payload_length(1) | payload(N) | crc8(1)
 ```
 
-Quy tắc render: chỉ render khi nhận đủ fragment của sequence hiện tại. Sequence mới hơn hủy subtitle cũ chưa hoàn tất. Test trên MTU 20/185/247 bytes.
+Quy tắc render: chỉ render khi nhận đủ fragment của sequence hiện tại. Sequence mới hơn hủy subtitle cũ chưa hoàn tất; sequence cũ hơn đến trễ thì giữ active buffer và trả ACK 0x03. Test trên MTU 23/185/247 bytes (BLE ATT MTU minimum là 23, không phải 20).
 
 ## Roadmap Solo (ưu tiên dùng)
 
@@ -64,7 +64,7 @@ Mỗi sprint phải làm được bởi 1 người trong thời gian đó. Nếu
 | Lỗi | Hướng xử lý |
 |---|---|
 | BLE latency > 200ms | Tăng MTU, binary packet, giảm subtitle length, fallback Wi-Fi local |
-| Fragment lỗi | ACK/NAK, retry theo sequence_id, chỉ render khi đủ fragment |
+| Fragment lỗi | ACK type=0x03 với status code (0x01 OK / 0x03 error), retry theo sequence_id, chỉ render khi đủ fragment |
 | ESP32-S3 render không ổn | Đơn giản hóa font/render, thử ESP32-P4/STM32/RP2040 |
 | Display không có datasheet | Loại module đó, chỉ dùng module có sample code |
 | Waveguide không đọc được | Thử module khác, giảm target ngoài trời, pilot software-first trên Vuzix/Monocle |

@@ -1,7 +1,7 @@
 test_id,level,type,requirement,title,expected
 UT-BE-01,UT,normal,FR-HW-02,PacketBuilder one fragment,fragment_count=1 and crc valid
 UT-BE-02,UT,boundary,FR-HW-02,PacketBuilder two fragments,reassembled payload equals source
-UT-BE-03,UT,boundary,FR-HW-02,PacketBuilder MTU 20,max payload is respected
+UT-BE-03,UT,boundary,FR-HW-02,PacketBuilder MTU 23 (BLE min),max payload 12 bytes per fragment (23 - 3 ATT - 8 protocol overhead) is respected
 UT-BE-04,UT,error,FR-HW-02,PacketParser crc mismatch,INVALID_CRC returned
 UT-BE-05,UT,normal,FR-BE-01,WsSessionHandler session start,session_id returned
 UT-BE-06,UT,error,FR-BE-01,WsSessionHandler invalid lang,400 INVALID_PAYLOAD

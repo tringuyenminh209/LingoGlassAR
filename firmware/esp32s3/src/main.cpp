@@ -197,6 +197,16 @@ static void onSubtitleWrite(const uint8_t* data, size_t length) {
       return;
     }
 
+    case subtitle_assembler::FeedResult::Stale:
+      // Older sequence_id arrived while a newer one is mid-assembly.
+      // Active buffer is preserved; tell the sender this fragment was
+      // rejected so it stops retrying. Counts as a soft error.
+      g_total_assembler_errors++;
+      Serial.printf("[asm] stale seq=%u (active seq still assembling)\n",
+                    h.sequence_id);
+      sendAck(h.sequence_id, AckStatus::DecodeError);
+      return;
+
     case subtitle_assembler::FeedResult::OutOfOrder:
     case subtitle_assembler::FeedResult::Inconsistent:
     case subtitle_assembler::FeedResult::Overflow:
@@ -207,6 +217,15 @@ static void onSubtitleWrite(const uint8_t* data, size_t length) {
       sendAck(h.sequence_id, AckStatus::DecodeError);
       return;
   }
+}
+
+// Called by ble_server when the central disconnects. We drop any in-progress
+// subtitle buffer so a reconnect starts from a clean slate.
+static void onBleDisconnect() {
+  if (g_assembler.is_assembling()) {
+    Serial.println("[asm] disconnect mid-assembly - dropping buffer");
+  }
+  g_assembler.reset();
 }
 
 void setup() {
@@ -234,6 +253,7 @@ void setup() {
     Serial.println("[oled] skipped: 0x3C not detected on I2C bus");
   }
 
+  ble_server::set_disconnect_callback(onBleDisconnect);
   if (!ble_server::begin(BLE_DEVICE_NAME, onSubtitleWrite)) {
     Serial.println("[ble] init FAILED");
     oled_view::show_status("LingoGlass S0", "BLE init FAIL");

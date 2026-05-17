@@ -254,8 +254,103 @@
   - Maximum 4-8 fragment per subtitle (~1KB), du cho moi case tieng Nhat 100 char.
   - Khi du tat ca fragment → render text len OLED, gui ACK.
 - Mobile: them nut "Send Japanese" gui chuoi tieng Nhat ~100 ky tu (vd "こんにちは、世界。今日は天気がいい。これはテストメッセージです。"). `splitUtf8` se tu split thanh 2-3 fragment voi max_payload theo MTU hien tai.
-- MTU matrix test: thu lan luot voi MTU 20 / 185 / 247 de verify split UTF-8 dung tai codepoint boundary:
-  - MTU 20 → max_payload = 20 - 3 - 8 = 9 byte per fragment. Chuoi 100 char JP (~300 byte UTF-8) chia ~34 fragment.
+- MTU matrix test: thu lan luot voi MTU 23 / 185 / 247 de verify split UTF-8 dung tai codepoint boundary. BLE ATT MTU minimum la **23 byte** (khong phai 20). MTU 20 trong tai lieu cu la nham ATT payload (= MTU - 3 byte ATT header):
+  - MTU 23 → max_payload = 23 - 3 - 8 = 12 byte per fragment. Chuoi 100 char JP (~300 byte UTF-8) chia ~25 fragment.
   - MTU 185 → max_payload = 174 byte per fragment.
   - MTU 247 → max_payload = 236 byte per fragment.
 - Phase F (Day 10-12) sau Phase E: latency harness, gui 20 subtitle lien tiep, log timestamp tu `BleTransport` (send_ts) va match voi ACK (`receivedAtMicros`), export CSV voi p50/p90/p95. Viet `docs/S0_spike_report.md` voi Go/No-Go decision.
+
+## Bao cao ngay 2026/05/18 (S0 spike Phase E: SubtitleAssembler + multi-fragment + review fixes)
+
+### Phase E - implement (commit `2bce89c`)
+
+- Tao firmware lib `firmware/esp32s3/lib/subtitle_assembler/`:
+  - `SubtitleAssembler::feed(seq, frag_idx, frag_count, payload, len)` tra `FeedResult`: `Incomplete` / `Complete` / `OutOfOrder` / `Inconsistent` / `Overflow`.
+  - Buffer tinh, khong heap allocation: `ASSEMBLED_MAX = 1024 byte` (~340 ky tu JP), `MAX_FRAGMENTS = 64` (vua du cho MTU 23 voi 12 byte/frag).
+  - In-order only: `fragment_index` phai bang `next_expected_fragment_`. BLE write-without-response giu thu tu per characteristic, nen day la gia dinh hop ly cho S0.
+  - Single-fragment van complete o lan feed dau tien (count=1) - khong can branch rieng.
+- Wire vao `main.cpp`: moi Subtitle fragment qua `g_assembler.feed`. `Incomplete` → khong ACK (cho fragment ke). `Complete` → render OLED + ACK status=0x01. `OutOfOrder/Inconsistent/Overflow` → ACK status=0x03.
+- Mobile `SpikeScreen` them 2 nut:
+  - **Send JA (auto MTU)**: gui sample tieng Nhat ~100 ky tu (~300 byte UTF-8), dung MTU da nego.
+  - **MTU matrix 23/185/247**: gui tuan tu 3 lan voi MTU forced 23 → 185 → 247, gap 1500ms giua moi lan de firmware completed + ACK truoc khi seq moi bat dau.
+- `_sendText(text, mtu:)` cho phep caller force MTU per send (pass-through xuong `BleTransport.sendSubtitle`).
+- Stale `widget_test.dart` template (`MyApp` khong ton tai) duoc thay bang smoke test `LingoGlassApp` render SpikeScreen scaffold.
+
+### Phase E - review fixes (commit chuan bi)
+
+Sau khi commit `2bce89c` xong, review them ra 4 thieu sot phai sua truoc khi push:
+
+1. **Stale older sequence_id phai khong duoc reset active buffer**: code goc dung `sequence_id != current_seq_` → bat ky seq khac deu reset. Sai: neu dang assemble seq=10 ma seq=9 fragment ve tre, ta drop seq=10 - sai contract render rule. Fix:
+   - Them `FeedResult::Stale`.
+   - Helper `is_newer_seq(a, b)` dung signed 16-bit subtraction de xu ly wrap-around 0xFFFF → 0x0000 dung.
+   - Logic moi: khi active va seq moi != current, chi reset neu seq moi *newer*; neu older → tra `Stale` ma KHONG dung active buffer.
+   - `main.cpp` map `Stale` → ACK status=0x03 (sender biet packet bi tu choi, khong retry).
+
+2. **Disconnect reset hook**: neu mid-assembly va central disconnect, buffer dinh lai. Reconnect xong frag dau cua seq moi se bi xem nhu mid-sequence khong khop. Fix:
+   - Them `ble_server::set_disconnect_callback(DisconnectCallback)` API.
+   - `ServerCallbacks::onDisconnect` goi callback sau khi restart advertising.
+   - `main.cpp` register `onBleDisconnect()` → `g_assembler.reset()`.
+
+3. **Unit test cho SubtitleAssembler**: them `test/test_subtitle_assembler/test_subtitle_assembler.cpp` voi 14 case:
+   - Single-fragment complete ngay.
+   - Multi-fragment in-order complete dung payload (ABCDEFGHI).
+   - OOO fragment_index → `OutOfOrder` + reset.
+   - fragment_count thay doi giua chung → `Inconsistent`.
+   - fragment_count = 0 hoac > MAX_FRAGMENTS → `Inconsistent`.
+   - fragment_index ≥ fragment_count → `Inconsistent`.
+   - Overflow (64 fragment * 17 byte > 1024) → `Overflow`.
+   - Stale older seq KHONG dung active buffer; seq cu van complete duoc.
+   - Newer seq mid-assembly → drop cu, start moi.
+   - Newer seq nhung skip frag 0 → `OutOfOrder`.
+   - Wrap-around (0xFFFF → 0x0000) duoc coi la newer.
+   - `reset()` clear state.
+   - Frag index != 0 khi idle → `OutOfOrder`.
+
+4. **`platformio.ini` them `-I lib/subtitle_assembler`** vao `[env:native]` build_flags.
+
+### Pre-commit cleanup sau senior review
+
+Review chi them 4 contract drift va config mismatch can sua truoc khi commit:
+
+1. **SKILL.md render rules con dung "different sequence_id"** (code moi la "newer only"). Fix: viet lai phan §"Render rules" voi 4 case ro rang (newer w/ frag 0, newer w/ frag != 0, older = Stale, same seq) va note wrap-aware comparison.
+2. **テスト仕様書_LingoGlassAR.html:331 con ghi NAK 0x31**. Fix: UT-FW-03/04 doi sang `ACK type=0x03 / status=0x03`; UT-FW-05/06/07/08 viet lai voi semantics moi (in-order only, Stale older khong reset); ST-ERR-04 doi NAK -> ACK status=0x03.
+3. **詳細設計書_LingoGlassAR.html:726 con ghi "ACK / NAK"**. Fix: cap nhat thanh "ACK type=0x03 (status=0x01 success, 0x03 error)" va them note ve stale older.
+4. **MTU 20 vs 23 lan loi giua docs**. BLE ATT MTU **minimum la 23**, khong phai 20. "20" trong docs cu la nham ATT payload (= MTU 23 - 3 byte ATT header). Fix dong loat trong: `tests/cases/test_cases_master.csv:4`, `CLAUDE.md:37`, `docs/LingoGlass_AR_{Project,Development}_Plan.md`, `docs/LingoGlass_AR_Strategic_Analysis.md`, `docs/docs-html/{WBS,テスト仕様書}_LingoGlassAR.html`. Cac doc tang cao (AGENTS.md, CLAUDE.md) doi ngu "ACK/NAK" -> "ACK status code".
+5. **PlatformIO board config sai voi hardware**. Build dau output `ESP32-S3-DevKitC-1-N8 (8 MB QD, No PSRAM)` nhung hardware that la ESPr Developer S3 Type-C (N16R8: 16 MB flash + 8 MB OPI PSRAM). Fix `platformio.ini`:
+   - `board_build.flash_size = 16MB`, `board_build.flash_mode = qio`
+   - `board_build.partitions = default_16MB.csv`
+   - `board_build.arduino.memory_type = qio_opi` (bat OPI PSRAM)
+   - `-DBOARD_HAS_PSRAM` trong `build_flags`
+   - Verify build: Flash partition tu `3.18 MB` → `6.25 MB` (default_16MB.csv lay effect). PSRAM phai duoc verify khi flash thuc te: `printBoardInfo()` se in `Flash bytes: 16777216`, `PSRAM bytes: 8388608`.
+
+### Verify
+
+- ESP32-S3 build (sau khi sua board config): **SUCCESS**. RAM 9.9% (32352 byte tu 327680), Flash 8.5% (555553 byte tu 6553600 byte = 6.25 MB partition app). Truoc cleanup la Flash 16.5% (551837 / 3342336) - flash% giam vi mau so doi tu 8MB partition sang 16MB partition, khong phai code nho hon.
+- Runtime PSRAM verify: **CHUA chay** (chua flash). Phai chay `pio run -t upload -t monitor` va check `printBoardInfo()` in dung `Flash bytes: 16777216` va `PSRAM bytes: 8388608` truoc khi go Phase E end-to-end.
+- Flutter `test/` (tu lan chay truoc khi cleanup): **15/15 passed** (13 ble_protocol + 1 widget smoke + 1 ble_protocol added khong tinh - tong 15). User reported shell timeout tren lan re-verify, can chay lai khi mo session moi de double-check khong regress.
+- Native unit test (`pio test -e native`): **CHUA CHAY DUOC tren Windows nay** vi khong co GCC. Da xac nhan day la han che toolchain, khong phai do test code. Test file da ship, se chay khi co toolchain (Mac/Linux/CI). Acceptable cho S0 spike vi:
+  - Firmware build path da link library voi ESP toolchain (proves C++17 compile).
+  - Code paths se duoc verify end-to-end qua hardware Phase E test (Send JA + MTU matrix).
+  - Stale older seq path co the verify thu cong qua nRF Connect: ket noi 2 lan, gui seq=10 frag 0, gui seq=9 frag 0 → ACK status=0x03 cho seq=9, sau do gui seq=10 frag 1,2 → ACK status=0x01 cho seq=10.
+
+### Hardware round-trip status
+
+**CHUA verify tren hardware that.** Code da sua nhung chua flash. Buoc tiep theo (mai):
+- Re-flash firmware (`pio run -t upload -t monitor`).
+- `flutter run` tren Samsung SC-56B.
+- Test:
+  - **Send Hello** → ACK status=0x01, OLED "Hello" (regression).
+  - **Send JA (auto MTU)** → ACK status=0x01, OLED hien chu loi (font ASCII chua support JP, S1+), Serial log show `text="..."` UTF-8 bytes dung.
+  - **MTU matrix 23/185/247** → 3 ACK status=0x01, moi cai voi seq tang.
+  - **Disconnect mid-assembly**: gui frag 1/2 → tat app → mo lai → connect → gui Hello → phai work.
+
+### Phase F (con lai)
+
+- Latency harness: 20 subtitle lien tiep, log send_ts + ACK receivedAtMicros, export CSV p50/p90/p95.
+- Viet `docs/S0_spike_report.md` Go/No-Go.
+
+### Commit plan
+
+- `2bce89c` da commit (chua push): Phase E base.
+- Commit ke tiep: review fixes (stale-seq + disconnect hook + tests + platformio.ini + report).
+- Sau khi hardware verify pass: push ca hai len main.

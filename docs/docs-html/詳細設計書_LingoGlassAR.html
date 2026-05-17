@@ -723,7 +723,7 @@ export type ErrorCode =
             ④ 新 sequence_id → 旧進行中破棄（discard_old）<br>
             ⑤ 全 fragment 揃ったら DisplayRenderer.render(text)<br>
             ⑥ ACK type=0x03 / status=0x01 を返信</td>
-        <td>① 字幕がディスプレイへ描画される<br>② ACK / NAK を BLE notify で送信<br>③ 5 秒タイムアウト：sequence 破棄ログ（任意）</td>
+        <td>① 字幕がディスプレイへ描画される<br>② ACK type=0x03 を BLE notify で送信（成功 status=0x01、失敗 status=0x03）<br>③ 古い sequence_id が遅延到着した場合は active buffer を保持し ACK status=0x03 のみ返信</td>
       </tr>
       <tr>
         <td>5 秒経過した PacketAssembler のタイマー tick</td>

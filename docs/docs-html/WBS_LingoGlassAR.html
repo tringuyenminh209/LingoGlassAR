@@ -560,7 +560,7 @@
       <tr><td class="mono">R-07</td><td>Solo founder の体調・私用</td><td class="center">中</td><td class="center">中</td><td>全体</td><td>1 週あたり 1 日のバッファを内包。連続 3 日休止時は終了日 +1 週調整</td></tr>
       <tr><td class="mono">R-08</td><td>クラウドコスト超過（K-09）</td><td class="center">低</td><td class="center">中</td><td>—</td><td>FR-BE-04 quota で 1 device × 1,000 req/日 cap。週次コスト監視</td></tr>
       <tr><td class="mono">R-09</td><td>display module shipping / datasheet 不備</td><td class="center">中</td><td class="center">重大</td><td>1.1.1 / 5.1.1</td><td>S0 は手元の ESPr Developer S3 + 0.96" I2C OLED + solderless breadboard で実施。AR dev kit 入手遅延時はreadabilityをS4へ延期。条件付き +3 pd</td></tr>
-      <tr><td class="mono">R-10</td><td>iOS / Android BLE stack 差分</td><td class="center">中</td><td class="center">重大</td><td>2.2.2 / IT-02</td><td>iPhone 14 + Pixel 7 の両方でMTU 20/185/247を測定。差分吸収用に BleClient adapter を分離。条件付き +2 pd</td></tr>
+      <tr><td class="mono">R-10</td><td>iOS / Android BLE stack 差分</td><td class="center">中</td><td class="center">重大</td><td>2.2.2 / IT-02</td><td>iPhone 14 + Pixel 7 の両方で MTU 23/185/247（BLE ATT MTU 最小は 23）を測定。差分吸収用に BleClient adapter を分離。条件付き +2 pd</td></tr>
       <tr><td class="mono">R-11</td><td>cloud API quota / key setup 遅延</td><td class="center">中</td><td class="center">中</td><td>3.1.1 / 4.1.1</td><td>OpenAI / DeepL / Vision のキー取得、quota、billing cap をM1完了前に確認。mock provider fallbackを維持。条件付き +1 pd</td></tr>
     </tbody>
   </table>

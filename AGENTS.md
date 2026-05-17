@@ -36,7 +36,7 @@ S0 development order:
 1. I2C scanner.
 2. Static OLED text render.
 3. BLE GATT receiver.
-4. BLE subtitle packet parser, CRC8, fragmentation, ACK/NAK.
+4. BLE subtitle packet parser, CRC8, fragmentation, ACK with status code (0x01/0x02/0x03).
 5. 20 consecutive subtitle display test with app-to-display latency under 200 ms.
 
 ## Build, Test, and Development Commands

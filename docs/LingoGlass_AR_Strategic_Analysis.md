@@ -221,7 +221,7 @@ BLE khong duoc gia dinh la "gui text la xong". Neu MTU thap, subtitle 20-100 ky 
 
 Rui ro can xu ly:
 
-- MTU 20 bytes trong dieu kien mac dinh.
+- ATT MTU 23 bytes (BLE minimum) trong dieu kien mac dinh; usable ATT payload chi 20 bytes (MTU 23 minus 3-byte ATT header).
 - Fragment bi mat hoac den sai thu tu.
 - Subtitle cu den sau subtitle moi.
 - Text dai lam nhay layout.
@@ -233,14 +233,14 @@ Huong thiet ke:
 - Payload co fragment_index va fragment_count.
 - Firmware chi render khi du fragment.
 - Subtitle moi hon huy subtitle cu chua render.
-- Test tren MTU 20/185/247 bytes va do latency p50/p95.
+- Test tren MTU 23/185/247 bytes va do latency p50/p95.
 
 ### 5.6 Plan B cho spike fail
 
 | Neu fail | Huong xu ly |
 | --- | --- |
 | BLE qua cham | Tang MTU, binary protocol, giam subtitle length, fallback Wi-Fi local |
-| Fragment loi | Them ACK/NAK, retry theo sequence_id, render only-complete message |
+| Fragment loi | ACK type=0x03 voi status code (0x01 OK / 0x03 error), retry theo sequence_id, render chi khi du fragment |
 | ESP32-S3 khong du | Thu ESP32-P4, STM32, RP2040 hoac driver board rieng |
 | Display dev qua nho | Dung no cho pipeline, dung AR dev kit/phone mock cho readability |
 | Waveguide khong doc duoc | Giam scope sang indoor/B2B, thu module khac, hoac pilot tren Vuzix/Monocle |

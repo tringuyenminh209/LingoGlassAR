@@ -69,7 +69,7 @@ Quyet dinh thuc te: dung display dev module re de pass spike tuan 1, sau do moi 
 | Loi | Plan B |
 | --- | --- |
 | BLE latency qua cao | Tang MTU, binary packet, giam subtitle length, fallback Wi-Fi local |
-| Fragmentation loi | Them ACK/NAK, retry, sequence_id, chi render khi du fragment |
+| Fragmentation loi | ACK type=0x03 voi status code (0x01 OK / 0x03 error), retry theo sequence_id, render chi khi du fragment |
 | ESP32-S3 render khong on dinh | Don gian hoa font, dung display buffer, thu ESP32-P4/STM32/RP2040 |
 | Display module khong co driver | Loai module, chon module co sample code/datasheet |
 | Text khong doc duoc tren AR/dev kit | Thu module khac, giam target ngoai troi, pilot software-first tren Vuzix/Monocle |
@@ -402,7 +402,7 @@ Kiem tra prototype trong dieu kien gan voi thuc te, khong chi trong moi truong l
 | Nhom test | Noi dung | Tieu chi |
 | --- | --- | --- |
 | Unit test | API, parser, display message, settings | Chuc nang co ban khong loi |
-| BLE protocol test | MTU 20/185/247, fragmentation, sequence, reconnect | Subtitle 100 ky tu dung thu tu, khong treo |
+| BLE protocol test | MTU 23/185/247 (BLE min la 23, ATT payload 20), fragmentation, sequence, reconnect | Subtitle 100 ky tu dung thu tu, khong treo |
 | Integration test | App-backend, app-glasses, backend-AI | Full flow hoat dong on dinh |
 | Latency test | Hoi thoai cau ngan, cau dai, mang yeu | p50/p95 dat muc tieu |
 | Display test | Trong nha, ngoai troi, nen phuc tap | >=80% nguoi test doc duoc |
