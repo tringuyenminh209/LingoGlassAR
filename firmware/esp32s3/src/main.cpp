@@ -4,11 +4,14 @@
 // Phase B: U8g2 OLED text render.
 // Phase C: NimBLE GATT receiver.
 // Phase D: decode subtitle fragments, render on OLED, ACK back.
-// Phase E (current): SubtitleAssembler reassembles multi-fragment payloads
-//                    keyed by sequence_id. Newer sequence drops stale buffer.
-//                    ACK status=0x01 only on full assembly; per-fragment Incomplete
-//                    is silent. Errors (OutOfOrder/Inconsistent/Overflow) -> 0x03.
-// Phase F: latency harness + p50/p95.
+// Phase E: SubtitleAssembler reassembles multi-fragment payloads
+//          keyed by sequence_id. Newer sequence drops stale buffer.
+//          ACK status=0x01 only on full assembly; per-fragment Incomplete
+//          is silent. Errors (OutOfOrder/Inconsistent/Overflow) -> 0x03.
+// Phase F (current): ACK payload extended to 10 bytes - status, reserved,
+//                    t_recv_ms (uint32 LE), t_render_ms (uint32 LE). Mobile
+//                    uses these alongside its own send_ts to compute RTT
+//                    and firmware processing time for the latency report.
 //
 // Hardware: ESPr Developer S3 + 0.96 inch I2C OLED 128x64.
 // I2C: SDA = GPIO 8, SCL = GPIO 9.
@@ -40,6 +43,15 @@ static volatile uint32_t g_total_decode_errors = 0;
 static volatile uint32_t g_total_assembler_errors = 0;
 static char g_last_subtitle[128] = {0};  // null-terminated UTF-8
 static subtitle_assembler::SubtitleAssembler g_assembler;
+
+// Phase F: per-sequence timing. millis() at the moment we entered the write
+// callback for the FIRST fragment of the current sequence. ESP32 millis() is
+// a different clock from the phone's, so absolute values are not comparable
+// to send_ts on the mobile side. The difference t_render_ms - t_recv_ms gives
+// the firmware processing time (assembler + OLED) for the diagnostic column
+// in the latency CSV. Sentinel 0xFFFF means "no current sequence".
+static uint16_t g_seq_in_progress = 0xFFFF;
+static uint32_t g_seq_recv_ms = 0;
 
 static void printBoardInfo() {
   Serial.println();
@@ -98,10 +110,29 @@ constexpr uint8_t Unsupported   = 0x02;  // e.g., multi-fragment before Phase E
 constexpr uint8_t DecodeError   = 0x03;  // CRC / length / version failure
 }  // namespace AckStatus
 
-// Build and send an ACK packet with the given status byte.
-static void sendAck(uint16_t sequence_id, uint8_t status) {
+// Build and send an ACK packet. Phase F payload layout (10 bytes):
+//   [0] status (Ok/Unsupported/DecodeError)
+//   [1] reserved (0x00)
+//   [2..5] t_recv_ms (uint32 LE) - millis() of first fragment in this sequence
+//   [6..9] t_render_ms (uint32 LE) - millis() right after OLED sendBuffer, or 0
+// Mobile reads these to compute fw_proc_ms = t_render_ms - t_recv_ms while
+// RTT is measured on the phone clock as ack_arrival - send_ts.
+static void sendAck(uint16_t sequence_id,
+                    uint8_t status,
+                    uint32_t t_recv_ms,
+                    uint32_t t_render_ms) {
   uint8_t ack_buffer[ble_protocol::MAX_PACKET_SIZE];
-  const uint8_t ack_payload[2] = {status, 0x00};
+  uint8_t ack_payload[10];
+  ack_payload[0] = status;
+  ack_payload[1] = 0x00;
+  ack_payload[2] = static_cast<uint8_t>(t_recv_ms & 0xFF);
+  ack_payload[3] = static_cast<uint8_t>((t_recv_ms >> 8) & 0xFF);
+  ack_payload[4] = static_cast<uint8_t>((t_recv_ms >> 16) & 0xFF);
+  ack_payload[5] = static_cast<uint8_t>((t_recv_ms >> 24) & 0xFF);
+  ack_payload[6] = static_cast<uint8_t>(t_render_ms & 0xFF);
+  ack_payload[7] = static_cast<uint8_t>((t_render_ms >> 8) & 0xFF);
+  ack_payload[8] = static_cast<uint8_t>((t_render_ms >> 16) & 0xFF);
+  ack_payload[9] = static_cast<uint8_t>((t_render_ms >> 24) & 0xFF);
   const size_t written = ble_protocol::encode_fragment(
       ble_protocol::MessageType::Ack,
       sequence_id,
@@ -119,13 +150,17 @@ static void sendAck(uint16_t sequence_id, uint8_t status) {
     Serial.println("[ack] notify FAILED (no central?)");
     return;
   }
-  Serial.printf("[ack] notified seq=%u status=0x%02X (%u bytes)\n", sequence_id,
-                status, static_cast<unsigned>(written));
+  Serial.printf("[ack] seq=%u status=0x%02X t_recv=%lu t_render=%lu\n",
+                sequence_id, status,
+                static_cast<unsigned long>(t_recv_ms),
+                static_cast<unsigned long>(t_render_ms));
 }
 
-// Phase D handler: decode subtitle, render on OLED, ACK back.
-// Single-fragment only - multi-fragment assembly is Phase E.
+// Subtitle write handler: decode, assemble, render, ACK with Phase F timing.
 static void onSubtitleWrite(const uint8_t* data, size_t length) {
+  // Capture the moment this fragment arrived. We'll latch it as the "recv"
+  // timestamp for the sequence on the first fragment we see for that seq_id.
+  const uint32_t t_now = millis();
   g_total_write_count++;
   g_total_write_bytes += static_cast<uint32_t>(length);
 
@@ -149,7 +184,7 @@ static void onSubtitleWrite(const uint8_t* data, size_t length) {
     // as failure regardless of seq match.
     const uint16_t seq_guess =
         length >= 4 ? static_cast<uint16_t>(data[2] | (data[3] << 8)) : 0xFFFF;
-    sendAck(seq_guess, AckStatus::DecodeError);
+    sendAck(seq_guess, AckStatus::DecodeError, t_now, 0);
     return;
   }
 
@@ -160,10 +195,16 @@ static void onSubtitleWrite(const uint8_t* data, size_t length) {
 
   if (h.message_type != static_cast<uint8_t>(ble_protocol::MessageType::Subtitle)) {
     Serial.printf("[decode] ignoring non-subtitle type=%u\n", h.message_type);
-    // Not an error from the sender's point of view - we just don't handle it.
-    // Phase F may add Status/Error handlers. For now, decline with Unsupported.
-    sendAck(h.sequence_id, AckStatus::Unsupported);
+    sendAck(h.sequence_id, AckStatus::Unsupported, t_now, 0);
     return;
+  }
+
+  // Latch t_recv on the first fragment of a new sequence. Subsequent
+  // fragments of the same sequence keep the original recv timestamp so the
+  // ACK reports the start-to-render duration, not just last-frag-to-render.
+  if (h.sequence_id != g_seq_in_progress) {
+    g_seq_in_progress = h.sequence_id;
+    g_seq_recv_ms = t_now;
   }
 
   // Feed every subtitle fragment through the assembler. Single-fragment
@@ -193,7 +234,9 @@ static void onSubtitleWrite(const uint8_t* data, size_t length) {
                     h.sequence_id, static_cast<unsigned>(asm_len),
                     h.fragment_count, g_last_subtitle);
       oled_view::show_status("LingoGlass S0", g_last_subtitle);
-      sendAck(h.sequence_id, AckStatus::Ok);
+      const uint32_t t_render = millis();
+      sendAck(h.sequence_id, AckStatus::Ok, g_seq_recv_ms, t_render);
+      g_seq_in_progress = 0xFFFF;
       return;
     }
 
@@ -204,7 +247,8 @@ static void onSubtitleWrite(const uint8_t* data, size_t length) {
       g_total_assembler_errors++;
       Serial.printf("[asm] stale seq=%u (active seq still assembling)\n",
                     h.sequence_id);
-      sendAck(h.sequence_id, AckStatus::DecodeError);
+      // Use t_now (not g_seq_recv_ms) - stale belongs to a different seq.
+      sendAck(h.sequence_id, AckStatus::DecodeError, t_now, 0);
       return;
 
     case subtitle_assembler::FeedResult::OutOfOrder:
@@ -214,7 +258,8 @@ static void onSubtitleWrite(const uint8_t* data, size_t length) {
       Serial.printf("[asm] error %d on seq=%u frag=%u/%u\n",
                     static_cast<int>(feed_result),
                     h.sequence_id, h.fragment_index, h.fragment_count);
-      sendAck(h.sequence_id, AckStatus::DecodeError);
+      sendAck(h.sequence_id, AckStatus::DecodeError, g_seq_recv_ms, 0);
+      g_seq_in_progress = 0xFFFF;
       return;
   }
 }
@@ -226,6 +271,7 @@ static void onBleDisconnect() {
     Serial.println("[asm] disconnect mid-assembly - dropping buffer");
   }
   g_assembler.reset();
+  g_seq_in_progress = 0xFFFF;
 }
 
 void setup() {

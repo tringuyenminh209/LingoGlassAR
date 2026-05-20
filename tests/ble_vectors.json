@@ -78,21 +78,21 @@
       "full_packet_hex": "0101FFFF01020241429E"
     },
     {
-      "name": "ack_for_seq1",
-      "description": "ACK message for subtitle sequence 1, payload = seq_id little-endian",
+      "name": "ack_for_seq1_phase_f",
+      "description": "Phase F+ ACK (10-byte payload): status=0x01, reserved=0x00, t_recv_ms=0x0000007B (123 ms LE), t_render_ms=0x000000C8 (200 ms LE). status_code: 0x01 ok, 0x02 unsupported, 0x03 decode_error.",
       "header": {
         "version": 1,
         "message_type": 3,
         "sequence_id": 1,
         "fragment_index": 0,
         "fragment_count": 1,
-        "payload_length": 2
+        "payload_length": 10
       },
-      "payload_hex": "0100",
-      "bytes_before_crc_hex": "010301000001020100",
-      "crc8": 70,
-      "crc8_hex": "46",
-      "full_packet_hex": "01030100000102010046"
+      "payload_hex": "01007B000000C8000000",
+      "bytes_before_crc_hex": "0103010000010A01007B000000C8000000",
+      "crc8": 124,
+      "crc8_hex": "7C",
+      "full_packet_hex": "0103010000010A01007B000000C80000007C"
     }
   ],
   "utf8_fragment_cases": [

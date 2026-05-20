@@ -76,12 +76,23 @@ Sent over characteristic `7c3d8b02-...`. Format mirrors the subtitle packet:
 - `message_type = 0x03` (Ack)
 - `sequence_id` = sequence_id of the subtitle being acknowledged
 - `fragment_index = 0`, `fragment_count = 1`
-- `payload_length = 2`
-- `payload[0]` = status code:
-  - `0x01` = OK, subtitle rendered on display
-  - `0x02` = UNSUPPORTED (e.g., non-subtitle message_type the firmware does not handle yet)
-  - `0x03` = DECODE_ERROR (CRC fail, length mismatch, unknown version, or assembler error: out-of-order fragment, fragment_count change mid-sequence, assembled overflow)
-- `payload[1]` = reserved, must be `0x00`
+- `payload_length = 10` (Phase F+; was 2 in Phase D-E)
+- Payload layout:
+
+| Offset | Field         | Size    | Notes                                          |
+| -----: | ------------- | ------: | ---------------------------------------------- |
+|      0 | status        | 1 byte  | See status codes below                         |
+|      1 | reserved      | 1 byte  | Must be `0x00`                                 |
+|    2-5 | t_recv_ms     | 4 bytes | **Little-endian** uint32. `millis()` on ESP32 at the moment the first fragment of this `sequence_id` arrived. |
+|    6-9 | t_render_ms   | 4 bytes | **Little-endian** uint32. `millis()` right after `sendBuffer()` on the OLED. **`0` if no render happened** (Unsupported / DecodeError / Stale). |
+
+Status codes (`payload[0]`):
+
+- `0x01` = OK, subtitle rendered on display
+- `0x02` = UNSUPPORTED (e.g., non-subtitle message_type the firmware does not handle yet)
+- `0x03` = DECODE_ERROR (CRC fail, length mismatch, unknown version, or assembler error: out-of-order fragment, fragment_count change mid-sequence, assembled overflow, stale older `sequence_id`)
+
+ESP32 `millis()` and the phone's monotonic clock are **independent**. Mobile uses `(t_render_ms - t_recv_ms)` as a firmware-side processing duration (assembler + OLED) for the diagnostic CSV column `fw_proc_ms`. Round-trip time is always measured on the phone clock as `ack_arrival - send_ts`. Do not subtract t_render_ms from the phone clock.
 
 There is **no separate NAK message type**. Failures are signalled via the status code in the Ack payload. Mobile treats `payload[0] != 0x01` as failure and decides whether to retry.
 

@@ -70,19 +70,15 @@ void main() {
       expect(crc8(bytes), 0x9E);
     });
 
-    test('ack seq=1 -> 0x46', () {
+    test('ack seq=1 phase F (10-byte payload) -> 0x7C', () {
+      // status=0x01, reserved=0x00, t_recv_ms=123 (0x7B LE), t_render_ms=200 (0xC8 LE)
       final bytes = Uint8List.fromList([
-        0x01,
-        0x03,
-        0x01,
-        0x00,
-        0x00,
-        0x01,
-        0x02,
-        0x01,
-        0x00,
+        0x01, 0x03, 0x01, 0x00, 0x00, 0x01, 0x0A, // header, payload_length=10
+        0x01, 0x00, // status, reserved
+        0x7B, 0x00, 0x00, 0x00, // t_recv_ms LE = 123
+        0xC8, 0x00, 0x00, 0x00, // t_render_ms LE = 200
       ]);
-      expect(crc8(bytes), 0x46);
+      expect(crc8(bytes), 0x7C);
     });
   });
 
