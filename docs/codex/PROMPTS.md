@@ -37,6 +37,13 @@ a specific Day-N task.
 
 ---
 
+## Status log
+
+| Day | PR | Verdict | Commit |
+|---:|---|---|---|
+| 1 | #1 | MERGED 2026-05-20 (clean) | `538eae1` + follow-up `3ff139c` |
+| 2 | (waiting for Claude stub) | - | - |
+
 ## 2. Day-N task prompt — Day 1 (ready to copy)
 
 ```
@@ -176,7 +183,98 @@ Then post the PR URL here and STOP. Do not start Day 2.
 
 ---
 
-## 3. Day-N task prompt — TEMPLATE (use for Day 2-10)
+## 2b. Day 2 — OpenAI Realtime integration (ready to copy)
+
+**Precondition**: Claude must commit the interface stub at
+`backend/app/services/translator.py` first. Do not start Day 2 until
+that file exists on `main` with a class signature and docstring contract.
+
+```
+Your task: S1 Day 2 — OpenAI Realtime translator service. Implement only
+the rows marked "Codex" in the Day 2 table of docs/codex/S1_TASKS.md.
+The "Claude" row (interface stub at backend/app/services/translator.py)
+is already on main - read it first; your job is the implementation
+plus the pytest mock.
+
+## Concrete deliverables (your rows)
+
+1. Implement backend/app/services/translator.py against the existing
+   stub on main. Do NOT rewrite the public interface or rename methods.
+   Internals:
+   - Open an async WebSocket to wss://api.openai.com/v1/realtime
+     ?model=gpt-4o-realtime-preview using the openai SDK (preferred) or
+     a raw `websockets` client if the SDK does not expose the Realtime
+     WS at the time of writing.
+   - Send a `session.update` event with instructions:
+     "You are a JP<->VN translator. When you receive Japanese audio,
+     output Vietnamese text only. When you receive Vietnamese audio,
+     output Japanese text only. No commentary, no romanization."
+   - Set input_audio_format = pcm16, input_audio_transcription enabled
+     so we get the source text for the cost logger later.
+   - Forward incoming audio bytes via `input_audio_buffer.append` events.
+   - On `response.text.delta` yield a TextDelta(text=<chunk>) on the
+     output stream. On `response.text.done` yield TextDelta(final=True).
+   - On any OpenAI error event, raise TranslatorError with the message;
+     do not swallow.
+   - Reuse a single WS connection per translator instance; the caller
+     is responsible for lifecycle.
+
+2. backend/tests/test_translator.py:
+   - Mock the OpenAI WS using a fake async iterator that emits a fixed
+     sequence of server events.
+   - Feed 3 audio chunks (any 16-byte payloads) and assert:
+     a) text deltas emitted in order
+     b) text.done produces TextDelta(final=True)
+     c) error event raises TranslatorError
+   - Use pytest-asyncio (already a dev dep). asyncio_mode is auto.
+
+## Hard constraints (always apply)
+
+- Branch from main: feat/s1-day-2-translator-service
+- NEVER push to main. NEVER force-push. NEVER add Co-Authored-By trailers.
+- Conventional commit subject: feat(backend): S1 Day 2 OpenAI Realtime translator service
+- Do not add any dependency not already in backend/pyproject.toml without
+  asking. If the openai SDK does not yet expose Realtime over WS at the
+  version pinned (>= 1.50, < 2.0), use the raw `websockets` library that
+  is already a dependency.
+- Do not touch firmware/, mobile/, .claude/, tests/ble_vectors.json,
+  platformio.ini, or any BLE protocol file.
+- Do not touch backend/app/api/ or app/main.py in this PR. Day 3 wires
+  the WS endpoint.
+
+## Verification (paste raw output into PR)
+
+cd backend
+docker compose up -d --build
+sleep 5
+docker compose logs api --tail 30
+docker compose down -v
+pytest -v tests/test_translator.py
+
+The docker run is a smoke check that import does not crash. The pytest
+run is the actual verification.
+
+## PR description template
+
+## Summary
+<one paragraph: what changed and why>
+
+## Files added / modified
+<bullet list>
+
+## Verification output
+<paste raw command output, one block per command>
+
+## Open questions for review
+<things you decided without explicit guidance>
+
+## Time spent
+~X hours
+
+After opening the PR, post the URL here and STOP. Do not start Day 3.
+```
+
+## 3. Day-N task prompt — TEMPLATE (use for Day 3-10)
 
 Replace `<N>` with the day number, fill `<TASK_TITLE>`, `<COMMIT_SUBJECT>`,
 `<DELIVERABLES>`, `<VERIFICATION>` from `docs/codex/S1_TASKS.md`.
@@ -277,3 +375,22 @@ PR for S1 Day <N> merged at <commit>. Update:
   ("tests pass"), reject and re-ask.
 - If a task is genuinely too vague, Codex will ask. Better than guessing.
   Add answers back to S1_TASKS.md so the next agent run is unambiguous.
+
+## Lessons from Day 1 (PR #1, merged 2026-05-20)
+
+- The briefing + PR template approach worked: zero rewrite cycles, ~1.5h
+  of Codex time, clean merge with one tiny follow-up (backend/CLAUDE.md
+  which was always a Claude row).
+- Codex shipped a small spec improvement on its own initiative: pytest
+  accepts redis up OR down so CI does not need infra. Keep prompts
+  prescriptive on the contract but permissive on internal quality
+  improvements - that combination paid off.
+- Commit author identity uses the local git config, so PRs show the
+  user's name. That's fine; the "no Co-Authored-By Claude" rule is what
+  matters for attribution policy.
+- Codex respected scope completely - did not touch firmware, mobile, or
+  .claude/. The explicit "do not touch X" list in the prompt is doing
+  real work.
+- One thing to copy forward: paste the FULL verification output, not a
+  summary. The PR body for #1 included every container start line and
+  it made review unambiguous.
