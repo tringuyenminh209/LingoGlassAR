@@ -53,6 +53,7 @@ class BleTransport {
   BluetoothCharacteristic? _subtitleChar;
   BluetoothCharacteristic? _ackChar;
   StreamSubscription<List<int>>? _ackSub;
+  StreamSubscription<BluetoothConnectionState>? _connSub;
 
   // BLE minimum ATT MTU is 23. We update this after requestMtu returns.
   // sendSubtitle uses this when the caller does not pass an explicit mtu.
@@ -65,8 +66,16 @@ class BleTransport {
   final StreamController<AckEvent> _ackController =
       StreamController<AckEvent>.broadcast();
 
+  final StreamController<bool> _connController =
+      StreamController<bool>.broadcast();
+
   /// Fires for every ACK packet received from the firmware.
   Stream<AckEvent> get acks => _ackController.stream;
+
+  /// Fires `true` when a connection is established and `false` when the OS or
+  /// peer drops the link. Listen and rebuild UI so the connection chip and
+  /// `isConnected` checks stay honest after an external disconnect.
+  Stream<bool> get connectionChanges => _connController.stream;
 
   bool get isConnected => _device != null && _subtitleChar != null;
 
@@ -108,6 +117,16 @@ class BleTransport {
     _log('connecting to ${device.platformName} (${device.remoteId})');
     await device.connect(timeout: const Duration(seconds: 10));
 
+    // Watch for OS / peer-side disconnects (BT toggle, range, power cycle).
+    // Without this, cached refs lie about connection state and the next write
+    // throws "device is not connected" while the UI still says CONN.
+    await _connSub?.cancel();
+    _connSub = device.connectionState.listen((state) {
+      if (state == BluetoothConnectionState.disconnected) {
+        _handleExternalDisconnect();
+      }
+    });
+
     // Android-only MTU request. iOS negotiates automatically; on iOS we leave
     // _negotiatedMtu at the BLE minimum until the first ACK comes back so we
     // never over-fragment.
@@ -140,17 +159,38 @@ class BleTransport {
     _subtitleChar = writeChar;
     _ackChar = notifyChar;
     _log('connected, write+notify wired');
+    if (!_connController.isClosed) _connController.add(true);
   }
 
   Future<void> disconnect() async {
+    await _connSub?.cancel();
+    _connSub = null;
     await _ackSub?.cancel();
     _ackSub = null;
     await _device?.disconnect();
+    _clearRefs();
+    _log('disconnected');
+    if (!_connController.isClosed) _connController.add(false);
+  }
+
+  void _clearRefs() {
     _device = null;
     _subtitleChar = null;
     _ackChar = null;
     _negotiatedMtu = 23;
-    _log('disconnected');
+  }
+
+  // Called when the connectionState stream reports disconnected without the
+  // app asking for it. Cleans cached refs so isConnected stops lying.
+  void _handleExternalDisconnect() {
+    if (_device == null && _subtitleChar == null) return; // already cleared
+    _log('connection lost (external disconnect)');
+    _ackSub?.cancel();
+    _ackSub = null;
+    _connSub?.cancel();
+    _connSub = null;
+    _clearRefs();
+    if (!_connController.isClosed) _connController.add(false);
   }
 
   /// Encodes [text] as UTF-8, splits into fragments based on the negotiated
@@ -222,5 +262,6 @@ class BleTransport {
   Future<void> dispose() async {
     await disconnect();
     await _ackController.close();
+    await _connController.close();
   }
 }

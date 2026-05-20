@@ -3,6 +3,8 @@
 // Phase E: Send Japanese (multi-fragment) + MTU matrix (23/185/247).
 // Phase F: Run 20 will add latency CSV export.
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../ble/ble_transport.dart';
@@ -25,6 +27,8 @@ class SpikeScreen extends StatefulWidget {
 class _SpikeScreenState extends State<SpikeScreen> {
   final List<String> _log = <String>[];
   late final BleTransport _transport;
+  StreamSubscription<AckEvent>? _ackSub;
+  StreamSubscription<bool>? _connSub;
   int _nextSeq = 1;
   bool _busy = false;
 
@@ -32,14 +36,21 @@ class _SpikeScreenState extends State<SpikeScreen> {
   void initState() {
     super.initState();
     _transport = BleTransport(log: _append);
-    _transport.acks.listen((ack) {
+    _ackSub = _transport.acks.listen((ack) {
       _append(
           '< ACK seq=${ack.sequenceId} status=0x${ack.status.toRadixString(16).padLeft(2, '0')} ok=${ack.isOk}');
+    });
+    // Rebuild the CONN/idle chip when the link goes up or down so the UI
+    // stops lying after an external disconnect (BT toggle, range, etc.).
+    _connSub = _transport.connectionChanges.listen((_) {
+      if (mounted) setState(() {});
     });
   }
 
   @override
   void dispose() {
+    _ackSub?.cancel();
+    _connSub?.cancel();
     _transport.dispose();
     super.dispose();
   }
