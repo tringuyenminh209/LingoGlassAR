@@ -1,0 +1,279 @@
+# Codex Prompts — Ready-to-Copy Templates
+
+Three prompt families:
+1. **Session opener** — paste once at the start of a Codex session so the
+   agent reads the briefing before doing anything.
+2. **Day-N task prompt** — paste each day to assign that day's Codex
+   rows from `S1_TASKS.md`.
+3. **PR-ready prompt** — paste when Codex says it's done, to enforce
+   the PR template + verification output.
+
+All prompts assume Codex has shell access in the repo root and can read
+files. Adapt slightly for ChatGPT-without-shell (paste file contents
+manually) or Cursor agent mode (let it auto-read).
+
+---
+
+## 1. Session opener (paste ONCE per session)
+
+```
+You are Codex, assisting on the LingoGlass AR project. Before doing
+ANY task, read these files in order:
+
+1. docs/codex/PROJECT_BRIEFING.md
+2. docs/codex/S1_TASKS.md
+3. CLAUDE.md (repo root)
+
+After reading, summarise back to me in 5-10 bullets:
+- The product in one line.
+- Which sprint phase we are in and what's next.
+- The top 5 hard rules you must not break.
+- The BLE protocol packet layout in one line.
+- Anything in the briefing you want me to clarify before you start.
+
+DO NOT start writing code yet. Wait for my next message that assigns
+a specific Day-N task.
+```
+
+---
+
+## 2. Day-N task prompt — Day 1 (ready to copy)
+
+```
+Your task: S1 Day 1 — Backend scaffold. Implement only the rows marked
+"Codex" in the Day 1 table of docs/codex/S1_TASKS.md. The "Claude" row
+(adding backend/CLAUDE.md) is NOT your task; skip it.
+
+## Concrete deliverables (your rows)
+
+1. Create backend/ Python 3.12 project.
+   - Layout:
+     backend/
+       pyproject.toml         (use uv-style PEP 621; project name lingoglass-backend)
+       app/
+         __init__.py
+         main.py              (FastAPI app factory, mounts /healthz router)
+         api/
+           __init__.py
+           health.py          (router with GET /healthz)
+         core/
+           __init__.py
+           config.py          (pydantic-settings, reads .env)
+         services/
+           __init__.py        (placeholder for Day 2)
+       tests/
+         __init__.py
+         test_health.py       (httpx asgi client, asserts /healthz returns 200)
+       .env.example
+       .gitignore             (Python defaults + .env, NOT .env.example)
+       README.md              (1-paragraph: what it is, how to run)
+   - Dependencies (pin major versions, no betas):
+     fastapi >= 0.115, < 1.0
+     uvicorn[standard] >= 0.30, < 1.0
+     websockets >= 13, < 14
+     redis[hiredis] >= 5, < 6
+     openai >= 1.50, < 2.0
+     pydantic-settings >= 2.5, < 3.0
+   - Dev dependencies:
+     pytest >= 8, < 9
+     pytest-asyncio >= 0.24, < 1.0
+     httpx >= 0.27, < 1.0
+     ruff >= 0.6, < 1.0
+   - /healthz returns: {"status":"ok","version":"0.1.0","redis":"<up|down>"}
+     The redis field tries a PING and reports its state without crashing
+     when redis is unreachable.
+
+2. backend/Dockerfile (multi-stage):
+   - Stage 1 "builder": python:3.12-slim, install uv, build wheel.
+   - Stage 2 "runtime": python:3.12-slim, copy wheel + entrypoint,
+     create non-root user "app" (uid 10001), HEALTHCHECK CMD curl on /healthz.
+   - Final image < 200 MB.
+
+3. backend/docker-compose.yml:
+   - Service "api": build from Dockerfile, env_file .env, depends_on redis,
+     ports "8000:8000".
+   - Service "redis": image redis:7-alpine, no ports exposed to host,
+     volume redis-data:/data, healthcheck redis-cli ping.
+   - Top-level volumes: redis-data.
+
+4. backend/.env.example:
+   OPENAI_API_KEY=
+   REDIS_URL=redis://redis:6379/0
+   APP_ENV=dev
+   LOG_LEVEL=info
+
+## Hard constraints (DO NOT VIOLATE)
+
+- Branch from main: feat/s1-day-1-backend-scaffold
+- NEVER push to main. NEVER force-push. NEVER add Co-Authored-By trailers.
+- Conventional commit subject: feat(backend): S1 Day 1 FastAPI scaffold + Docker Compose
+- DO NOT add any dependency not listed above without asking first.
+- DO NOT touch any file outside backend/ except for nothing else.
+  (Specifically: do not edit firmware/, mobile/, .claude/, docs/, tests/.)
+- Code in English. Comments only when the WHY is non-obvious.
+
+## Verification (run before opening PR; paste raw output into PR body)
+
+cd backend
+docker compose up -d --build
+sleep 5
+curl -s http://localhost:8000/healthz
+docker compose ps
+docker compose down -v
+pytest
+
+All five commands must succeed (exit 0 and sensible output).
+
+## When done
+
+Push the branch and open a PR with this exact body, filled in:
+
+---
+## Summary
+S1 Day 1 backend scaffold: FastAPI app factory, /healthz with optional
+Redis check, multi-stage Dockerfile (non-root, < 200 MB), Docker Compose
+with api + redis, pytest harness with one passing test.
+
+## Files added
+- backend/pyproject.toml
+- backend/Dockerfile
+- backend/docker-compose.yml
+- backend/.env.example
+- backend/.gitignore
+- backend/README.md
+- backend/app/{__init__.py, main.py}
+- backend/app/api/{__init__.py, health.py}
+- backend/app/core/{__init__.py, config.py}
+- backend/app/services/__init__.py
+- backend/tests/{__init__.py, test_health.py}
+
+## Verification output
+
+$ docker compose up -d --build
+<paste>
+
+$ curl -s http://localhost:8000/healthz
+<paste>
+
+$ docker compose ps
+<paste>
+
+$ docker compose down -v
+<paste>
+
+$ pytest
+<paste>
+
+## Open questions for review
+- (list anything you decided without clear guidance)
+
+## Time spent
+- ~X hours
+---
+
+Then post the PR URL here and STOP. Do not start Day 2.
+```
+
+---
+
+## 3. Day-N task prompt — TEMPLATE (use for Day 2-10)
+
+Replace `<N>` with the day number, fill `<TASK_TITLE>`, `<COMMIT_SUBJECT>`,
+`<DELIVERABLES>`, `<VERIFICATION>` from `docs/codex/S1_TASKS.md`.
+
+```
+Your task: S1 Day <N> — <TASK_TITLE>. Implement only the rows marked
+"Codex" in the Day <N> table of docs/codex/S1_TASKS.md. Skip "Claude" rows.
+
+## Concrete deliverables (your rows)
+
+<DELIVERABLES — paste the row contents verbatim from S1_TASKS.md>
+
+## Hard constraints (always apply)
+
+- Branch from main: feat/s1-day-<N>-<slug>
+- NEVER push to main. NEVER force-push. NEVER add Co-Authored-By trailers.
+- Conventional commit subject: <COMMIT_SUBJECT>
+- Do not add dependencies not enumerated in the briefing or this prompt
+  without asking first.
+- Do not modify firmware/ or BLE protocol files (mobile/lib/ble/ble_protocol.dart,
+  tests/ble_vectors.json, .claude/skills/ble-protocol/SKILL.md). Those are
+  Claude-only territory per docs/codex/S1_TASKS.md.
+- Do not touch platformio.ini or firmware/CLAUDE.md.
+
+## Verification
+
+<VERIFICATION — paste from S1_TASKS.md "Verify" column>
+
+Run all verification commands. Paste raw output (not summary) into the
+PR description.
+
+## PR description template
+
+## Summary
+<one paragraph: what changed and why>
+
+## Files added / modified
+<bullet list>
+
+## Verification output
+<paste raw command output, one block per command>
+
+## Open questions for review
+<things you decided without explicit guidance>
+
+## Time spent
+~X hours
+
+After opening the PR, post the URL here and STOP. Do not start the next day.
+```
+
+---
+
+## 4. PR-ready check (paste when Codex says "done")
+
+```
+Before I review your PR, verify these:
+
+1. Branch name follows feat/s1-day-N-<slug>?
+2. No commits to main? (`git log main..HEAD` shows your work)
+3. No Co-Authored-By: trailers in any commit? (`git log --format=%B HEAD~3..HEAD`)
+4. PR description has ALL of: Summary, Files, Verification output (raw,
+   not summarised), Open questions, Time spent?
+5. All verification commands actually ran (exit 0)?
+6. No files modified outside the directories listed in the task?
+   Run: `git diff --name-only main..HEAD` and confirm.
+
+If any answer is "no", fix it before I look. If all "yes", post the
+PR URL.
+```
+
+---
+
+## 5. After-merge prompt (Claude uses this internally)
+
+After the user reports a PR is merged, Claude updates the local checklist:
+
+```
+PR for S1 Day <N> merged at <commit>. Update:
+- docs/codex/S1_TASKS.md: change the Day-N table to mark Codex rows
+  as [DONE] inline.
+- TaskUpdate the matching task #N to status=completed.
+- If the merge revealed scope creep for Day N+1, edit Day N+1 row
+  inline; flag in next 日報.
+```
+
+---
+
+## Notes
+
+- Codex tends to over-engineer. If a deliverable says "one file with X",
+  resist when the agent proposes 4 files. Re-prompt with "Single file as
+  specified."
+- Codex sometimes wants to add fancy deps (typer, structlog, loguru,
+  pydantic v1 shims). Reject anything not in the briefing without an
+  explicit "yes" from Claude or user.
+- Always demand raw command output in PR. If the agent paraphrases
+  ("tests pass"), reject and re-ask.
+- If a task is genuinely too vague, Codex will ask. Better than guessing.
+  Add answers back to S1_TASKS.md so the next agent run is unambiguous.
