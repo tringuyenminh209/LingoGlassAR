@@ -26,16 +26,30 @@ For each task below:
 5. Open a PR with the conventional-commit subject given.
 6. **No `Co-Authored-By: Claude/OpenAI` trailers** on commits.
 
-## Day 1 — Backend scaffold
+## Day 1 — Backend scaffold [DONE 2026-05-20]
 
-| Owner | Task | Verify |
-|---|---|---|
-| **Codex** | Create `backend/` Python 3.12 project. `pyproject.toml` (uv or poetry), FastAPI + uvicorn + websockets + redis + openai SDK deps. Layout: `app/main.py` (entry), `app/api/` (routers), `app/services/` (translator placeholder), `app/core/config.py` (pydantic-settings reading .env). `/healthz` returns `{"status":"ok","version":"0.1.0"}`. | `uvicorn app.main:app` listens on :8000, curl returns 200. |
-| **Codex** | `backend/Dockerfile` multi-stage (builder + runtime), `python:3.12-slim` base, non-root user, healthcheck on /healthz. | `docker build -t lg-backend .` succeeds. |
-| **Codex** | `backend/docker-compose.yml`: services `api` (build from Dockerfile, port 8000) + `redis` (redis:7-alpine, no expose). `.env.example` listing `OPENAI_API_KEY=`. | `docker compose up` brings both up, healthcheck green. |
-| **Claude** | Code review Codex PR. Add `backend/CLAUDE.md` with sprint hooks + conventions (mirror `mobile/CLAUDE.md` structure). | Commit, push. |
+PR #1 merged at commit `538eae1`. backend/CLAUDE.md added in follow-up
+(see "Notes" below).
+
+| Owner | Task | Verify | Status |
+|---|---|---|---|
+| **Codex** | Create `backend/` Python 3.12 project. `pyproject.toml` (uv or poetry), FastAPI + uvicorn + websockets + redis + openai SDK deps. Layout: `app/main.py` (entry), `app/api/` (routers), `app/services/` (translator placeholder), `app/core/config.py` (pydantic-settings reading .env). `/healthz` returns `{"status":"ok","version":"0.1.0"}`. | `uvicorn app.main:app` listens on :8000, curl returns 200. | DONE |
+| **Codex** | `backend/Dockerfile` multi-stage (builder + runtime), `python:3.12-slim` base, non-root user, healthcheck on /healthz. | `docker build -t lg-backend .` succeeds. | DONE |
+| **Codex** | `backend/docker-compose.yml`: services `api` (build from Dockerfile, port 8000) + `redis` (redis:7-alpine, no expose). `.env.example` listing `OPENAI_API_KEY=`. | `docker compose up` brings both up, healthcheck green. | DONE |
+| **Claude** | Code review Codex PR. Add `backend/CLAUDE.md` with sprint hooks + conventions (mirror `mobile/CLAUDE.md` structure). | Commit, push. | DONE |
 
 Commit subject: `feat(backend): S1 Day 1 FastAPI scaffold + Docker Compose`.
+
+**Notes from review (deferred follow-ups for Day 3+)**:
+- `_redis_state` creates a fresh redis client per `/healthz` call. Pool
+  the client in app lifespan when Day 3 adds session WS endpoint that
+  needs redis more frequently.
+- No CORS middleware yet. Add in Day 3 when mobile starts hitting the API.
+- `LOG_LEVEL` env is present in settings but not wired to uvicorn yet.
+  Wire when Day 3 adds structured logs.
+- `/healthz` extended beyond spec: returns redis state too. Acceptable —
+  serves as a smoke probe for the Day 3 redis integration. Mobile health
+  poll (S1 Day 7) can read this field.
 
 ## Day 2 — OpenAI Realtime integration
 
