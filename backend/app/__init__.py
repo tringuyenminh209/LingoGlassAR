@@ -1,0 +1,1 @@
+"""LingoGlass backend application package."""
