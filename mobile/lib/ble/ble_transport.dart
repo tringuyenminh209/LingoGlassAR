@@ -23,11 +23,19 @@ const String _ackNotifyUuid = '7c3d8b02-9e8a-4f15-b6c3-1d2e3f4a5b6c';
 const String deviceNameFilter = 'LingoGlass-S0';
 
 /// Result of decoding an ACK packet received over the notify characteristic.
+///
+/// Phase F+: when the firmware emits the 10-byte payload, [tRecvMs] and
+/// [tRenderMs] are populated from payload bytes 2..9 (uint32 LE on each).
+/// They come from the ESP32 `millis()` clock and are **not** comparable to
+/// the phone clock; only their delta (firmware processing time) is useful.
+/// For legacy 2-byte payloads or non-Ok status both fields are 0.
 class AckEvent {
   const AckEvent({
     required this.sequenceId,
     required this.status,
     required this.receivedAtMicros,
+    required this.tRecvMs,
+    required this.tRenderMs,
   });
 
   /// sequence_id of the subtitle being acknowledged.
@@ -39,7 +47,36 @@ class AckEvent {
   /// Monotonic timestamp when the ACK arrived on the phone (for latency calc).
   final int receivedAtMicros;
 
+  /// Firmware millis() at first fragment of this sequence (Phase F+), or 0.
+  final int tRecvMs;
+
+  /// Firmware millis() right after OLED render (Phase F+), or 0 if no render.
+  final int tRenderMs;
+
   bool get isOk => status == 0x01;
+
+  /// Firmware-side processing time in milliseconds, or null if either
+  /// timestamp is missing (legacy ACK / error before render).
+  int? get fwProcMs {
+    if (tRecvMs == 0 || tRenderMs == 0) return null;
+    final delta = tRenderMs - tRecvMs;
+    return delta >= 0 ? delta : null;
+  }
+}
+
+/// Metadata describing a completed sendSubtitle call. Returned by the
+/// transport so the screen / latency logger can record byte/fragment counts
+/// without re-computing them.
+class SendInfo {
+  const SendInfo({
+    required this.payloadBytes,
+    required this.fragments,
+    required this.effectiveMtu,
+  });
+
+  final int payloadBytes;
+  final int fragments;
+  final int effectiveMtu;
 }
 
 class BleTransport {
@@ -200,8 +237,16 @@ class BleTransport {
   /// If [mtu] is null, uses [negotiatedMtu] (default 23 = BLE minimum, updated
   /// after requestMtu returns at connect time).
   ///
-  /// Returns the number of fragments sent.
-  Future<int> sendSubtitle(String text, int sequenceId, {int? mtu}) async {
+  /// [onSendStart] is invoked synchronously right before the first fragment
+  /// is written, after fragment count and byte count are known. Use it to
+  /// stamp a precise send timestamp from the [LatencyLogger].
+  Future<SendInfo> sendSubtitle(
+    String text,
+    int sequenceId, {
+    int? mtu,
+    void Function(int payloadBytes, int fragments, int effectiveMtu)?
+        onSendStart,
+  }) async {
     final char = _subtitleChar;
     if (char == null) {
       throw StateError('not connected');
@@ -220,6 +265,7 @@ class BleTransport {
       'send seq=$sequenceId len=${bytes.length} '
       'frags=${fragments.length} max_payload=$perFragment',
     );
+    onSendStart?.call(bytes.length, fragments.length, effectiveMtu);
 
     for (var i = 0; i < fragments.length; i++) {
       final r = fragments[i];
@@ -238,7 +284,11 @@ class BleTransport {
       await char.write(packet, withoutResponse: true);
       _log('  frag $i/${fragments.length} bytes=${packet.length}');
     }
-    return fragments.length;
+    return SendInfo(
+      payloadBytes: bytes.length,
+      fragments: fragments.length,
+      effectiveMtu: effectiveMtu,
+    );
   }
 
   void _handleAck(List<int> bytes) {
@@ -250,12 +300,29 @@ class BleTransport {
     }
     final p = result.packet!;
     final status = p.payload.isNotEmpty ? p.payload[0] : 0;
+    // Phase F+: payload[2..9] = t_recv_ms LE | t_render_ms LE. Legacy ACKs
+    // are 2 bytes; we report 0 for missing timestamp fields.
+    int tRecv = 0;
+    int tRender = 0;
+    if (p.payload.length >= 10) {
+      tRecv = p.payload[2] |
+          (p.payload[3] << 8) |
+          (p.payload[4] << 16) |
+          (p.payload[5] << 24);
+      tRender = p.payload[6] |
+          (p.payload[7] << 8) |
+          (p.payload[8] << 16) |
+          (p.payload[9] << 24);
+    }
     final event = AckEvent(
       sequenceId: p.header.sequenceId,
       status: status,
       receivedAtMicros: DateTime.now().microsecondsSinceEpoch,
+      tRecvMs: tRecv,
+      tRenderMs: tRender,
     );
-    _log('ack seq=${event.sequenceId} status=0x${status.toRadixString(16)}');
+    _log('ack seq=${event.sequenceId} status=0x${status.toRadixString(16)}'
+        '${tRender != 0 ? ' fw_proc=${event.fwProcMs}ms' : ''}');
     _ackController.add(event);
   }
 

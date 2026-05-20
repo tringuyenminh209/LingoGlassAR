@@ -6,8 +6,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../ble/ble_transport.dart';
+import '../services/latency_logger.dart';
 
 // ~100 character Japanese sample. UTF-8 ~ 300 bytes, multi-fragment at every
 // supported MTU. Mix of hiragana, katakana, kanji, punctuation.
@@ -16,6 +18,36 @@ const String _japaneseSample = 'こんにちは、ヤマグチへようこそ。
     '便利でしょう？';
 
 const List<int> _mtuMatrix = [23, 185, 247];
+
+// Phase F latency suite: 20 sends mixing MTUs and a short ASCII line so the
+// CSV has a baseline (single-fragment) and stress points (multi-fragment at
+// MTU 23). Same order each run for repeatability.
+const String _shortSample = 'Hello LingoGlass';
+const List<({String text, int mtu})> _latencyRunPlan = [
+  // 4 warm-ups at the negotiated MTU
+  (text: _shortSample, mtu: 247),
+  (text: _shortSample, mtu: 247),
+  (text: _shortSample, mtu: 247),
+  (text: _shortSample, mtu: 247),
+  // 8 JP samples cycling through MTU profiles
+  (text: _japaneseSample, mtu: 23),
+  (text: _japaneseSample, mtu: 185),
+  (text: _japaneseSample, mtu: 247),
+  (text: _japaneseSample, mtu: 23),
+  (text: _japaneseSample, mtu: 185),
+  (text: _japaneseSample, mtu: 247),
+  (text: _japaneseSample, mtu: 23),
+  (text: _japaneseSample, mtu: 185),
+  // 8 short bursts at MTU 247 to measure best-case
+  (text: _shortSample, mtu: 247),
+  (text: _shortSample, mtu: 247),
+  (text: _shortSample, mtu: 247),
+  (text: _shortSample, mtu: 247),
+  (text: _shortSample, mtu: 247),
+  (text: _shortSample, mtu: 247),
+  (text: _shortSample, mtu: 247),
+  (text: _shortSample, mtu: 247),
+];
 
 class SpikeScreen extends StatefulWidget {
   const SpikeScreen({super.key});
@@ -27,6 +59,7 @@ class SpikeScreen extends StatefulWidget {
 class _SpikeScreenState extends State<SpikeScreen> {
   final List<String> _log = <String>[];
   late final BleTransport _transport;
+  final LatencyLogger _latency = LatencyLogger();
   StreamSubscription<AckEvent>? _ackSub;
   StreamSubscription<bool>? _connSub;
   int _nextSeq = 1;
@@ -39,9 +72,14 @@ class _SpikeScreenState extends State<SpikeScreen> {
     _ackSub = _transport.acks.listen((ack) {
       _append(
           '< ACK seq=${ack.sequenceId} status=0x${ack.status.toRadixString(16).padLeft(2, '0')} ok=${ack.isOk}');
+      // Feed every ACK to the latency logger. Orphan ACKs (no pending send
+      // for that sequence_id) are silently dropped by recordAck.
+      final rec = _latency.recordAck(ack);
+      if (rec != null) {
+        _append(
+            '  rtt=${rec.rttMs.toStringAsFixed(1)}ms fw_proc=${rec.fwProcMs ?? '-'}ms');
+      }
     });
-    // Rebuild the CONN/idle chip when the link goes up or down so the UI
-    // stops lying after an external disconnect (BT toggle, range, etc.).
     _connSub = _transport.connectionChanges.listen((_) {
       if (mounted) setState(() {});
     });
@@ -81,8 +119,21 @@ class _SpikeScreenState extends State<SpikeScreen> {
     final mtuLabel =
         mtu == null ? 'mtu=auto(${_transport.negotiatedMtu})' : 'mtu=$mtu';
     try {
-      final frags = await _transport.sendSubtitle(text, seq, mtu: mtu);
-      _append('> sent len=${text.length} seq=$seq $mtuLabel frags=$frags');
+      final info = await _transport.sendSubtitle(
+        text,
+        seq,
+        mtu: mtu,
+        onSendStart: (bytes, frags, effMtu) {
+          _latency.markSendStart(
+            sequenceId: seq,
+            mtu: effMtu,
+            payloadBytes: bytes,
+            fragments: frags,
+          );
+        },
+      );
+      _append(
+          '> sent len=${text.length} seq=$seq $mtuLabel frags=${info.fragments}');
     } on Exception catch (e) {
       _append('send FAILED ($mtuLabel): $e');
     } on StateError catch (e) {
@@ -131,9 +182,54 @@ class _SpikeScreenState extends State<SpikeScreen> {
     }
   }
 
-  void _onRun20Pressed() {
-    // TODO Phase F: send 20 subtitles, log latency, export CSV.
-    _append('Run-20 latency test not implemented yet (Phase F).');
+  // Phase F latency suite. Sends the 20-entry _latencyRunPlan, waits for
+  // each ACK before issuing the next send (so RTTs don't pipeline together),
+  // and prints a summary at the end. CSV is kept in _latency for copy.
+  Future<void> _onRun20Pressed() async {
+    if (_busy) return;
+    if (!_transport.isConnected) {
+      _append('not connected. tap Scan first.');
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      _append('-- latency run start (${_latencyRunPlan.length} samples) --');
+      _latency.clear();
+      for (final step in _latencyRunPlan) {
+        final seqBefore = _nextSeq;
+        await _sendText(step.text, mtu: step.mtu);
+        // Wait until this sequence_id is no longer pending (ACK matched) or
+        // a short timeout elapses. _sendText incremented _nextSeq before
+        // sending so seqBefore is the seq just used.
+        final deadline = DateTime.now().add(const Duration(milliseconds: 800));
+        while (_latency.records.length < seqBefore &&
+            DateTime.now().isBefore(deadline)) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+        // Small inter-send gap so the firmware OLED settles between renders.
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+      }
+      final stats = _latency.summarise();
+      if (stats != null) {
+        _append('-- latency run done -- ${stats.toString()}');
+      } else {
+        _append('-- latency run done -- no OK samples recorded');
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  // Copies the accumulated CSV to the clipboard. User pastes into a file on
+  // the dev machine via adb / mac share for the Phase F report script.
+  Future<void> _onCopyCsvPressed() async {
+    final csv = _latency.toCsv();
+    if (_latency.records.isEmpty) {
+      _append('no latency records to copy. run "Run 20" first.');
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: csv));
+    _append('CSV copied to clipboard (${_latency.records.length} rows)');
   }
 
   @override
@@ -202,6 +298,17 @@ class _SpikeScreenState extends State<SpikeScreen> {
                   child: FilledButton.tonal(
                     onPressed: _busy ? null : _onMtuMatrixPressed,
                     child: const Text('MTU matrix 23/185/247'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _busy ? null : _onCopyCsvPressed,
+                    child: const Text('Copy CSV'),
                   ),
                 ),
               ],
