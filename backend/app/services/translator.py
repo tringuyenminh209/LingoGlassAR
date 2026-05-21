@@ -37,7 +37,13 @@ SYSTEM_INSTRUCTIONS = (
     "output Japanese text only. No commentary, no romanization."
 )
 
-DEFAULT_MODEL = "gpt-4o-realtime-preview"
+# GA Realtime model. The earlier `gpt-4o-realtime-preview` only accepted the
+# beta API shape (flat `input_audio_format`, `modalities`, `OpenAI-Beta` header)
+# which OpenAI disabled in 2026 with error
+# `invalid_request_error.beta_api_shape_disabled`. The GA shape (nested
+# `audio.input.format` object, `output_modalities`, `session.type`) is now the
+# only accepted shape, and `gpt-realtime` is the matching GA model.
+DEFAULT_MODEL = "gpt-realtime"
 
 
 @dataclass(frozen=True)
@@ -104,8 +110,10 @@ class Translator:
     Session prompt
     --------------
     A fixed ``session.update`` with :data:`SYSTEM_INSTRUCTIONS` is sent
-    on connect. ``input_audio_transcription`` must be enabled so we get
-    the source-language text on :attr:`TextDelta.source_text`.
+    on connect using the GA shape (``session.type = "realtime"``, nested
+    ``audio.input.format`` object, ``output_modalities = ["text"]``).
+    ``audio.input.transcription`` must be enabled so we get the
+    source-language text on :attr:`TextDelta.source_text`.
     """
 
     def __init__(
@@ -141,21 +149,33 @@ class Translator:
 
         url = f"wss://api.openai.com/v1/realtime?model={self._model}"
         try:
+            # GA Realtime requires no OpenAI-Beta header. Sending it produces
+            # `beta_api_shape_disabled`. session.update payload uses the GA
+            # shape: explicit `type:"realtime"`, `output_modalities` (not
+            # `modalities`), and a nested `audio.input` object whose `format`
+            # is an object (`audio/pcm` + sample rate), not the old string.
             self._ws = await websockets.connect(
                 url,
                 extra_headers={
                     "Authorization": f"Bearer {self._api_key}",
-                    "OpenAI-Beta": "realtime=v1",
                 },
             )
             await self._send_json(
                 {
                     "type": "session.update",
                     "session": {
+                        "type": "realtime",
+                        "output_modalities": ["text"],
                         "instructions": SYSTEM_INSTRUCTIONS,
-                        "input_audio_format": "pcm16",
-                        "input_audio_transcription": {"model": "whisper-1"},
-                        "modalities": ["text"],
+                        "audio": {
+                            "input": {
+                                "format": {
+                                    "type": "audio/pcm",
+                                    "rate": 24000,
+                                },
+                                "transcription": {"model": "whisper-1"},
+                            },
+                        },
                     },
                 }
             )
@@ -209,11 +229,13 @@ class Translator:
                 )
 
             await self._send_json({"type": "input_audio_buffer.commit"})
+            # GA `response.create` uses `output_modalities` to mirror the
+            # session-level field; `modalities` is rejected.
             await self._send_json(
                 {
                     "type": "response.create",
                     "response": {
-                        "modalities": ["text"],
+                        "output_modalities": ["text"],
                         "instructions": SYSTEM_INSTRUCTIONS,
                     },
                 }
@@ -223,9 +245,19 @@ class Translator:
                 event = _decode_event(raw_event)
                 event_type = event.get("type")
 
-                if event_type == "response.text.delta":
+                # GA renamed the text streaming events
+                # (`response.text.*` -> `response.output_text.*`). Accept the
+                # old names too in case OpenAI keeps a legacy alias for a
+                # transition window.
+                if event_type in (
+                    "response.output_text.delta",
+                    "response.text.delta",
+                ):
                     yield TextDelta(text=str(event.get("delta", "")))
-                elif event_type == "response.text.done":
+                elif event_type in (
+                    "response.output_text.done",
+                    "response.text.done",
+                ):
                     yield TextDelta(text="", final=True)
                     return
                 elif (
