@@ -8,7 +8,10 @@ plugins {
 android {
     namespace = "com.lingoglass.lingoglass_mobile"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    // flutter_sound 9.30+ ships native binaries built against NDK 27.
+    // All other plugins (flutter_blue_plus_android, path_provider_android,
+    // permission_handler_android, shared_preferences_android) also expect 27.
+    ndkVersion = "27.0.12077973"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -25,7 +28,9 @@ android {
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         //minSdk = flutter.minSdkVersion
-        minSdk = 21    // hoặc cao hơn (cần >=21 cho BLE)
+        // 24 required by flutter_sound 9.30+ (was 21 for BLE-only S0).
+        // Android 7.0 covers ~99% of devices in 2026; safe bump.
+        minSdk = 24
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
