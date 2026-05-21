@@ -85,11 +85,28 @@ Commit subject: `feat(backend): S1 Day 2 OpenAI Realtime translator service`.
 
 ## Day 3 — WebSocket session endpoint
 
-| Owner | Task | Verify |
-|---|---|---|
-| **Claude** | Define the wire protocol between phone and backend. Document in `docs/api-contract/ws-events.schema.json` (already exists - extend). Events: `session.start`, `audio.chunk`, `text.delta`, `text.final`, `error`. | Schema validates against a sample payload. |
-| **Codex** | `app/api/sessions.py` with `POST /v1/sessions` (creates session_id, stores meta in Redis with 1h TTL) and `WS /v1/sessions/{id}/stream` (bridges client audio frames to translator service, relays text deltas back). | `curl POST` returns session_id. `wscat` connect, send dummy bytes, receive mock text. |
-| **Codex** | `app/core/redis.py` thin wrapper with async client (`redis.asyncio`). Connection pool from settings. | Health check pings redis. |
+| Owner | Task | Verify | Status |
+|---|---|---|---|
+| **Claude** | Define the wire protocol between phone and backend. Document in `docs/api-contract/ws-events.schema.json` (already exists - extend). Events: `session.start`, `audio.chunk`, `text.delta`, `text.final`, `error`. | Schema validates against a sample payload. | DONE 2026-05-21, commit `c2f8377` (8/8 samples valid) |
+| **Codex** | `app/api/sessions.py` with `POST /v1/sessions` (creates session_id, stores meta in Redis with 1h TTL) and `WS /v1/sessions/{id}/stream` (bridges client audio frames to translator service, relays text deltas back). | `curl POST` returns session_id. `wscat` connect, send dummy bytes, receive mock text. | pending Codex |
+| **Codex** | `app/core/redis.py` thin wrapper with async client (`redis.asyncio`). Connection pool from settings. | Health check pings redis. | pending Codex |
+
+**Wire contract notes** (locked in `c2f8377`):
+- Wire variants on the WS = the 8 oneOf entries in `ws-events.schema.json`.
+  Use the variant names verbatim (`session.start`, `session.opened`,
+  `audio.chunk`, `audio.end`, `metrics`, `translation.partial`,
+  `translation.final`, `error`). The spec text "text.delta / text.final"
+  in the original task row mapped to `translation.partial / .final`.
+- Audio is PCM16 mono 16 kHz. `audio.chunk.codec` is locked to `pcm16`
+  and `sampleRateHz` to 16000.
+- `error.code` is an enum: `translator_error`, `upstream_unavailable`,
+  `session_not_found`, `daily_cap_exceeded`, `invalid_event`,
+  `internal_error`.
+- Canonical sample payloads in `docs/api-contract/ws-events.samples.json`;
+  validator at `tools/validate_ws_schema.py`.
+- HTTP contract for `POST /v1/sessions` + WS path in `openapi.yaml`.
+- The Day 1 review follow-ups (redis pool in lifespan, CORS middleware)
+  are folded into this Day 3 prompt.
 
 Commit subject: `feat(backend): S1 Day 3 session API + WS bridge`.
 

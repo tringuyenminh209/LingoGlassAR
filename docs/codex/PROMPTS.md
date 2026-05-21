@@ -43,6 +43,7 @@ a specific Day-N task.
 |---:|---|---|---|
 | 1 | #1 | MERGED 2026-05-20 (clean) | `538eae1` + follow-up `3ff139c` |
 | 2 | #2 | MERGED 2026-05-21 (clean) | stub `812bc63`, impl `ab22deb` |
+| 3 | (Claude contract on main, awaiting Codex PR) | schema/openapi `c2f8377` (2026-05-21) | - |
 
 ## 2. Day-N task prompt — Day 1 (ready to copy)
 
@@ -274,7 +275,176 @@ run is the actual verification.
 After opening the PR, post the URL here and STOP. Do not start Day 3.
 ```
 
-## 3. Day-N task prompt — TEMPLATE (use for Day 3-10)
+## 2c. Day 3 — Session API + WS bridge (ready to copy)
+
+**Precondition**: Claude has locked the wire contract on `main`. Read these
+files BEFORE coding:
+- `docs/api-contract/ws-events.schema.json`  (JSON Schema, 8 variants)
+- `docs/api-contract/ws-events.samples.json` (one canonical payload per variant)
+- `docs/api-contract/openapi.yaml`           (POST /v1/sessions + WS doc)
+- `backend/app/services/translator.py`       (Translator interface you call)
+
+```
+Your task: S1 Day 3 - Session API + WS bridge. Implement only the rows
+marked "Codex" in the Day 3 table of docs/codex/S1_TASKS.md. The
+"Claude" row (wire contract in docs/api-contract/) is already on main -
+read it first; your job is the FastAPI endpoints + redis client wrapper.
+
+## Concrete deliverables (your rows)
+
+1. backend/app/core/redis.py
+   - Thin async wrapper around `redis.asyncio`.
+   - Single connection pool created on FastAPI startup (lifespan event)
+     and torn down on shutdown. Pool size from settings (default 10).
+   - Expose `async def get_redis() -> Redis` for handler injection
+     (FastAPI Depends). Reuse the pool; do not create a fresh client
+     per call (Day 1 follow-up requested this).
+   - Reuse the existing `Settings.redis_url` from app/core/config.py.
+     Do not add a new env var.
+
+2. backend/app/api/sessions.py
+   - `POST /v1/sessions` -> 201 with SessionCreateResponse from
+     docs/api-contract/openapi.yaml. Generates a UUID v4 session_id,
+     writes `session:{id}` hash to Redis with fields
+     {created_at, device_id?, status="open"} and 3600 s TTL.
+     Returns {success: true, data: {sessionId, wsUrl, expiresAt}}
+     where wsUrl is the absolute wss:// URL the client should open
+     (compose from request.url_for or settings.public_base_url; pick
+     one and document the choice).
+     On daily-cap breach return 429 with ApiFail{code:"daily_cap_exceeded"}.
+     For Day 3 the cap is NOT yet enforced - leave a clearly-marked TODO
+     hook where the check will live; do not add the cap logic itself
+     (that is Day 8).
+
+   - `WS /v1/sessions/{id}/stream`
+     a) On connect: look up `session:{id}` in Redis; if missing, accept
+        then immediately close with code 4404 and a single `error` frame
+        with code `session_not_found`, retryable=false.
+     b) Validate every incoming frame against the schema. Frames that
+        fail validation -> respond with `error` code `invalid_event`,
+        retryable=true, do not close.
+     c) Expected client frame order: `session.start` first, then
+        repeated `audio.chunk`, terminated by `audio.end`. `metrics`
+        frames may interleave at any time.
+     d) On `session.start`: instantiate a Translator (api_key from
+        settings.openai_api_key) inside `async with`. Reply with
+        `session.opened` carrying serverTs.
+     e) On each `audio.chunk`: base64-decode dataBase64 and push the
+        bytes into a private asyncio.Queue feeding the translator's
+        audio_frames AsyncIterator.
+     f) On `audio.end`: close the queue (sentinel). The translator
+        then emits TextDelta items.
+     g) Map TextDelta -> wire:
+          delta.text non-empty, final=False  -> `translation.partial`
+          delta.final=True                   -> `translation.final`
+            (translatedText is the running concatenation of every
+             non-empty delta.text emitted in this utterance;
+             durationMs = serverTs(final) - serverTs(session.opened))
+          delta.source_text not None         -> attach to the upcoming
+             translation.final as `sourceText` (privacy: see
+             docs/api-contract/ws-events.schema.json description).
+     h) On TranslatorError: emit `error` frame with code
+        `translator_error`, retryable=true, message=str(exc), then
+        close ws with 1011.
+     i) On client disconnect mid-utterance: close the translator
+        cleanly; do NOT mark the session record as errored - mobile
+        may reopen with a new WS for a new utterance under the same
+        session_id (S1 push-to-talk model: one session = one utterance,
+        but be lenient).
+   - Privacy: never log dataBase64, never log delta.text content,
+     never log sourceText. Counts/timings only. (See backend/CLAUDE.md.)
+
+3. backend/app/main.py - wire the new router and the redis lifespan.
+   - Add `app.include_router(sessions.router)` next to health.
+   - Use FastAPI lifespan context to open/close the redis pool.
+   - Add CORS middleware: allow_origins from a new settings field
+     `cors_origins` (default `["*"]` for dev, comma-split env var
+     `CORS_ORIGINS`). allow_methods = ["*"], allow_headers = ["*"],
+     allow_credentials = False.
+
+4. backend/tests/test_sessions.py
+   - Use ASGITransport, no real redis required. Mock the redis client
+     via a fake that records HSET/EXPIRE/HGETALL calls in memory.
+   - Tests:
+     a) POST /v1/sessions returns 201 with sessionId UUID + wsUrl
+        starting with wss:// or ws:// + expiresAt in ISO-8601.
+     b) WS connect to an unknown sessionId closes with 4404 and an
+        error frame code=session_not_found.
+     c) WS happy path: session.start -> session.opened. Send 2
+        audio.chunk frames + 1 audio.end. The translator is patched
+        to a fake that yields TextDelta("Xin "), TextDelta("chao"),
+        TextDelta(final=True). Assert that the client receives, in
+        order: session.opened, translation.partial("Xin "),
+        translation.partial("chao"), translation.final with
+        translatedText="Xin chao".
+     d) Invalid frame (missing required field) -> error frame
+        code=invalid_event, ws stays open.
+   - All four tests pass on pytest -v.
+
+5. backend/app/core/config.py - add:
+   - cors_origins: list[str] = ["*"]  (parse from env CORS_ORIGINS)
+   - public_base_url: str = "ws://localhost:8000"  (used to compose
+     wsUrl in POST /v1/sessions). Document override in .env.example.
+
+6. backend/.env.example - add:
+   CORS_ORIGINS=*
+   PUBLIC_BASE_URL=ws://localhost:8000
+
+## Hard constraints (always apply)
+
+- Branch from main: feat/s1-day-3-sessions-ws
+- NEVER push to main. NEVER force-push. NEVER add Co-Authored-By trailers.
+- Conventional commit subject: feat(backend): S1 Day 3 session API + WS bridge
+- Do not edit docs/api-contract/*.json or *.yaml - the contract is
+  locked. If you find a real bug in the schema, raise it as an open
+  question in the PR and STOP that work; do not patch the schema
+  yourself.
+- Do not edit backend/app/services/translator.py - the interface is
+  locked. Use it via `async with Translator(...)`.
+- Do not touch firmware/, mobile/, .claude/, tests/ble_vectors.json,
+  platformio.ini, or any BLE protocol file.
+- New dependencies: you may add `jsonschema >= 4.23, < 5.0` (for
+  invalid_event validation). Do not add anything else without asking.
+- Privacy: never log frame payloads or translated text content.
+  Counts/timings only.
+
+## Verification (paste raw output into PR)
+
+cd backend
+docker compose up -d --build
+sleep 5
+curl -s -X POST http://localhost:8000/v1/sessions
+curl -s http://localhost:8000/healthz
+docker compose logs api --tail 30
+docker compose down -v
+pytest -v tests/test_sessions.py tests/test_translator.py tests/test_health.py
+
+The docker step is a smoke check that import + POST work. The pytest
+run is the authoritative verification.
+
+## PR description template
+
+## Summary
+<one paragraph: what changed and why>
+
+## Files added / modified
+<bullet list>
+
+## Verification output
+<paste raw output of each command separately>
+
+## Open questions for review
+<things you decided without explicit guidance>
+
+## Time spent
+~X hours
+
+After opening the PR, post the URL here and STOP. Do not start Day 4.
+```
+
+---
+
+## 3. Day-N task prompt — TEMPLATE (use for Day 4-10)
 
 Replace `<N>` with the day number, fill `<TASK_TITLE>`, `<COMMIT_SUBJECT>`,
 `<DELIVERABLES>`, `<VERIFICATION>` from `docs/codex/S1_TASKS.md`.
