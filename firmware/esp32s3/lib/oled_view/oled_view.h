@@ -1,6 +1,9 @@
-// OLED view for LingoGlass S0 spike.
-// Wraps U8g2 SSD1306 128x64 I2C. ASCII-only for S0; Japanese font is S1+.
-// Caller owns Wire setup (Wire.begin(SDA, SCL) must be called before begin()).
+// OLED view for LingoGlass AR.
+// Wraps U8g2 SSD1306 128x64 I2C. Dual unifont coverage (JP 12 px, VN 16 px)
+// with per-line script detection; word-wraps and auto-pages long subtitles.
+// Caller owns Wire setup (Wire.begin(SDA, SCL) must be called before begin())
+// and is responsible for calling `tick(millis())` from the main loop so
+// paging advances.
 
 #pragma once
 
