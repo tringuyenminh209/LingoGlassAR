@@ -45,6 +45,7 @@ a specific Day-N task.
 | 2 | #2 | MERGED 2026-05-21 (clean) | stub `812bc63`, impl `ab22deb` |
 | 3 | #3 | MERGED 2026-05-21 (clean) | contract `c2f8377`, impl `6bc9ce1` |
 | 4 | #4 | MERGED 2026-05-21 (clean) | runbook `6345efa`, CFN+drawio `37d31ef`, scripts `2b2e2bb` |
+| 5 | (Claude sample-rate audit done, awaiting Codex PR) | schema 24 kHz fix on main | - |
 
 ## 2. Day-N task prompt — Day 1 (ready to copy)
 
@@ -607,7 +608,142 @@ After opening the PR, post the URL here and STOP. Do not start Day 5.
 
 ---
 
-## 3. Day-N task prompt — TEMPLATE (use for Day 5-10)
+## 2e. Day 5 — Flutter audio recorder (ready to copy)
+
+**Precondition**: Claude has audited and locked the audio format on `main`.
+**24 kHz PCM16 mono LE** (NOT 16 kHz) to match OpenAI Realtime exactly.
+Schema (`docs/api-contract/ws-events.schema.json`) and translator docstring
+already reflect this. Recorder must record at 24000 Hz natively.
+
+```
+Your task: S1 Day 5 - Flutter audio recorder. Implement only the rows
+marked "Codex" in the Day 5 table of docs/codex/S1_TASKS.md. The "Claude"
+row (chunking strategy review) was completed pre-task; the locked format
+is 24 kHz PCM16 mono LE, ~100 ms chunks = 4800 bytes per chunk.
+
+## Concrete deliverables (your rows)
+
+1. mobile/pubspec.yaml: add `flutter_sound: ^9.2.13` to dependencies.
+   Do not bump existing dep versions. Run `flutter pub get` locally to
+   verify resolution; paste the output into the PR.
+
+2. mobile/android/app/src/main/AndroidManifest.xml:
+   - Add `<uses-permission android:name="android.permission.RECORD_AUDIO"/>`
+     inside the manifest root, alongside the existing BLUETOOTH_*
+     permissions. Do not touch existing entries.
+
+3. mobile/ios/Runner/Info.plist:
+   - Add `<key>NSMicrophoneUsageDescription</key>` with a one-line
+     English string: "LingoGlass needs the microphone to translate
+     speech in real time." Do not touch other keys.
+
+4. mobile/lib/audio/recorder.dart - new file. Public API:
+
+   ```dart
+   class AudioRecorder {
+     /// Start capturing PCM16 mono LE at 24 kHz.
+     /// Emits ~100 ms chunks (4800 bytes each) on the returned stream.
+     /// Throws RecorderError if the OS denies the mic permission or the
+     /// platform recorder fails to start.
+     Future<Stream<Uint8List>> start();
+
+     /// Stop capturing. Closes the stream, releases the OS recorder.
+     /// Safe to call multiple times.
+     Future<void> stop();
+
+     /// True between start() and stop().
+     bool get isRecording;
+   }
+
+   class RecorderError implements Exception {
+     RecorderError(this.message);
+     final String message;
+     @override String toString() => 'RecorderError: $message';
+   }
+   ```
+
+   Implementation rules:
+   - Use flutter_sound's `FlutterSoundRecorder.startRecorderToStream`
+     with `codec: Codec.pcm16`, `sampleRate: 24000`, `numChannels: 1`.
+   - flutter_sound delivers chunks of opaque size. Buffer the incoming
+     bytes and emit fixed 4800-byte chunks via a StreamController so
+     the consumer always sees ~100 ms slices. If start() is called
+     while already recording, throw RecorderError.
+   - On permission denial: call `permission_handler` to request
+     `Permission.microphone` first; if denied, throw RecorderError.
+   - Use `Uint8List` everywhere on the BLE-style boundary (no
+     `List<int>`).
+   - Idempotent close: stop() while not recording is a no-op.
+
+5. mobile/test/audio/recorder_test.dart - unit test with a fake
+   recorder driver. Verify:
+   a) After start(), the returned stream emits at least one 4800-byte
+      Uint8List chunk when the fake feeds 9600 bytes total.
+   b) Partial trailing bytes (< 4800) are held in the buffer and NOT
+      emitted (no short chunks on the wire).
+   c) stop() closes the stream cleanly (listener gets onDone).
+   d) Calling start() twice in a row throws RecorderError.
+   You may need to abstract the platform recorder behind a small
+   interface (e.g. `_PlatformRecorder`) so the test can inject a fake.
+   Keep this abstraction in the same file or a sibling private file -
+   do NOT add a new top-level package.
+
+## Hard constraints (always apply)
+
+- Branch from main: feat/s1-day-5-audio-recorder
+- NEVER push to main. NEVER force-push. NEVER add Co-Authored-By trailers.
+- Conventional commit subject: feat(mobile): S1 Day 5 PCM16 24 kHz audio recorder
+- Do not edit firmware/, backend/, .claude/, docs/api-contract/,
+  tests/ble_vectors.json, platformio.ini, or any BLE protocol file.
+- Sample rate is locked at 24000 Hz. Do NOT change to 16 kHz or 48 kHz
+  "for compatibility" — backend translator forwards bytes verbatim and
+  expects exactly 24 kHz to match OpenAI Realtime pcm16.
+- Chunk size is 4800 bytes (100 ms at 24 kHz, 16-bit, mono). Do NOT
+  change to power-of-two sizes — the Day 9 latency budget assumes
+  100 ms granularity.
+- Do not add `axios`, `dio`, or any HTTP shim. Recorder is local-only
+  for Day 5; WS sending is Day 6.
+- No new dependencies beyond flutter_sound. Reuse existing
+  permission_handler (^11.3.1) for mic permission.
+
+## Verification (paste raw output into PR)
+
+cd mobile
+flutter pub get
+flutter analyze
+flutter test test/audio/recorder_test.dart
+flutter test    # full suite must still pass
+
+The first three commands prove the new code compiles + tests pass.
+The fourth proves we did not break the existing Phase F BLE tests.
+
+You do NOT need to flash this to a device for the PR — the unit test
+with the fake recorder driver is sufficient. Device verification is
+Claude's Day 7 work.
+
+## PR description template
+
+## Summary
+<one paragraph: what changed and why>
+
+## Files added / modified
+<bullet list>
+
+## Verification output
+<paste raw command output, one block per command>
+
+## Open questions for review
+<things you decided without explicit guidance>
+
+## Time spent
+~X hours
+
+After opening the PR, post the URL here and STOP. Do not start Day 6.
+```
+
+---
+
+## 3. Day-N task prompt — TEMPLATE (use for Day 6-10)
 
 Replace `<N>` with the day number, fill `<TASK_TITLE>`, `<COMMIT_SUBJECT>`,
 `<DELIVERABLES>`, `<VERIFICATION>` from `docs/codex/S1_TASKS.md`.

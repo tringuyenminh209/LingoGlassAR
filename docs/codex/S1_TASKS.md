@@ -182,11 +182,27 @@ Commit subject: `feat(infra): S1 Day 4 EC2 Osaka bootstrap + deploy scripts`.
 
 ## Day 5 — Flutter audio recorder
 
-| Owner | Task | Verify |
-|---|---|---|
-| **Codex** | Add `flutter_sound` dependency to `mobile/pubspec.yaml`. Update Android manifest for `RECORD_AUDIO` + iOS Info.plist for `NSMicrophoneUsageDescription`. | `flutter pub get` clean, app installs. |
-| **Codex** | `mobile/lib/audio/recorder.dart`: `AudioRecorder` class. `start()` begins capture at PCM16 16 kHz mono, emits `Stream<Uint8List>` of ~100 ms chunks (1600 samples = 3200 bytes). `stop()` finalises stream. | Unit test with mock recorder driver passes. |
-| **Claude** | Review chunking strategy. Confirm 100 ms aligns with OpenAI Realtime input expectations (which want 24 kHz PCM16 or 16 kHz). Adjust sample rate if needed. | n/a |
+| Owner | Task | Verify | Status |
+|---|---|---|---|
+| **Codex** | Add `flutter_sound` dependency to `mobile/pubspec.yaml`. Update Android manifest for `RECORD_AUDIO` + iOS Info.plist for `NSMicrophoneUsageDescription`. | `flutter pub get` clean, app installs. | pending Codex |
+| **Codex** | `mobile/lib/audio/recorder.dart`: `AudioRecorder` class. `start()` begins capture at PCM16 **24 kHz** mono LE, emits `Stream<Uint8List>` of ~100 ms chunks (**4800 bytes**). `stop()` finalises stream. | Unit test with mock recorder driver passes. | pending Codex |
+| **Claude** | Review chunking strategy. Confirm 100 ms aligns with OpenAI Realtime input expectations. Adjust sample rate if needed. | n/a | DONE 2026-05-22 (see decision below) |
+
+**Sample-rate decision (2026-05-22)**:
+- OpenAI Realtime API's `pcm16` input format expects **24 kHz mono LE**
+  verbatim. If we sent 16 kHz, OpenAI would play it back at 1.5x speed
+  causing garbled transcription.
+- Schema (`docs/api-contract/ws-events.schema.json`) updated:
+  `audioChunk.sampleRateHz` const 16000 -> **24000**. samples.json
+  updated to match. 8/8 samples still validate.
+- Translator service docstring (`backend/app/services/translator.py`)
+  updated: "24 kHz, 4800 bytes per ~100 ms chunk".
+- Mobile recorder is the source: it must record natively at 24 kHz.
+  flutter_sound supports this on Android (resampled from device native
+  rate by the OS) and iOS (AVAudioRecorder accepts 24 kHz directly).
+- Trade-off accepted: 50% more bandwidth vs 16 kHz, but zero backend
+  resampling cost and matches OpenAI default. S2 may revisit if cellular
+  bandwidth becomes a bottleneck for users.
 
 Commit subject: `feat(mobile): S1 Day 5 audio recorder service`.
 

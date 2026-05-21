@@ -95,9 +95,11 @@ class Translator:
 
     Audio format
     ------------
-    Input frames are raw PCM16 mono at 16 kHz. Frame size is caller's
-    choice; ~100 ms (3200 bytes) is recommended. Frames are forwarded
-    to OpenAI as ``input_audio_buffer.append`` events.
+    Input frames are raw PCM16 mono LE at **24 kHz** (matches OpenAI
+    Realtime API's ``pcm16`` input format exactly so the bytes are
+    forwarded verbatim — no server-side resampling). Frame size is
+    caller's choice; ~100 ms (4800 bytes) is recommended. Frames are
+    forwarded to OpenAI as ``input_audio_buffer.append`` events.
 
     Session prompt
     --------------

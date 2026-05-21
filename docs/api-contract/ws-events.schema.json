@@ -32,7 +32,7 @@
       "additionalProperties": false
     },
     "audioChunk": {
-      "description": "Client -> Server. One audio frame of the current utterance. Codec is locked to raw PCM16 mono at 16 kHz (sampleRateHz=16000). Frame size is implementation choice; ~100 ms (3200 bytes raw, ~4.3 KB base64) is recommended per backend translator contract. seq starts at 0 and increments by 1 per chunk for this session.",
+      "description": "Client -> Server. One audio frame of the current utterance. Codec is locked to raw PCM16 mono LE at 24 kHz (sampleRateHz=24000). This matches OpenAI Realtime API's pcm16 input format exactly so the backend forwards bytes verbatim with no resampling. Frame size is implementation choice; ~100 ms (4800 bytes raw, ~6.4 KB base64) is recommended per backend translator contract. seq starts at 0 and increments by 1 per chunk for this session.",
       "type": "object",
       "required": ["type", "sessionId", "seq", "codec", "sampleRateHz", "dataBase64", "clientTs"],
       "properties": {
@@ -40,7 +40,7 @@
         "sessionId": { "$ref": "#/$defs/uuid" },
         "seq": { "type": "integer", "minimum": 0 },
         "codec": { "const": "pcm16" },
-        "sampleRateHz": { "const": 16000 },
+        "sampleRateHz": { "const": 24000 },
         "dataBase64": { "type": "string", "contentEncoding": "base64" },
         "clientTs": { "$ref": "#/$defs/isoTs" }
       },
