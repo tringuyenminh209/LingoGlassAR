@@ -44,6 +44,7 @@ a specific Day-N task.
 | 1 | #1 | MERGED 2026-05-20 (clean) | `538eae1` + follow-up `3ff139c` |
 | 2 | #2 | MERGED 2026-05-21 (clean) | stub `812bc63`, impl `ab22deb` |
 | 3 | #3 | MERGED 2026-05-21 (clean) | contract `c2f8377`, impl `6bc9ce1` |
+| 4 | (Claude runbook + Codex scripts in parallel) | runbook on main, Codex prompt ready | - |
 
 ## 2. Day-N task prompt — Day 1 (ready to copy)
 
@@ -444,7 +445,169 @@ After opening the PR, post the URL here and STOP. Do not start Day 4.
 
 ---
 
-## 3. Day-N task prompt — TEMPLATE (use for Day 4-10)
+## 2d. Day 4 — EC2 bootstrap + deploy scripts (ready to copy)
+
+**Precondition**: Claude has written the manual runbook at
+`docs/runbook/aws-osaka-deploy.md`. Read it before coding — it explains
+what the human is doing on the AWS console + Cloudflare, which determines
+what your scripts can assume (Ubuntu 22.04 ARM, ufw not yet installed,
+deploy user not yet created, etc.).
+
+```
+Your task: S1 Day 4 - EC2 bootstrap + deploy scripts. Implement only the
+rows marked "Codex" in the Day 4 table of docs/codex/S1_TASKS.md. The
+"Claude (user-assisted)" rows (EC2 launch + EIP + Cloudflare DNS) are
+manual steps in docs/runbook/aws-osaka-deploy.md and are NOT your task.
+
+## Concrete deliverables (your rows)
+
+1. infra/ec2/bootstrap.sh
+   - Idempotent provisioning script for a fresh Ubuntu 22.04 LTS ARM
+     instance. Re-running on a fully-bootstrapped box must exit 0 and
+     change nothing.
+   - Must be runnable as: `sudo bash bootstrap.sh`. Aborts if not root.
+   - Steps in order:
+     a) `apt-get update -y` and `apt-get upgrade -y` (non-interactive,
+        `DEBIAN_FRONTEND=noninteractive`).
+     b) Install required base packages: ca-certificates, curl, gnupg,
+        lsb-release, ufw, git.
+     c) Install Docker Engine + compose plugin via the official Docker
+        APT repository (NOT docker.io from Ubuntu archive). Architecture
+        must be `arm64`. Use the official keyring at
+        /etc/apt/keyrings/docker.gpg. Install packages: docker-ce,
+        docker-ce-cli, containerd.io, docker-buildx-plugin,
+        docker-compose-plugin.
+     d) Create system user `deploy` with home `/home/deploy`, shell
+        /bin/bash, and add to the `docker` group. Skip if user already
+        exists.
+     e) Ensure `/home/deploy/lingoglass` exists, owned by `deploy:deploy`,
+        mode 755. Do NOT clone the repo (manual step in runbook).
+     f) Configure ufw: default deny incoming, default allow outgoing,
+        allow 22/tcp, 80/tcp, 443/tcp. Enable ufw with `--force` to
+        avoid the interactive prompt.
+     g) Enable + start docker.service.
+     h) Print a verification summary: `docker --version`,
+        `docker compose version`, `ufw status verbose`, `id deploy`.
+   - Use `set -euo pipefail` at the top. All paths absolute. No relative
+     paths to `pwd`. Comment each step block with a short why.
+   - The script is committed as executable (`chmod +x` in git).
+
+2. infra/ec2/deploy.sh
+   - Runs as the `deploy` user (the runbook does `sudo -u deploy -i`).
+     Aborts if invoked as root (`[[ $EUID -ne 0 ]]` check).
+   - Assumes the repo is cloned at `/home/deploy/lingoglass`.
+   - Steps in order:
+     a) cd into `/home/deploy/lingoglass`.
+     b) `git fetch origin --prune`
+     c) `git checkout main`
+     d) `git pull --ff-only origin main` — fail loud if non-fast-forward
+        (do not auto-merge; surface the conflict to the operator).
+     e) cd into `backend/`.
+     f) Require `.env` to exist. If missing, print a clear error
+        pointing to the runbook section "First deploy" and exit 1.
+     g) `docker compose pull --quiet` (no-op when images are built
+        locally; useful later if we move to a registry).
+     h) `docker compose up -d --build --remove-orphans`.
+     i) Wait up to 60 s for the api container to be healthy. Poll
+        `docker inspect --format '{{.State.Health.Status}}' <api container>`
+        every 2 s. On timeout, dump `docker compose logs api --tail 60`
+        and exit 1.
+     j) `curl -fsS http://localhost:8000/healthz` to confirm the app
+        responds. Print the response body. Exit 1 on non-2xx.
+   - Use `set -euo pipefail`. Logging: print timestamped step headers
+     `[deploy 2026-05-22T01:23:45Z] step name`. Helps when operators
+     come back to logs later.
+   - Idempotent: a second invocation with no git changes should be a
+     fast no-op (compose recognises images, up -d is idempotent).
+
+3. infra/ec2/README.md
+   - One paragraph: what these scripts are for.
+   - "First time" section: pointer to docs/runbook/aws-osaka-deploy.md.
+   - "Redeploy" section: the single command operators will run
+     (`bash infra/ec2/deploy.sh`).
+   - "Troubleshooting" section: 4-5 common failures from the runbook
+     (ufw blocking, env missing, redis unhealthy, etc.) with the
+     command to diagnose each.
+
+4. backend/Dockerfile - wire LOG_LEVEL env to uvicorn.
+   - Day 1 review left this as a follow-up. The current CMD is
+     `["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]`
+     which ignores LOG_LEVEL. Change to use sh -c so the env is
+     expanded, with a sensible default:
+     `CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level ${LOG_LEVEL:-info}"]`
+   - Verify with `LOG_LEVEL=debug docker compose up -d --build` followed
+     by `docker compose logs api --tail 5` — the debug lines should
+     appear.
+
+5. backend/docker-compose.yml - small production-readiness tweaks.
+   - Add `restart: unless-stopped` to both `api` and `redis` services.
+   - Add `logging.driver: json-file` with `options.max-size: "10m"` and
+     `options.max-file: "3"` to both services. Keeps log disk usage
+     bounded.
+   - Do NOT change ports, volumes, healthcheck cadence, or env_file
+     wiring.
+
+## Hard constraints (always apply)
+
+- Branch from main: feat/s1-day-4-ec2-bootstrap-deploy
+- NEVER push to main. NEVER force-push. NEVER add Co-Authored-By trailers.
+- Conventional commit subject: feat(infra): S1 Day 4 EC2 Osaka bootstrap + deploy scripts
+- Do not edit docs/runbook/* - the runbook is locked by Claude.
+- Do not edit docs/api-contract/* or any BLE protocol file.
+- Do not touch firmware/, mobile/, .claude/.
+- No new dependencies. Bash + standard Ubuntu packages + Docker only.
+- Make both .sh files executable in git (`git update-index --chmod=+x`).
+
+## Verification (paste raw output into PR)
+
+Local-only verification (no real EC2 needed for the PR):
+
+# 1. Static checks
+shellcheck infra/ec2/bootstrap.sh infra/ec2/deploy.sh
+bash -n infra/ec2/bootstrap.sh
+bash -n infra/ec2/deploy.sh
+
+# 2. Confirm executable bit committed
+git ls-files --stage infra/ec2/*.sh
+# Expected output lines start with "100755"
+
+# 3. Dockerfile change does not break the build
+cd backend
+docker compose up -d --build
+sleep 5
+curl -s http://localhost:8000/healthz
+docker compose logs api --tail 5
+docker compose down -v
+
+# 4. Existing tests still pass
+pytest -v
+
+If shellcheck is not installed in your sandbox, note that in the PR
+and run `bash -n` only. Do not skip the bash -n parse check.
+
+## PR description template
+
+## Summary
+<one paragraph: what changed and why>
+
+## Files added / modified
+<bullet list>
+
+## Verification output
+<paste raw command output, one block per command>
+
+## Open questions for review
+<things you decided without explicit guidance>
+
+## Time spent
+~X hours
+
+After opening the PR, post the URL here and STOP. Do not start Day 5.
+```
+
+---
+
+## 3. Day-N task prompt — TEMPLATE (use for Day 5-10)
 
 Replace `<N>` with the day number, fill `<TASK_TITLE>`, `<COMMIT_SUBJECT>`,
 `<DELIVERABLES>`, `<VERIFICATION>` from `docs/codex/S1_TASKS.md`.

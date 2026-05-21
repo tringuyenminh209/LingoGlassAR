@@ -140,12 +140,27 @@ Commit subject: `feat(backend): S1 Day 3 session API + WS bridge`.
 
 ## Day 4 — AWS Osaka deploy
 
-| Owner | Task | Verify |
-|---|---|---|
-| **Claude (user-assisted)** | Provision EC2 t4g.small in `ap-northeast-3` via AWS console. Ubuntu 22.04 LTS. Allocate Elastic IP. Security group: 22/tcp from user IP, 80/tcp + 443/tcp from 0.0.0.0/0 (Cloudflare will front). | SSH in, `apt update` works. |
-| **Codex** | `infra/ec2/bootstrap.sh` (idempotent): install Docker engine + compose plugin + ufw, allow 22/80/443, enable ufw, create deploy user, set up `~/lingoglass/` clone path. | Run on fresh EC2: exit 0, docker --version, ufw status. |
-| **Codex** | `infra/ec2/deploy.sh`: pull from git, `docker compose pull && docker compose up -d --build`. | Re-run is no-op when no git changes. |
-| **Claude (user-assisted)** | Cloudflare DNS: add A record `api` -> EC2 EIP, proxied (orange). SSL/TLS mode = "Full". | `curl https://api.lingoglass.online/healthz` returns 200. |
+| Owner | Task | Verify | Status |
+|---|---|---|---|
+| **Claude (user-assisted)** | Provision EC2 t4g.small in `ap-northeast-3` via AWS console. Ubuntu 22.04 LTS. Allocate Elastic IP. Security group: 22/tcp from user IP, 80/tcp + 443/tcp from 0.0.0.0/0 (Cloudflare will front). | SSH in, `apt update` works. | runbook ready, user-execute |
+| **Codex** | `infra/ec2/bootstrap.sh` (idempotent): install Docker engine + compose plugin + ufw, allow 22/80/443, enable ufw, create deploy user, set up `~/lingoglass/` clone path. | Run on fresh EC2: exit 0, docker --version, ufw status. | pending Codex |
+| **Codex** | `infra/ec2/deploy.sh`: pull from git, `docker compose pull && docker compose up -d --build`. | Re-run is no-op when no git changes. | pending Codex |
+| **Claude (user-assisted)** | Cloudflare DNS: add A record `api` -> EC2 EIP, proxied (orange). SSL/TLS mode = "Full". | `curl https://api.lingoglass.online/healthz` returns 200. | runbook ready, user-execute |
+
+**Manual runbook**: `docs/runbook/aws-osaka-deploy.md` (9 sections incl.
+EC2 launch, EIP, SSH sanity, bootstrap, Cloudflare DNS, first deploy,
+smoke test, cost watch, tear-down).
+
+**Day 4 Codex prompt extends scope slightly**:
+- `backend/Dockerfile` CMD wired to `LOG_LEVEL` env (closes the last
+  Day 1 review follow-up).
+- `backend/docker-compose.yml` gets `restart: unless-stopped` and
+  log rotation (`max-size 10m, max-file 3`).
+- `infra/ec2/README.md` documents operators' single-command redeploy.
+
+Parallelism note: user can run runbook sections 1-5 while Codex writes
+the scripts. The user pauses at section 4 ("bootstrap") until Codex's
+PR is on main, then continues.
 
 Commit subject: `feat(infra): S1 Day 4 EC2 Osaka bootstrap + deploy scripts`.
 
