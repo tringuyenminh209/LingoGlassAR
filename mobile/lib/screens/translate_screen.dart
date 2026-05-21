@@ -18,12 +18,15 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../audio/recorder.dart';
 import '../ble/ble_transport.dart';
 import '../services/device_id.dart';
 import '../services/session_client.dart';
 import '../services/translator_ws.dart';
+
+enum _PttState { idle, starting, recording, ending, aborting }
 
 class TranslateScreen extends StatefulWidget {
   const TranslateScreen({super.key});
@@ -44,6 +47,11 @@ class _TranslateScreenState extends State<TranslateScreen> {
   bool _isBleConnected = false;
   bool _isWsConnected = false;
   int _bleSeq = 0;
+
+  // Single source of truth for PTT lifecycle. Prevents overlapping
+  // press cycles that previously caused permission_handler races and
+  // "TranslatorWs already connected" errors.
+  _PttState _ptt = _PttState.idle;
 
   String _partialBuffer = '';
   String _lastFinal = '';
@@ -69,6 +77,16 @@ class _TranslateScreenState extends State<TranslateScreen> {
     if (!mounted) return;
     setState(() => _deviceId = id);
     _log('Device ID ${id.substring(0, 8)}...');
+
+    // Pre-warm mic permission once at startup. permission_handler does
+    // not allow concurrent requests; doing this here means recorder.start()
+    // later sees an already-granted state and never re-prompts.
+    final perm = await Permission.microphone.request();
+    if (!perm.isGranted) {
+      _log('Mic permission denied - PTT will fail until granted');
+    } else {
+      _log('Mic permission granted');
+    }
   }
 
   @override
@@ -103,11 +121,15 @@ class _TranslateScreenState extends State<TranslateScreen> {
   }
 
   Future<void> _onPressDown() async {
-    if (_isHolding) return;
+    if (_ptt != _PttState.idle) {
+      _log('PTT busy (state=${_ptt.name}), press ignored');
+      return;
+    }
     if (_deviceId == null) {
       _log('Not ready (deviceId pending)');
       return;
     }
+    _ptt = _PttState.starting;
     setState(() {
       _isHolding = true;
       _partialBuffer = '';
@@ -115,14 +137,25 @@ class _TranslateScreenState extends State<TranslateScreen> {
 
     try {
       _sessionId ??= (await _sessionClient.createSession(_deviceId!)).sessionId;
+      if (_ptt != _PttState.starting) return; // aborted while creating session
       _log('Session ${_sessionId!.substring(0, 8)}...');
 
       await _ws.connect(_sessionId!, deviceId: _deviceId!);
+      if (_ptt != _PttState.starting) {
+        // User released during connect; clean up the now-orphaned socket.
+        await _ws.disconnect();
+        return;
+      }
       _wsTextSub = _ws.textStream.listen(_onTextDelta, onError: _onWsError);
       setState(() => _isWsConnected = true);
       _log('WS connected');
 
       final audioStream = await _recorder.start();
+      if (_ptt != _PttState.starting) {
+        await _recorder.stop();
+        await _ws.disconnect();
+        return;
+      }
       _audioSub = audioStream.listen(
         (chunk) {
           try {
@@ -133,6 +166,7 @@ class _TranslateScreenState extends State<TranslateScreen> {
         },
         onError: (e) => _log('Recorder error: $e'),
       );
+      _ptt = _PttState.recording;
       _log('Recording...');
     } catch (e) {
       _log('Start error: $e');
@@ -141,18 +175,37 @@ class _TranslateScreenState extends State<TranslateScreen> {
   }
 
   Future<void> _onPressUp() async {
-    if (!_isHolding) return;
+    if (_ptt == _PttState.idle) return;
     setState(() => _isHolding = false);
+
+    if (_ptt == _PttState.starting) {
+      // Released before connect/recorder fully spun up. Mark cancelled and
+      // let _onPressDown's checkpoints unwind. As a safety net, also tear
+      // down here in case the in-flight chain already passed all checkpoints.
+      _ptt = _PttState.aborting;
+      _log('Released before ready, aborting');
+      await _teardownPtt();
+      return;
+    }
+
+    if (_ptt != _PttState.recording) return;
+    _ptt = _PttState.ending;
 
     await _audioSub?.cancel();
     _audioSub = null;
     await _recorder.stop();
+    if (!_isWsConnected) {
+      _log('WS not connected at end, aborting');
+      await _teardownPtt();
+      return;
+    }
     try {
       _ws.endUtterance();
+      _log('Audio ended, awaiting translation...');
     } catch (e) {
       _log('endUtterance error: $e');
+      await _teardownPtt();
     }
-    _log('Audio ended, awaiting translation...');
   }
 
   Future<void> _teardownPtt() async {
@@ -163,7 +216,8 @@ class _TranslateScreenState extends State<TranslateScreen> {
     await _wsTextSub?.cancel();
     _wsTextSub = null;
     await _ws.disconnect();
-    setState(() => _isWsConnected = false);
+    if (mounted) setState(() => _isWsConnected = false);
+    _ptt = _PttState.idle;
   }
 
   void _onTextDelta(TextDelta delta) {
