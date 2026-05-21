@@ -287,11 +287,27 @@ Commit subject: `feat(mobile): S1 Day 6 backend WebSocket client`.
 
 ## Day 7 — End-to-end wiring
 
-| Owner | Task | Verify |
-|---|---|---|
-| **Claude** | `mobile/lib/screens/translate_screen.dart`: push-to-talk button + log + connection chip (similar to `spike_screen.dart`). Hold -> recorder.start + WS connect. Release -> recorder.stop + WS close. On `TextDelta` -> append to in-progress subtitle buffer. On `text.final` -> push to `BleTransport.sendSubtitle()`. | Manual: hold mic, say JP phrase, OLED shows VN translation within 2.5 s. |
-| **Claude** | Switch `MaterialApp.home` to `TranslateScreen` by default; keep `SpikeScreen` accessible via a debug drawer. | Build + run on device. |
-| **Codex** | Add a "Server status" widget that polls `/healthz` every 10 s and displays online/offline chip. | UI shows green when backend reachable. |
+| Owner | Task | Verify | Status |
+|---|---|---|---|
+| **Claude** | `mobile/lib/screens/translate_screen.dart`: push-to-talk button + log + connection chip (similar to `spike_screen.dart`). Hold -> recorder.start + WS connect. Release -> recorder.stop + WS close. On `TextDelta` -> append to in-progress subtitle buffer. On `text.final` -> push to `BleTransport.sendSubtitle()`. | Manual: hold mic, say JP phrase, OLED shows VN translation within 2.5 s. | 7a DONE `94ba294`, device verify pending |
+| **Claude** | Switch `MaterialApp.home` to `TranslateScreen` by default; keep `SpikeScreen` accessible via a debug drawer. | Build + run on device. | DONE `94ba294` |
+| **Codex** | Add a "Server status" widget that polls `/healthz` every 10 s and displays online/offline chip. | UI shows green when backend reachable. | pending Codex |
+
+**Phase 7a notes (commit `94ba294`)**:
+- Added 3 deps: `shared_preferences ^2.3.0`, `uuid ^3.0.7`, `http ^1.2.0`.
+- Pinned `flutter_sound 9.2.13` (exact, no caret) because `^9.2.13` was
+  resolving to `9.30.0` which broke `startRecorderToStream` signature
+  (`StreamSink<Food>` -> `StreamSink<Uint8List>`).
+- Closed Day 6 deviceId='' follow-up via `DeviceId.get()` UUID cache.
+- Closed Day 6 broadcast stream follow-up via PTT pattern (caller
+  listens immediately after connect, before any partial arrives).
+- New files: `services/device_id.dart`, `services/session_client.dart`,
+  `screens/translate_screen.dart`. main.dart switches home; drawer
+  exposes /spike route for the old S0 screen.
+- 27/27 tests still pass; widget_test.dart updated for new home.
+- **Phase 7b** (manual device test) is next: `flutter run` on Galaxy
+  S10 with backend live + ESP32 powered. Watch latency, look for
+  surprises in real audio pipeline.
 
 Commit subject: `feat(mobile): S1 Day 7 push-to-talk translation pipeline`.
 

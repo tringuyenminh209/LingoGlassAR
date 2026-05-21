@@ -47,6 +47,8 @@ a specific Day-N task.
 | 4 | #4 | MERGED 2026-05-21 (clean) | runbook `6345efa`, CFN+drawio `37d31ef`, scripts `2b2e2bb` |
 | 5 | #5 | MERGED 2026-05-22 (clean, 1 minor deviation) | audit `a6ba46d`, impl `c5de0ff` |
 | 6 | #6 | MERGED 2026-05-22 (clean) | design `297b53e`, impl `10c768a` |
+| 7a | (Claude PTT screen on main, manual device test pending) | wire-up `94ba294` | - |
+| 7-codex | (Claude prompt ready, awaiting Codex PR) | Server-status widget | - |
 
 ## 2. Day-N task prompt — Day 1 (ready to copy)
 
@@ -938,7 +940,92 @@ After opening the PR, post the URL here and STOP. Do not start Day 7.
 
 ---
 
-## 3. Day-N task prompt — TEMPLATE (use for Day 7-10)
+## 2g. Day 7 (Codex row) — Server status widget (ready to copy)
+
+**Precondition**: Phase 7a is merged on main. `TranslateScreen` exists at
+`mobile/lib/screens/translate_screen.dart` with an AppBar `actions:` list
+containing two `_chip(...)` widgets. Your task adds a third chip that
+polls `/healthz` independently.
+
+```
+Your task: S1 Day 7 - Server status widget. Add a small widget that
+polls https://api.lingoglass.online/healthz every 10 seconds and shows
+an online/offline chip in TranslateScreen.
+
+## Concrete deliverables
+
+1. mobile/lib/widgets/server_status_chip.dart - new file.
+   - StatefulWidget. On mount, poll /healthz every 10 s.
+   - Display a Chip with label "API" and color:
+     * Green: last poll returned HTTP 200 and body.redis == "up"
+     * Yellow: last poll returned 200 but redis == "down"
+     * Red: last poll failed (timeout, non-2xx, parse error)
+     * Grey: no poll completed yet (initial state)
+   - Use the existing `http` package (already in pubspec).
+   - Use Timer.periodic for polling. Cancel in dispose().
+   - Each poll has a 5-second timeout. On timeout, treat as red.
+   - Do NOT crash the screen if /healthz is unreachable; the widget is
+     decorative.
+   - Accept an optional `Uri? apiBase` constructor param (default
+     `https://api.lingoglass.online`). Useful for tests + dev override.
+
+2. mobile/lib/screens/translate_screen.dart - small edit.
+   - Add `import '../widgets/server_status_chip.dart';`
+   - In the AppBar actions list, insert `const ServerStatusChip()` as
+     the FIRST chip (before BACKEND and BLE). Do not modify other
+     actions logic.
+
+3. mobile/test/widgets/server_status_chip_test.dart - unit test.
+   - Use a fake http.Client that returns a sequence of responses
+     (200 redis:up, 200 redis:down, 500, timeout).
+   - Verify the chip color/label transitions after each poll.
+   - Use FakeAsync (from package:fake_async, NOT yet in deps - if you
+     need it, prefer a different strategy: pass an injectable
+     pollInterval and a manually-triggered poll method via
+     @visibleForTesting, like Day 5 / Day 6 patterns).
+
+## Hard constraints
+
+- Branch: feat/s1-day-7-server-status-chip
+- Commit subject: feat(mobile): S1 Day 7 server status chip
+- No new dependencies. http + flutter SDK + flutter_test only.
+- Do not touch translator_ws.dart, recorder.dart, ble_transport.dart,
+  or any service in lib/services/. Polling stays self-contained in
+  the widget.
+- Do not touch backend/, firmware/, docs/api-contract/, .claude/.
+- Idle CPU: timer fires once per 10 s. Do NOT poll more aggressively.
+
+## Verification
+
+cd mobile
+flutter pub get
+flutter analyze lib/widgets/server_status_chip.dart test/widgets/server_status_chip_test.dart
+flutter test test/widgets/server_status_chip_test.dart
+flutter test    # full suite must still pass (28 tests after this)
+
+## PR description template
+
+## Summary
+<one paragraph>
+
+## Files added / modified
+<bullet list>
+
+## Verification output
+<paste raw>
+
+## Open questions for review
+<things you decided>
+
+## Time spent
+~X hours
+
+After opening the PR, post the URL and STOP.
+```
+
+---
+
+## 3. Day-N task prompt — TEMPLATE (use for Day 8-10)
 
 Replace `<N>` with the day number, fill `<TASK_TITLE>`, `<COMMIT_SUBJECT>`,
 `<DELIVERABLES>`, `<VERIFICATION>` from `docs/codex/S1_TASKS.md`.
