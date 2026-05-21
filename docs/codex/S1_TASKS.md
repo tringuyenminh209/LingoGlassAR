@@ -88,8 +88,8 @@ Commit subject: `feat(backend): S1 Day 2 OpenAI Realtime translator service`.
 | Owner | Task | Verify | Status |
 |---|---|---|---|
 | **Claude** | Define the wire protocol between phone and backend. Document in `docs/api-contract/ws-events.schema.json` (already exists - extend). Events: `session.start`, `audio.chunk`, `text.delta`, `text.final`, `error`. | Schema validates against a sample payload. | DONE 2026-05-21, commit `c2f8377` (8/8 samples valid) |
-| **Codex** | `app/api/sessions.py` with `POST /v1/sessions` (creates session_id, stores meta in Redis with 1h TTL) and `WS /v1/sessions/{id}/stream` (bridges client audio frames to translator service, relays text deltas back). | `curl POST` returns session_id. `wscat` connect, send dummy bytes, receive mock text. | pending Codex |
-| **Codex** | `app/core/redis.py` thin wrapper with async client (`redis.asyncio`). Connection pool from settings. | Health check pings redis. | pending Codex |
+| **Codex** | `app/api/sessions.py` with `POST /v1/sessions` (creates session_id, stores meta in Redis with 1h TTL) and `WS /v1/sessions/{id}/stream` (bridges client audio frames to translator service, relays text deltas back). | `curl POST` returns session_id. `wscat` connect, send dummy bytes, receive mock text. | DONE PR #3, `6bc9ce1` |
+| **Codex** | `app/core/redis.py` thin wrapper with async client (`redis.asyncio`). Connection pool from settings. | Health check pings redis. | DONE PR #3, `6bc9ce1` (health.py refactored to use shared pool) |
 
 **Wire contract notes** (locked in `c2f8377`):
 - Wire variants on the WS = the 8 oneOf entries in `ws-events.schema.json`.
@@ -107,6 +107,34 @@ Commit subject: `feat(backend): S1 Day 2 OpenAI Realtime translator service`.
 - HTTP contract for `POST /v1/sessions` + WS path in `openapi.yaml`.
 - The Day 1 review follow-ups (redis pool in lifespan, CORS middleware)
   are folded into this Day 3 prompt.
+
+**Notes from PR #3 review (deferred follow-ups)**:
+- Docker image does not ship `docs/api-contract/`. Runtime falls back to
+  the embedded `_WS_SCHEMA_FALLBACK` inside `app/api/sessions.py` which
+  covers only the 4 client->server variants (correct for inbound
+  validation, but a drift risk if the canonical schema diverges).
+  Mitigation: vendor the schema into the wheel as a package data file
+  before Day 4 deploy, or add a CI check that diffs the embedded
+  fallback against the canonical schema.
+- `session.start.sourceLang` and `targetLang` are required by the
+  schema but the WS handler discards them — the translator is hard-locked
+  to JP<->VN both directions. Either consume them on the backend
+  (when we add lang-pair switching) or relax the schema to optional.
+  Defer to Day 7 mobile integration where the real client surface
+  will reveal which path is right.
+- WS stays open in a dead state after `translation.final` — only viable
+  client move is to disconnect. For S1 push-to-talk (one session = one
+  utterance) this is fine; tighten in S2 by auto-closing the WS after
+  final.
+
+**Day 1 follow-ups all closed by PR #3**:
+- redis client pool in lifespan: DONE (`app/core/redis.py` +
+  `app/main.py` lifespan)
+- CORS middleware: DONE (`app/main.py` + `settings.cors_origins`)
+- `/healthz` reuses shared pool via Depends: DONE (`app/api/health.py`)
+- LOG_LEVEL wiring to uvicorn: still pending — Day 4 deploy will wire
+  this via `uvicorn --log-level $(LOG_LEVEL)` in the runtime CMD or via
+  CLI args from `deploy.sh`.
 
 Commit subject: `feat(backend): S1 Day 3 session API + WS bridge`.
 

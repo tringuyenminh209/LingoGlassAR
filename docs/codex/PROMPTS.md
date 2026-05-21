@@ -43,7 +43,7 @@ a specific Day-N task.
 |---:|---|---|---|
 | 1 | #1 | MERGED 2026-05-20 (clean) | `538eae1` + follow-up `3ff139c` |
 | 2 | #2 | MERGED 2026-05-21 (clean) | stub `812bc63`, impl `ab22deb` |
-| 3 | (Claude contract on main, awaiting Codex PR) | schema/openapi `c2f8377` (2026-05-21) | - |
+| 3 | #3 | MERGED 2026-05-21 (clean) | contract `c2f8377`, impl `6bc9ce1` |
 
 ## 2. Day-N task prompt — Day 1 (ready to copy)
 
