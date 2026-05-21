@@ -1,10 +1,11 @@
 from typing import Literal
 
-import redis.asyncio as redis
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
+from redis.asyncio import Redis
 
 from app.core.config import get_settings
+from app.core.redis import get_redis
 
 router = APIRouter()
 
@@ -15,21 +16,18 @@ class HealthResponse(BaseModel):
     redis: Literal["up", "down"]
 
 
-async def _redis_state(redis_url: str) -> Literal["up", "down"]:
-    client = redis.from_url(redis_url)
+async def _redis_state(redis: Redis) -> Literal["up", "down"]:
     try:
-        return "up" if await client.ping() else "down"
+        return "up" if await redis.ping() else "down"
     except Exception:
         return "down"
-    finally:
-        await client.aclose()
 
 
 @router.get("/healthz", response_model=HealthResponse)
-async def healthz() -> HealthResponse:
+async def healthz(redis: Redis = Depends(get_redis)) -> HealthResponse:
     settings = get_settings()
     return HealthResponse(
         status="ok",
         version=settings.version,
-        redis=await _redis_state(settings.redis_url),
+        redis=await _redis_state(redis),
     )
