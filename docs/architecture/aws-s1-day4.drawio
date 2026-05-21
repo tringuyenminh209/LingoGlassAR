@@ -13,7 +13,7 @@
                 <mxCell id="user" value="Mobile client&lt;br&gt;(Flutter)" style="sketch=0;points=[[0,0.5],[1,0.5]];outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#232F3E;strokeColor=none;html=1;shape=mxgraph.aws4.user;labelPosition=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=11;fontStyle=1;" parent="1" vertex="1">
                     <mxGeometry x="60" y="520" width="60" height="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="cf" value="&lt;b&gt;Cloudflare&lt;/b&gt;&lt;br&gt;proxied (orange)&lt;br&gt;SSL/TLS: Full&lt;br&gt;api.lingoglass.online" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8ee;strokeColor=#f48120;strokeWidth=2;align=center;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                <mxCell id="cf" value="&lt;b&gt;Cloudflare&lt;/b&gt;&lt;br&gt;proxied (orange)&lt;br&gt;SSL/TLS: Flexible&lt;br&gt;api.lingoglass.online" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8ee;strokeColor=#f48120;strokeWidth=2;align=center;fontSize=11;fontStyle=1;" parent="1" vertex="1">
                     <mxGeometry x="200" y="510" width="180" height="90" as="geometry"/>
                 </mxCell>
                 <mxCell id="aws-cloud" value="AWS Cloud" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=13;fontStyle=1;container=1;pointerEvents=0;collapsible=0;recursiveResize=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_aws_cloud_alt;strokeColor=#232F3E;fillColor=none;strokeWidth=2;verticalAlign=top;spacingTop=22;" parent="1" vertex="1">
@@ -49,7 +49,7 @@
                 <mxCell id="cost-badge" value="&lt;b&gt;Idle cost (Osaka)&lt;/b&gt;&lt;br&gt;EC2 t4g.small: $16/mo&lt;br&gt;EBS 16 GB gp3: $1.3/mo&lt;br&gt;EIP (attached): $0&lt;br&gt;Outbound: 100 GB free" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8ee;strokeColor=#d6b656;align=left;spacingLeft=10;fontSize=10;verticalAlign=top;spacingTop=8;" parent="1" vertex="1">
                     <mxGeometry x="60" y="660" width="200" height="110" as="geometry"/>
                 </mxCell>
-                <mxCell id="domain-badge" value="&lt;b&gt;Domain&lt;/b&gt;&lt;br&gt;lingoglass.online (Cloudflare)&lt;br&gt;A: api → EIP, proxied&lt;br&gt;SSL/TLS: Full (origin HTTP)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8ee;strokeColor=#f48120;align=left;spacingLeft=10;fontSize=10;verticalAlign=top;spacingTop=8;" parent="1" vertex="1">
+                <mxCell id="domain-badge" value="&lt;b&gt;Domain&lt;/b&gt;&lt;br&gt;lingoglass.online (Cloudflare)&lt;br&gt;A: api → EIP, proxied&lt;br&gt;SSL/TLS: Flexible (origin HTTP :80)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8ee;strokeColor=#f48120;align=left;spacingLeft=10;fontSize=10;verticalAlign=top;spacingTop=8;" parent="1" vertex="1">
                     <mxGeometry x="60" y="790" width="200" height="90" as="geometry"/>
                 </mxCell>
                 <mxCell id="deploy-badge" value="&lt;b&gt;Deploy pipeline&lt;/b&gt;&lt;br&gt;infra/ec2/bootstrap.sh (once)&lt;br&gt;infra/ec2/deploy.sh (every redeploy)&lt;br&gt;Runbook: docs/runbook/aws-osaka-deploy.md" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=left;spacingLeft=10;fontSize=10;verticalAlign=top;spacingTop=8;" parent="1" vertex="1">

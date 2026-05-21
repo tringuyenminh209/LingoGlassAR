@@ -82,7 +82,9 @@ Prereq: domain `lingoglass.online` is already on Cloudflare (set up 2026-05-21).
    - Proxy status: **Proxied** (orange cloud)
    - TTL: Auto
    - Save.
-3. **SSL/TLS** -> **Overview** -> set encryption mode to **Full** (NOT "Full (strict)" — the origin is HTTP only on port 80, no origin cert yet). This means: browser -> Cloudflare = HTTPS, Cloudflare -> origin = HTTP. Fine for prototype; revisit for S2 with origin TLS.
+3. **SSL/TLS** -> **Overview** -> set encryption mode to **Flexible**. This means: browser -> Cloudflare = HTTPS, Cloudflare -> origin = **HTTP port 80** (which is what our backend serves). Fine for prototype.
+
+   IMPORTANT: do NOT pick "Full" or "Full (strict)" - those modes make Cloudflare connect to the origin on port 443 with TLS, but our origin has nothing on 443 and no certificate, so Cloudflare returns 521. Upgrade to "Full (strict)" in S2 by adding nginx or traefik in front of compose with a Let's Encrypt or Cloudflare Origin Certificate on port 443.
 4. **SSL/TLS** -> **Edge Certificates** -> confirm "Always Use HTTPS" is **On**.
 5. Wait 1-2 min for DNS to propagate.
 
@@ -106,6 +108,7 @@ nano .env
 # Set: PUBLIC_BASE_URL=wss://api.lingoglass.online
 # Set: CORS_ORIGINS=https://lingoglass.online,https://api.lingoglass.online
 # Set: LOG_LEVEL=info
+# Set: API_HOST_PORT=80   (production binding; required for Cloudflare Free plan)
 # Leave REDIS_URL=redis://redis:6379/0
 
 cd ..  # back to repo root
@@ -132,7 +135,8 @@ If 200 with `redis: "up"` -> **Day 4 GO**.
 Common failures:
 - `522 Connection timed out` -> ufw blocked 80 (check `sudo ufw status`) or EIP wrong in Cloudflare DNS.
 - `502 Bad gateway` -> docker compose not running on origin. SSH in, `cd ~/lingoglass/backend && docker compose ps`.
-- `526 Invalid SSL certificate` -> Cloudflare SSL mode set to "Full (strict)" by mistake. Switch to "Full".
+- `521 Web server is down` (origin direct curl works) -> Cloudflare SSL mode is "Full" or "Full (strict)" but origin only serves HTTP on port 80. Switch SSL mode to "Flexible".
+- `526 Invalid SSL certificate` -> Cloudflare SSL mode set to "Full (strict)" but origin has no valid cert. Switch to "Flexible" for HTTP origin, or install a cert and stay on Full/Strict.
 - `redis: "down"` in the body -> redis container not healthy. `docker compose logs redis --tail 30`.
 
 ## 8. Cost watch
