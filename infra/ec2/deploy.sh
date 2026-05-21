@@ -57,5 +57,10 @@ if [[ "${health_status:-}" != "healthy" ]]; then
 fi
 
 log "verify local health endpoint"
-curl -fsS http://localhost:8000/healthz
+# Discover the published host port from docker compose, not the hard-coded
+# 8000, so the script works when API_HOST_PORT in .env is 80 (Cloudflare prod).
+published="$(docker compose port api 8000 2>/dev/null || true)"
+host_port="${published##*:}"
+host_port="${host_port:-8000}"
+curl -fsS "http://localhost:${host_port}/healthz"
 printf '\n'
