@@ -1,11 +1,11 @@
-"""OpenAI Realtime translator service — interface contract (S1 Day 2).
+"""OpenAI Realtime translator service - interface contract (S1 Day 2).
 
 Design decisions locked here (Codex implements against this, does not
 rename or rewrite the public surface):
 
 1. Streaming generator (`AsyncIterator[TextDelta]`) over callback. Aligns
    with the FastAPI WS bridge planned for S1 Day 3 and keeps the
-   backpressure model simple — the consumer pulls.
+   backpressure model simple - the consumer pulls.
 2. One WS per `Translator` instance. The caller owns the lifecycle via
    the async context manager. Concurrent `translate_stream()` calls on
    the same instance are not supported (one utterance at a time).
@@ -13,7 +13,7 @@ rename or rewrite the public surface):
    can paint as they go and commit on `final=True`.
 4. Source-language transcription text rides on a separate field
    (`source_text`) so the S1 Day 8 cost logger can attribute usage
-   without the BLE renderer caring. Never log this value — privacy
+   without the BLE renderer caring. Never log this value - privacy
    boundary from backend/CLAUDE.md.
 5. OpenAI `error` events become `TranslatorError`. Do not swallow.
 
@@ -22,8 +22,13 @@ reconnect behaviour) are yours. Only the public API below is locked.
 """
 from __future__ import annotations
 
+import base64
+import json
 from dataclasses import dataclass
+from types import TracebackType
 from typing import AsyncIterator
+
+import websockets
 
 
 SYSTEM_INSTRUCTIONS = (
@@ -107,24 +112,62 @@ class Translator:
         *,
         model: str = DEFAULT_MODEL,
     ) -> None:
-        raise NotImplementedError("S1 Day 2 — Codex implements")
+        self._api_key = api_key
+        self._model = model
+        self._ws = None
+        self._streaming = False
 
     async def __aenter__(self) -> "Translator":
-        raise NotImplementedError
+        await self.connect()
+        return self
 
-    async def __aexit__(self, exc_type, exc, tb) -> None:
-        raise NotImplementedError
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        await self.close()
 
     async def connect(self) -> None:
         """Open the WebSocket and send the initial session configuration.
 
         Idempotent: calling on an already-connected instance is a no-op.
         """
-        raise NotImplementedError
+        if self._ws is not None:
+            return
+
+        url = f"wss://api.openai.com/v1/realtime?model={self._model}"
+        try:
+            self._ws = await websockets.connect(
+                url,
+                extra_headers={
+                    "Authorization": f"Bearer {self._api_key}",
+                    "OpenAI-Beta": "realtime=v1",
+                },
+            )
+            await self._send_json(
+                {
+                    "type": "session.update",
+                    "session": {
+                        "instructions": SYSTEM_INSTRUCTIONS,
+                        "input_audio_format": "pcm16",
+                        "input_audio_transcription": {"model": "whisper-1"},
+                        "modalities": ["text"],
+                    },
+                }
+            )
+        except Exception as exc:
+            self._ws = None
+            raise TranslatorError("failed to connect to OpenAI Realtime") from exc
 
     async def close(self) -> None:
         """Close the WebSocket. Safe to call multiple times."""
-        raise NotImplementedError
+        ws = self._ws
+        self._ws = None
+        self._streaming = False
+        if ws is not None:
+            await ws.close()
 
     async def translate_stream(
         self,
@@ -148,5 +191,79 @@ class Translator:
             If called before :meth:`connect` or outside the context
             manager.
         """
-        raise NotImplementedError
-        yield  # pragma: no cover  -- marks this as an async generator
+        if self._ws is None:
+            raise RuntimeError("Translator is not connected")
+        if self._streaming:
+            raise RuntimeError("Translator already has an active stream")
+
+        self._streaming = True
+        try:
+            async for frame in audio_frames:
+                await self._send_json(
+                    {
+                        "type": "input_audio_buffer.append",
+                        "audio": base64.b64encode(frame).decode("ascii"),
+                    }
+                )
+
+            await self._send_json({"type": "input_audio_buffer.commit"})
+            await self._send_json(
+                {
+                    "type": "response.create",
+                    "response": {
+                        "modalities": ["text"],
+                        "instructions": SYSTEM_INSTRUCTIONS,
+                    },
+                }
+            )
+
+            async for raw_event in self._ws:
+                event = _decode_event(raw_event)
+                event_type = event.get("type")
+
+                if event_type == "response.text.delta":
+                    yield TextDelta(text=str(event.get("delta", "")))
+                elif event_type == "response.text.done":
+                    yield TextDelta(text="", final=True)
+                    return
+                elif (
+                    event_type
+                    == "conversation.item.input_audio_transcription.completed"
+                ):
+                    transcript = event.get("transcript")
+                    if isinstance(transcript, str):
+                        yield TextDelta(text="", source_text=transcript)
+                elif event_type == "error":
+                    raise TranslatorError(_error_message(event))
+        except TranslatorError:
+            raise
+        except Exception as exc:
+            raise TranslatorError("OpenAI Realtime WebSocket failed") from exc
+        finally:
+            self._streaming = False
+
+    async def _send_json(self, payload: dict[str, object]) -> None:
+        if self._ws is None:
+            raise RuntimeError("Translator is not connected")
+        await self._ws.send(json.dumps(payload))
+
+
+def _decode_event(raw_event: str | bytes) -> dict[str, object]:
+    if isinstance(raw_event, bytes):
+        raw_event = raw_event.decode("utf-8")
+    try:
+        event = json.loads(raw_event)
+    except json.JSONDecodeError as exc:
+        raise TranslatorError("OpenAI Realtime returned invalid JSON") from exc
+    if not isinstance(event, dict):
+        raise TranslatorError("OpenAI Realtime returned a non-object event")
+    return event
+
+
+def _error_message(event: dict[str, object]) -> str:
+    error = event.get("error")
+    if isinstance(error, dict):
+        message = error.get("message")
+        if isinstance(message, str) and message:
+            return message
+    return "OpenAI Realtime error"
