@@ -111,7 +111,7 @@ abstract interface class AudioRecorderDriver {
 
 class _FlutterSoundRecorderDriver implements AudioRecorderDriver {
   FlutterSoundRecorder? _recorder;
-  StreamController<Food>? _inputController;
+  StreamController<Uint8List>? _inputController;
 
   @override
   Future<Stream<Uint8List>> start() async {
@@ -121,7 +121,10 @@ class _FlutterSoundRecorderDriver implements AudioRecorderDriver {
     }
 
     final recorder = FlutterSoundRecorder();
-    final controller = StreamController<Food>();
+    // flutter_sound 9.30+ delivers raw PCM bytes directly via
+    // StreamSink<Uint8List>. The old `Food` / `FoodData` envelope was
+    // dropped, so no .where/.map filter is needed any more.
+    final controller = StreamController<Uint8List>();
     _recorder = recorder;
     _inputController = controller;
 
@@ -133,9 +136,7 @@ class _FlutterSoundRecorderDriver implements AudioRecorderDriver {
         sampleRate: _sampleRateHz,
         numChannels: 1,
       );
-      return controller.stream
-          .where((food) => food is FoodData && food.data != null)
-          .map((food) => (food as FoodData).data!);
+      return controller.stream;
     } on Object {
       await stop();
       rethrow;

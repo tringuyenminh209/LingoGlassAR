@@ -11,11 +11,11 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_blue_plus: ^1.32.0
-  flutter_sound: 9.2.13  # pinned: 9.30.x changed startRecorderToStream signature (Food -> Uint8List sink)
+  flutter_sound: ^9.30.0  # 9.30+ required for AGP 8 (namespace). API: toStream uses StreamSink<Uint8List>.
   http: ^1.2.0
   permission_handler: ^11.3.1
   shared_preferences: ^2.3.0
-  uuid: ^3.0.7  # 3.x to keep flutter_sound 9.2.13 happy (it requires uuid ^3.0.1)
+  uuid: ^4.5.0
   web_socket_channel: ^3.0.1
 
 dev_dependencies:
