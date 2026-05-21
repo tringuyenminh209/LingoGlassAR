@@ -221,10 +221,55 @@ Commit subject: `feat(mobile): S1 Day 5 audio recorder service`.
 
 ## Day 6 — Mobile WebSocket client
 
-| Owner | Task | Verify |
-|---|---|---|
-| **Codex** | `mobile/lib/services/translator_ws.dart`: connects to `wss://api.lingoglass.online/v1/sessions/.../stream`. API: `connect(sessionId)`, `send(Uint8List audioChunk)`, `Stream<TextDelta> get textStream`, `disconnect()`. Use `package:web_socket_channel`. Reconnect with exponential backoff (1s, 2s, 4s, 8s, cap 30s). | Mock WS server unit test. |
-| **Claude** | Review reconnect semantics: ensure session_id stays stable across reconnects (or document that mid-session disconnect aborts the utterance). | n/a |
+| Owner | Task | Verify | Status |
+|---|---|---|---|
+| **Codex** | `mobile/lib/services/translator_ws.dart`: connects to `wss://api.lingoglass.online/v1/sessions/.../stream`. API: `connect(sessionId)`, `send(Uint8List audioChunk)`, `Stream<TextDelta> get textStream`, `disconnect()`. Use `package:web_socket_channel`. Reconnect with exponential backoff (1s, 2s, 4s, 8s, cap 30s). | Mock WS server unit test. | pending Codex |
+| **Claude** | Review reconnect semantics: ensure session_id stays stable across reconnects (or document that mid-session disconnect aborts the utterance). | n/a | DONE 2026-05-22 (decisions below) |
+
+**Lifecycle + reconnect decisions (2026-05-22)**:
+
+1. **1 WS = 1 utterance**. Backend (`backend/app/api/sessions.py`) rejects
+   a second `session.start` on the same WS, and tears down after
+   `translation.final`. So each push-to-talk gesture is its own WS open
+   -> session.start -> audio.* -> translation.* -> close cycle.
+
+2. **Reconnect with exponential backoff applies to INITIAL CONNECT
+   ONLY**. Once `session.opened` arrives on this `connect()` call, no
+   further auto-reconnect. Mid-utterance disconnect ABORTS the utterance
+   (the backend cannot resume because audio frames are not checkpointed
+   in OpenAI Realtime).
+
+3. **Mid-utterance drop semantics**: emit `TranslatorWsError(retryable:
+   true)` on textStream, close stream, set isConnected=false. The UI
+   (Day 7 push-to-talk screen) decides whether to surface "press again"
+   or retry automatically. The WS client itself does NOT retry mid-flight.
+
+4. **Backoff schedule**: 1s, 2s, 4s, 8s, cap 30s, max 5 attempts. After
+   5 failures, `connect()` throws `TranslatorWsError(retryable: false,
+   code: 'upstream_unavailable')`.
+
+5. **session_id management is out of scope for this class**. Caller
+   creates the session via HTTP POST `/v1/sessions` and passes the
+   returned sessionId in. Same sessionId can be reused for multiple
+   sequential utterances until Redis TTL (1h) expires.
+
+6. **TextDelta on mobile mirrors backend** (`app/services/translator.py`):
+   - `translation.partial` -> `TextDelta(text, isFinal: false)`
+   - `translation.final` -> `TextDelta(text: translatedText,
+     isFinal: true, sourceText?)`
+   - `error` -> `TranslatorWsError` raised on textStream
+
+7. **session.start does not block on translator service creation**.
+   Backend instantiates the OpenAI Translator inside the WS handler
+   only after receiving session.start. Mobile's `connect()` waits for
+   `session.opened` ack before returning so the caller knows the
+   server-side translator is hot.
+
+8. **audio.chunk frame size validation at the WS client boundary**.
+   `send()` throws ArgumentError synchronously if chunk length != 4800
+   bytes. This catches the bug class "AudioRecorder upstream emitted
+   short chunk" before it hits the wire (where validation would only
+   surface as `invalid_event` from the backend).
 
 Commit subject: `feat(mobile): S1 Day 6 backend WebSocket client`.
 

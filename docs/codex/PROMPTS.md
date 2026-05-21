@@ -46,6 +46,7 @@ a specific Day-N task.
 | 3 | #3 | MERGED 2026-05-21 (clean) | contract `c2f8377`, impl `6bc9ce1` |
 | 4 | #4 | MERGED 2026-05-21 (clean) | runbook `6345efa`, CFN+drawio `37d31ef`, scripts `2b2e2bb` |
 | 5 | #5 | MERGED 2026-05-22 (clean, 1 minor deviation) | audit `a6ba46d`, impl `c5de0ff` |
+| 6 | (Claude design notes on main, awaiting Codex PR) | design + prompt locked | - |
 
 ## 2. Day-N task prompt — Day 1 (ready to copy)
 
@@ -743,7 +744,201 @@ After opening the PR, post the URL here and STOP. Do not start Day 6.
 
 ---
 
-## 3. Day-N task prompt — TEMPLATE (use for Day 6-10)
+## 2f. Day 6 — Mobile WebSocket client (ready to copy)
+
+**Precondition**: Claude has locked the lifecycle + reconnect semantics
+in `docs/codex/S1_TASKS.md` Day 6 section. Read it first:
+- 1 WS = 1 utterance (server tears down after translation.final)
+- Reconnect with exponential backoff applies to INITIAL connect only
+- Mid-utterance drop = ABORT, never silent reconnect
+- session_id is supplied by caller (HTTP POST done elsewhere)
+
+```
+Your task: S1 Day 6 - Mobile WebSocket client. Implement only the rows
+marked "Codex" in the Day 6 table of docs/codex/S1_TASKS.md. The
+"Claude" row (reconnect semantics review) is in S1_TASKS.md.
+
+## Concrete deliverables (your rows)
+
+1. mobile/pubspec.yaml: add `web_socket_channel: ^3.0.1`. Do not bump
+   existing deps.
+
+2. mobile/lib/services/translator_ws.dart - new file. Public API:
+
+   ```dart
+   /// One incremental output decoded from the backend WS stream.
+   /// Mirrors backend `app/services/translator.py` TextDelta.
+   class TextDelta {
+     const TextDelta({required this.text, this.isFinal = false, this.sourceText});
+     final String text;
+     final bool isFinal;
+     final String? sourceText;
+   }
+
+   /// Thrown when the backend sends an `error` frame or the WS
+   /// transport fails non-recoverably mid-utterance.
+   class TranslatorWsError implements Exception {
+     TranslatorWsError(this.code, this.message, {this.retryable = false});
+     final String code;       // matches schema enum: translator_error, ...
+     final String message;
+     final bool retryable;
+     @override String toString() => 'TranslatorWsError($code): $message';
+   }
+
+   /// One WS = one utterance. Caller creates the session via HTTP POST
+   /// elsewhere and passes the sessionId here. Each connect()/disconnect()
+   /// cycle covers a single push-to-talk gesture.
+   class TranslatorWs {
+     TranslatorWs({Uri? wsBase})
+         : _wsBase = wsBase ?? Uri.parse('wss://api.lingoglass.online');
+
+     /// Open a WS to /v1/sessions/{sessionId}/stream, send session.start,
+     /// wait for session.opened, then ready to send audio chunks.
+     ///
+     /// Retries the underlying socket open with exponential backoff
+     /// (1s, 2s, 4s, 8s, cap 30s, max 5 attempts) on transport-level
+     /// failure (DNS, refused, 502). DOES NOT retry on protocol errors
+     /// from the server (those raise TranslatorWsError immediately).
+     ///
+     /// Throws TranslatorWsError if all retries exhausted.
+     Future<void> connect(String sessionId, {
+       String deviceId = '',  // optional UUID; pass through to session.start
+       String sourceLang = 'ja',
+       String targetLang = 'vi',
+     });
+
+     /// Send one PCM16 24 kHz mono audio chunk. Must be 4800 bytes
+     /// (validated). Throws StateError if not connected.
+     /// Internally encodes as `audio.chunk` wire frame.
+     void send(Uint8List audioChunk);
+
+     /// Signal end-of-utterance. Backend will respond with translation
+     /// deltas + one translation.final on textStream.
+     void endUtterance();
+
+     /// Stream of decoded TextDelta events. Closes (onDone) after
+     /// receiving translation.final OR if WS disconnects.
+     /// Errors are TranslatorWsError instances.
+     Stream<TextDelta> get textStream;
+
+     /// Close the WS cleanly. Idempotent.
+     Future<void> disconnect();
+
+     /// True between successful connect() and disconnect()/server-close.
+     bool get isConnected;
+
+     final Uri _wsBase;
+   }
+   ```
+
+   Implementation rules:
+   - Use `package:web_socket_channel/web_socket_channel.dart`. On
+     mobile/desktop, use `IOWebSocketChannel.connect()`. Do NOT pull in
+     `package:web_socket_channel/io.dart` directly if it doesn't expose
+     a public Dart API in 3.0.1 - use the top-level connect helper.
+   - URL composition: `${_wsBase}/v1/sessions/${sessionId}/stream`
+     (`_wsBase` defaults to `wss://api.lingoglass.online`).
+   - Reconnect/backoff applies to OPENING the socket only. Once
+     session.opened arrives, no further auto-reconnect on this connect()
+     call. Mid-utterance drop => emit TranslatorWsError on textStream
+     then close.
+   - Frame schema (lock from docs/api-contract/ws-events.schema.json):
+     * Outgoing session.start: `{type, deviceId, sourceLang, targetLang,
+       retainText=false, clientTs}` (ISO 8601 UTC).
+     * Outgoing audio.chunk: `{type, sessionId, seq, codec="pcm16",
+       sampleRateHz=24000, dataBase64, clientTs}`. seq starts at 0,
+       increments per send().
+     * Outgoing audio.end: `{type, sessionId, seq, clientTs}` (seq =
+       last audio.chunk seq + 1).
+     * Incoming session.opened: latch as "connected", emit nothing
+       on textStream.
+     * Incoming translation.partial: emit TextDelta(text, isFinal=false).
+     * Incoming translation.final: emit TextDelta(text=translatedText,
+       isFinal=true, sourceText=sourceText if present). Then close
+       textStream cleanly.
+     * Incoming error: raise TranslatorWsError on textStream with the
+       wire code + message + retryable, then close.
+   - Audio chunk size validation: `assert audioChunk.length == 4800`.
+     Throw ArgumentError on mismatch (catches caller bugs early).
+   - clientTs: `DateTime.now().toUtc().toIso8601String()`.
+   - Use `dart:convert` `base64Encode` for the audio payload (not the
+     web-only base64 codec).
+   - No new packages beyond web_socket_channel. Reuse `dart:convert`
+     for JSON + base64.
+
+3. mobile/test/services/translator_ws_test.dart - unit test with a fake
+   WS server (use the `MockWebSocketServer` pattern from
+   web_socket_channel's testing examples, or roll a small fake
+   StreamSink/Stream pair). Verify:
+   a) connect() sends session.start then completes when fake server
+      replies session.opened.
+   b) send() emits one audio.chunk wire frame with correct fields
+      (sessionId, seq, codec, sampleRateHz=24000, dataBase64 length).
+   c) endUtterance() emits audio.end with seq = last chunk seq + 1.
+   d) Receiving translation.partial then translation.final on the
+      socket yields two TextDelta events on textStream, second with
+      isFinal=true, then stream closes.
+   e) Receiving an error frame raises TranslatorWsError on textStream
+      with the wire code preserved.
+   f) Chunk size != 4800 throws ArgumentError synchronously from send().
+
+   The test must not open a real network socket. Use an injected fake
+   transport or the same `@visibleForTesting` driver pattern Codex used
+   in Day 5 recorder.dart.
+
+## Hard constraints (always apply)
+
+- Branch from main: feat/s1-day-6-translator-ws
+- NEVER push to main. NEVER force-push. NEVER add Co-Authored-By trailers.
+- Conventional commit subject: feat(mobile): S1 Day 6 backend WebSocket client
+- Do not edit firmware/, backend/, .claude/, docs/api-contract/,
+  tests/ble_vectors.json, platformio.ini, or any BLE protocol file.
+- Audio frame size is locked at 4800 bytes. Do NOT add resampling or
+  variable chunk support.
+- Sample rate is locked at 24000 Hz. Do NOT write a sampleRateHz
+  parameter; hard-code 24000 in the wire frame.
+- Wire frame names are from ws-events.schema.json. Do not invent
+  new event types.
+- Reconnect/backoff applies to initial connect only. Mid-utterance
+  drop => error + close, never silent recovery.
+- No new dependencies beyond web_socket_channel ^3.0.1.
+
+## Verification (paste raw output into PR)
+
+cd mobile
+flutter pub get
+flutter analyze lib/services/translator_ws.dart test/services/translator_ws_test.dart
+flutter test test/services/translator_ws_test.dart
+flutter test    # full suite must still pass
+
+If `flutter test` reports unrelated pre-existing warnings (BleTransport
+_ackChar, latency_logger prefer_const_constructors, widget_test
+unused-import), call those out in Open Questions; they are NOT yours
+to fix in this PR.
+
+## PR description template
+
+## Summary
+<one paragraph: what changed and why>
+
+## Files added / modified
+<bullet list>
+
+## Verification output
+<paste raw command output, one block per command>
+
+## Open questions for review
+<things you decided without explicit guidance>
+
+## Time spent
+~X hours
+
+After opening the PR, post the URL here and STOP. Do not start Day 7.
+```
+
+---
+
+## 3. Day-N task prompt — TEMPLATE (use for Day 7-10)
 
 Replace `<N>` with the day number, fill `<TASK_TITLE>`, `<COMMIT_SUBJECT>`,
 `<DELIVERABLES>`, `<VERIFICATION>` from `docs/codex/S1_TASKS.md`.
