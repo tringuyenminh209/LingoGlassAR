@@ -1,0 +1,271 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  LingoGlass AR - S1 Day 4 EC2 prototype (Osaka ap-northeast-3).
+  Generated from docs/architecture/aws-s1-day4.drawio.
+  Provisions only infrastructure (EC2 + EIP + SG + IAM). Application
+  deployment (git clone + docker compose) is the job of
+  infra/ec2/deploy.sh, run by the operator post-bootstrap.
+  Uses the AWS account's DEFAULT VPC - no VPC / subnet / IGW are created.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: LingoGlassAR
+    Description: Project tag applied to every resource.
+
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Existing EC2 key pair NAME in this region (e.g. lingoglass-osaka). Create it in the EC2 console first.
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: >-
+      Default VPC ID in ap-northeast-3. Find with:
+      aws ec2 describe-vpcs --filters Name=is-default,Values=true --region ap-northeast-3 --query 'Vpcs[0].VpcId' --output text
+
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: >-
+      Any default-VPC public subnet in ap-northeast-3 (apne3-az1/az2/az3). Find with:
+      aws ec2 describe-subnets --filters Name=vpc-id,Values=<vpcid> Name=default-for-az,Values=true --region ap-northeast-3 --query 'Subnets[0].SubnetId' --output text
+
+  SshAllowedCidr:
+    Type: String
+    Default: 0.0.0.0/0
+    Description: >-
+      CIDR allowed on port 22. SECURITY: use your home IP as /32 (e.g. 203.0.113.5/32).
+      0.0.0.0/0 is a default to make first-time deploys work but leaves SSH world-exposed.
+    AllowedPattern: '^([0-9]{1,3}\.){3}[0-9]{1,3}\/([0-9]|[1-2][0-9]|3[0-2])$'
+    ConstraintDescription: Must be valid IPv4 CIDR (e.g. 203.0.113.5/32 or 0.0.0.0/0).
+
+  InstanceType:
+    Type: String
+    Default: t4g.small
+    AllowedValues:
+      - t4g.small
+      - t4g.medium
+      - t4g.large
+    Description: ARM Graviton instance type. t4g.small (2 vCPU / 2 GB) is the S1 default.
+
+  LatestUbuntuAmi:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/canonical/ubuntu/server/22.04/stable/current/arm64/hvm/ebs-gp2/ami-id
+    Description: Resolved at deploy-time to the latest Canonical Ubuntu 22.04 ARM64 AMI in the target region.
+
+  RootVolumeSizeGB:
+    Type: Number
+    Default: 16
+    MinValue: 8
+    MaxValue: 100
+    Description: gp3 root volume size in GB. 16 GB matches the runbook baseline.
+
+Resources:
+
+  # ===== IAM =====
+  Ec2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+      Tags:
+        - { Key: Name, Value: !Sub '${ProjectName}-ec2-role' }
+        - { Key: Project, Value: !Ref ProjectName }
+        - { Key: Sprint, Value: S1 }
+        - { Key: ManagedBy, Value: CloudFormation }
+
+  Ec2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref Ec2Role
+
+  # ===== Security Group =====
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: lingoglass-sg-prod
+      GroupDescription: 'SSH from operator + Cloudflare-fronted HTTP/HTTPS. Outbound unrestricted (for OpenAI Realtime + apt + ghcr).'
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref SshAllowedCidr
+          Description: SSH from operator
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: HTTP from Cloudflare (IPv4)
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIpv6: ::/0
+          Description: HTTP from Cloudflare (IPv6)
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: HTTPS reserved for future origin TLS (IPv4)
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIpv6: ::/0
+          Description: HTTPS reserved for future origin TLS (IPv6)
+      Tags:
+        - { Key: Name, Value: lingoglass-sg-prod }
+        - { Key: Project, Value: !Ref ProjectName }
+        - { Key: Sprint, Value: S1 }
+        - { Key: ManagedBy, Value: CloudFormation }
+
+  # ===== EC2 instance =====
+  Ec2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref LatestUbuntuAmi
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      IamInstanceProfile: !Ref Ec2InstanceProfile
+      SubnetId: !Ref SubnetId
+      SecurityGroupIds:
+        - !Ref SecurityGroup
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeType: gp3
+            VolumeSize: !Ref RootVolumeSizeGB
+            DeleteOnTermination: true
+            Encrypted: true
+      Monitoring: false
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          # LingoGlass AR S1 Day 4 bootstrap (idempotent).
+          # Same end-state as infra/ec2/bootstrap.sh; inlined here so the
+          # CloudFormation stack is self-contained and works even if the
+          # repo's bootstrap.sh has not been pushed yet.
+          set -euo pipefail
+          exec > >(tee /var/log/lingoglass-bootstrap.log | logger -t lingoglass) 2>&1
+          echo "=== lingoglass bootstrap start: $(date -u) ==="
+
+          export DEBIAN_FRONTEND=noninteractive
+
+          # 1. Base packages
+          apt-get update -y
+          apt-get install -y ca-certificates curl gnupg lsb-release ufw git
+
+          # 2. Docker official APT repo (arm64)
+          install -m 0755 -d /etc/apt/keyrings
+          curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+            | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+          chmod a+r /etc/apt/keyrings/docker.gpg
+
+          . /etc/os-release
+          echo "deb [arch=arm64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu ${VERSION_CODENAME} stable" \
+            > /etc/apt/sources.list.d/docker.list
+
+          apt-get update -y
+          apt-get install -y \
+            docker-ce \
+            docker-ce-cli \
+            containerd.io \
+            docker-buildx-plugin \
+            docker-compose-plugin
+
+          systemctl enable --now docker
+
+          # 3. SSM agent (Canonical Ubuntu 22.04 ships it as snap)
+          systemctl enable --now snap.amazon-ssm-agent.amazon-ssm-agent.service || true
+
+          # 4. Deploy user with docker group membership
+          if ! id deploy >/dev/null 2>&1; then
+            useradd -m -s /bin/bash -G docker deploy
+          fi
+          install -d -o deploy -g deploy -m 0755 /home/deploy/lingoglass
+
+          # 5. UFW: deny all incoming except 22/80/443
+          ufw default deny incoming
+          ufw default allow outgoing
+          ufw allow 22/tcp
+          ufw allow 80/tcp
+          ufw allow 443/tcp
+          ufw --force enable
+
+          # 6. Verification (also dumped to /var/log/lingoglass-bootstrap.log)
+          echo "=== verification ==="
+          docker --version
+          docker compose version
+          ufw status verbose
+          id deploy
+
+          echo "=== lingoglass bootstrap done: $(date -u) ==="
+      Tags:
+        - { Key: Name, Value: !Sub '${ProjectName}-prototype' }
+        - { Key: Project, Value: !Ref ProjectName }
+        - { Key: Sprint, Value: S1 }
+        - { Key: ManagedBy, Value: CloudFormation }
+
+  # ===== Elastic IP =====
+  ElasticIp:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - { Key: Name, Value: !Sub '${ProjectName}-eip' }
+        - { Key: Project, Value: !Ref ProjectName }
+        - { Key: Sprint, Value: S1 }
+        - { Key: ManagedBy, Value: CloudFormation }
+
+  ElasticIpAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId: !GetAtt ElasticIp.AllocationId
+      InstanceId: !Ref Ec2Instance
+
+Outputs:
+
+  ElasticIp:
+    Description: Public Elastic IP - point Cloudflare DNS A record (api.lingoglass.online) to this address.
+    Value: !Ref ElasticIp
+    Export:
+      Name: !Sub '${AWS::StackName}-ElasticIp'
+
+  InstanceId:
+    Description: EC2 instance ID.
+    Value: !Ref Ec2Instance
+    Export:
+      Name: !Sub '${AWS::StackName}-InstanceId'
+
+  InstancePublicDns:
+    Description: Auto-rotating public DNS. Use the EIP for stable references.
+    Value: !GetAtt Ec2Instance.PublicDnsName
+
+  SecurityGroupId:
+    Description: lingoglass-sg-prod security group ID.
+    Value: !Ref SecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-SecurityGroupId'
+
+  SshCommand:
+    Description: Direct SSH (requires the .pem matching KeyName).
+    Value: !Sub 'ssh -i ~/.ssh/${KeyName}.pem ubuntu@${ElasticIp}'
+
+  SsmSessionManagerCommand:
+    Description: SSH-less fallback via Session Manager (no .pem needed, uses IAM role).
+    Value: !Sub 'aws ssm start-session --target ${Ec2Instance} --region ${AWS::Region}'
+
+  CloudflareDnsRecord:
+    Description: Cloudflare DNS A record value to add for api.lingoglass.online.
+    Value: !Sub 'A api -> ${ElasticIp} (proxied/orange, SSL Full)'
+
+  BootstrapLogPath:
+    Description: Path on the instance to inspect bootstrap output.
+    Value: /var/log/lingoglass-bootstrap.log
