@@ -184,8 +184,8 @@ Commit subject: `feat(infra): S1 Day 4 EC2 Osaka bootstrap + deploy scripts`.
 
 | Owner | Task | Verify | Status |
 |---|---|---|---|
-| **Codex** | Add `flutter_sound` dependency to `mobile/pubspec.yaml`. Update Android manifest for `RECORD_AUDIO` + iOS Info.plist for `NSMicrophoneUsageDescription`. | `flutter pub get` clean, app installs. | pending Codex |
-| **Codex** | `mobile/lib/audio/recorder.dart`: `AudioRecorder` class. `start()` begins capture at PCM16 **24 kHz** mono LE, emits `Stream<Uint8List>` of ~100 ms chunks (**4800 bytes**). `stop()` finalises stream. | Unit test with mock recorder driver passes. | pending Codex |
+| **Codex** | Add `flutter_sound` dependency to `mobile/pubspec.yaml`. Update Android manifest for `RECORD_AUDIO` + iOS Info.plist for `NSMicrophoneUsageDescription`. | `flutter pub get` clean, app installs. | DONE PR #5, `c5de0ff` |
+| **Codex** | `mobile/lib/audio/recorder.dart`: `AudioRecorder` class. `start()` begins capture at PCM16 **24 kHz** mono LE, emits `Stream<Uint8List>` of ~100 ms chunks (**4800 bytes**). `stop()` finalises stream. | Unit test with mock recorder driver passes. | DONE PR #5, `c5de0ff` (22/22 tests pass, AudioRecorderDriver DI pattern) |
 | **Claude** | Review chunking strategy. Confirm 100 ms aligns with OpenAI Realtime input expectations. Adjust sample rate if needed. | n/a | DONE 2026-05-22 (see decision below) |
 
 **Sample-rate decision (2026-05-22)**:
@@ -203,6 +203,19 @@ Commit subject: `feat(infra): S1 Day 4 EC2 Osaka bootstrap + deploy scripts`.
 - Trade-off accepted: 50% more bandwidth vs 16 kHz, but zero backend
   resampling cost and matches OpenAI default. S2 may revisit if cellular
   bandwidth becomes a bottleneck for users.
+
+**Notes from PR #5 review (deferred follow-ups)**:
+- `start()` while already recording is **idempotent** (returns same
+  stream) instead of throwing RecorderError as the prompt specified.
+  Codex's choice is arguably safer for callers but deviates from spec.
+  Document in `mobile/CLAUDE.md` sprint hooks when added. If we hit a
+  real bug where caller expects throwing semantics, revisit.
+- Test coverage gaps (low priority): (c) `stop()` closing stream and
+  (d) start-twice-throws are not explicitly asserted. Day 7 integration
+  test on device will cover the close path in practice.
+- Test file path: `test/audio_recorder_test.dart` (flat) instead of
+  `test/audio/recorder_test.dart` (nested). Acceptable while there's
+  only one audio file.
 
 Commit subject: `feat(mobile): S1 Day 5 audio recorder service`.
 

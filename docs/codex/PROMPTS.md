@@ -45,7 +45,7 @@ a specific Day-N task.
 | 2 | #2 | MERGED 2026-05-21 (clean) | stub `812bc63`, impl `ab22deb` |
 | 3 | #3 | MERGED 2026-05-21 (clean) | contract `c2f8377`, impl `6bc9ce1` |
 | 4 | #4 | MERGED 2026-05-21 (clean) | runbook `6345efa`, CFN+drawio `37d31ef`, scripts `2b2e2bb` |
-| 5 | (Claude sample-rate audit done, awaiting Codex PR) | schema 24 kHz fix on main | - |
+| 5 | #5 | MERGED 2026-05-22 (clean, 1 minor deviation) | audit `a6ba46d`, impl `c5de0ff` |
 
 ## 2. Day-N task prompt — Day 1 (ready to copy)
 
