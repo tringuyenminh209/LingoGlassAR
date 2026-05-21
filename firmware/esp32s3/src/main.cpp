@@ -315,6 +315,8 @@ void loop() {
   static uint32_t counter = 0;
   static bool ledOn = false;
 
+  oled_view::tick(millis());
+
   if (STATUS_LED_PIN >= 0) {
     ledOn = !ledOn;
     digitalWrite(STATUS_LED_PIN, ledOn ? HIGH : LOW);
