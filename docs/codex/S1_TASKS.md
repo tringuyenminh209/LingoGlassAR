@@ -56,8 +56,8 @@ Commit subject: `feat(backend): S1 Day 1 FastAPI scaffold + Docker Compose`.
 | Owner | Task | Verify | Status |
 |---|---|---|---|
 | **Claude** | Design the translator service interface. Decide: streaming generator yielding `TextDelta` events, vs callback-based. Write the interface stub in `app/services/translator.py` with docstring describing the contract. | n/a (design). | DONE 2026-05-21, commit `812bc63` |
-| **Codex** | Implement `app/services/translator.py` against the stub. WebSocket client to `wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview`. System prompt: "You are a JP<->VN translator. When you receive Japanese audio, output Vietnamese text only. When you receive Vietnamese audio, output Japanese text only. No commentary, no romanization." Forward incoming audio frames (PCM16 16kHz). Parse `response.text.delta` events. Expose `async def translate_stream(audio_frames: AsyncIterator[bytes]) -> AsyncIterator[TextDelta]`. | Unit test mocks the OpenAI WS, feeds 3 audio chunks, asserts text deltas emitted. | pending Codex |
-| **Codex** | `backend/tests/test_translator.py` with the mock above. Use `pytest-asyncio`. Add to `pyproject.toml` dev deps. | `pytest backend/tests/` passes. | pending Codex |
+| **Codex** | Implement `app/services/translator.py` against the stub. WebSocket client to `wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview`. System prompt: "You are a JP<->VN translator. When you receive Japanese audio, output Vietnamese text only. When you receive Vietnamese audio, output Japanese text only. No commentary, no romanization." Forward incoming audio frames (PCM16 16kHz). Parse `response.text.delta` events. Expose `async def translate_stream(audio_frames: AsyncIterator[bytes]) -> AsyncIterator[TextDelta]`. | Unit test mocks the OpenAI WS, feeds 3 audio chunks, asserts text deltas emitted. | DONE PR #2, `ab22deb` |
+| **Codex** | `backend/tests/test_translator.py` with the mock above. Use `pytest-asyncio`. Add to `pyproject.toml` dev deps. | `pytest backend/tests/` passes. | DONE PR #2, `ab22deb` (3/3 pass) |
 
 **Stub design notes** (locked in `812bc63`):
 - Public surface = `Translator` class + `TextDelta` dataclass +
@@ -69,6 +69,17 @@ Commit subject: `feat(backend): S1 Day 1 FastAPI scaffold + Docker Compose`.
 - `Translator` is an async context manager. Single WS per instance.
   Concurrent `translate_stream()` calls on the same instance not
   supported (one utterance at a time).
+
+**Notes from PR #2 review (deferred follow-ups)**:
+- Test coverage gap: no test for the `source_text` path
+  (`conversation.item.input_audio_transcription.completed`). Implementation
+  is in place but unverified. Add when Day 8 cost logger lands so the
+  cost-logging path has end-to-end test coverage.
+- `websockets.connect(extra_headers=...)` is the legacy v13.x API. If we
+  ever upgrade past `websockets >= 14`, switch to `additional_headers`
+  on `websockets.asyncio.client.connect`. Pin stays at `>=13,<14` for now.
+- `response.create` redundantly carries `instructions` already set in
+  `session.update`. Harmless duplication. Strip in Day 3 cleanup pass.
 
 Commit subject: `feat(backend): S1 Day 2 OpenAI Realtime translator service`.
 
