@@ -53,11 +53,22 @@ Commit subject: `feat(backend): S1 Day 1 FastAPI scaffold + Docker Compose`.
 
 ## Day 2 — OpenAI Realtime integration
 
-| Owner | Task | Verify |
-|---|---|---|
-| **Claude** | Design the translator service interface. Decide: streaming generator yielding `TextDelta` events, vs callback-based. Write the interface stub in `app/services/translator.py` with docstring describing the contract. | n/a (design). |
-| **Codex** | Implement `app/services/translator.py` against the stub. WebSocket client to `wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview`. System prompt: "You are a JP<->VN translator. When you receive Japanese audio, output Vietnamese text only. When you receive Vietnamese audio, output Japanese text only. No commentary, no romanization." Forward incoming audio frames (PCM16 16kHz). Parse `response.text.delta` events. Expose `async def translate_stream(audio_frames: AsyncIterator[bytes]) -> AsyncIterator[TextDelta]`. | Unit test mocks the OpenAI WS, feeds 3 audio chunks, asserts text deltas emitted. |
-| **Codex** | `backend/tests/test_translator.py` with the mock above. Use `pytest-asyncio`. Add to `pyproject.toml` dev deps. | `pytest backend/tests/` passes. |
+| Owner | Task | Verify | Status |
+|---|---|---|---|
+| **Claude** | Design the translator service interface. Decide: streaming generator yielding `TextDelta` events, vs callback-based. Write the interface stub in `app/services/translator.py` with docstring describing the contract. | n/a (design). | DONE 2026-05-21, commit `812bc63` |
+| **Codex** | Implement `app/services/translator.py` against the stub. WebSocket client to `wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview`. System prompt: "You are a JP<->VN translator. When you receive Japanese audio, output Vietnamese text only. When you receive Vietnamese audio, output Japanese text only. No commentary, no romanization." Forward incoming audio frames (PCM16 16kHz). Parse `response.text.delta` events. Expose `async def translate_stream(audio_frames: AsyncIterator[bytes]) -> AsyncIterator[TextDelta]`. | Unit test mocks the OpenAI WS, feeds 3 audio chunks, asserts text deltas emitted. | pending Codex |
+| **Codex** | `backend/tests/test_translator.py` with the mock above. Use `pytest-asyncio`. Add to `pyproject.toml` dev deps. | `pytest backend/tests/` passes. | pending Codex |
+
+**Stub design notes** (locked in `812bc63`):
+- Public surface = `Translator` class + `TextDelta` dataclass +
+  `TranslatorError` + `SYSTEM_INSTRUCTIONS` + `DEFAULT_MODEL` constants.
+  Codex implements the body, does not rename or rewrite the surface.
+- `TextDelta` has an optional `source_text` field for the Day 8 cost
+  logger (carries the transcription of the source-language audio).
+  BLE renderer ignores it.
+- `Translator` is an async context manager. Single WS per instance.
+  Concurrent `translate_stream()` calls on the same instance not
+  supported (one utterance at a time).
 
 Commit subject: `feat(backend): S1 Day 2 OpenAI Realtime translator service`.
 

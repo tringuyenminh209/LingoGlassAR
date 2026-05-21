@@ -42,7 +42,7 @@ a specific Day-N task.
 | Day | PR | Verdict | Commit |
 |---:|---|---|---|
 | 1 | #1 | MERGED 2026-05-20 (clean) | `538eae1` + follow-up `3ff139c` |
-| 2 | (waiting for Claude stub) | - | - |
+| 2 | (Claude stub on main, awaiting Codex PR) | stub `812bc63` (2026-05-21) | - |
 
 ## 2. Day-N task prompt — Day 1 (ready to copy)
 
