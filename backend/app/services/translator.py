@@ -240,7 +240,9 @@ class Translator:
         except TranslatorError:
             raise
         except Exception as exc:
-            raise TranslatorError("OpenAI Realtime WebSocket failed") from exc
+            raise TranslatorError(
+                f"OpenAI Realtime WebSocket failed: {type(exc).__name__}: {exc}"
+            ) from exc
         finally:
             self._streaming = False
 

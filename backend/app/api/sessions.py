@@ -360,7 +360,7 @@ _WS_SCHEMA_FALLBACK: dict[str, Any] = {
                 "sessionId": {"$ref": "#/$defs/uuid"},
                 "seq": {"type": "integer", "minimum": 0},
                 "codec": {"const": "pcm16"},
-                "sampleRateHz": {"const": 16000},
+                "sampleRateHz": {"const": 24000},
                 "dataBase64": {"type": "string", "contentEncoding": "base64"},
                 "clientTs": {"$ref": "#/$defs/isoTs"},
             },
