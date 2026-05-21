@@ -2,9 +2,78 @@ openapi: 3.1.0
 info:
   title: LingoGlass AR MVP API
   version: 1.0.0
+  description: |
+    Two path families coexist during S1:
+    - `/v1/*` is the live backend implemented from S1 Day 1 onwards
+      (FastAPI, audio translation gateway). This is what mobile hits
+      starting Day 7.
+    - `/api/v1/*` is the older REST surface drafted for the OCR /
+      diagnostics / feedback flows. It is S2 scope; treat the spec
+      below as forward-compatible documentation only. Path prefix
+      harmonisation is deferred to S2.
 servers:
-  - url: https://api.lingoglass.app
+  - url: https://api.lingoglass.online
 paths:
+  /v1/sessions:
+    post:
+      summary: Create a translation session
+      description: |
+        Allocates a new session_id, stores metadata in Redis with 1 h TTL,
+        and returns the URL the mobile client should open the WebSocket on.
+        Backend implementation lives in `backend/app/api/sessions.py` (S1 Day 3).
+        On daily-spend-cap breach the response is 429 with code
+        `daily_cap_exceeded`.
+      responses:
+        "201":
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionCreateResponse"
+        "429":
+          description: Daily spend cap exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiFail"
+  /v1/sessions/{id}/stream:
+    get:
+      summary: WebSocket — bidirectional translation stream (documented for completeness)
+      description: |
+        Upgrade-only endpoint. Wire frames are JSON objects validated
+        against `docs/api-contract/ws-events.schema.json`. Direction is
+        per-variant in the schema. Audio is PCM16 mono 16 kHz, framed
+        ~100 ms per `audio.chunk`. End-of-utterance is signalled by an
+        `audio.end` frame; the server then emits one or more
+        `translation.partial` frames followed by exactly one
+        `translation.final` frame. Errors are reported via `error`
+        frames; non-retryable errors are followed by socket close 1011.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "101":
+          description: Switching Protocols (WebSocket)
+        "404":
+          $ref: "#/components/responses/BadRequest"
+  /healthz:
+    get:
+      summary: Liveness probe
+      description: |
+        Returns `{status, version, redis}`. Implemented in
+        `backend/app/api/health.py` (S1 Day 1). Mobile may poll this
+        every 10 s to drive the Server-status chip in the UI.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
   /api/v1/ocr:
     post:
       summary: OCR and translate an image from the mobile app
@@ -141,6 +210,38 @@ paths:
           description: OK
 components:
   schemas:
+    SessionCreateResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          const: true
+        data:
+          type: object
+          required: [sessionId, wsUrl, expiresAt]
+          properties:
+            sessionId:
+              type: string
+              format: uuid
+            wsUrl:
+              type: string
+              format: uri
+              description: Absolute wss:// URL the client should connect to next.
+            expiresAt:
+              type: string
+              format: date-time
+              description: When the session record expires from Redis (1 h after creation).
+    HealthResponse:
+      type: object
+      required: [status, version, redis]
+      properties:
+        status:
+          const: ok
+        version:
+          type: string
+        redis:
+          type: string
+          enum: [up, down]
     OcrResponse:
       type: object
       required: [success, data]

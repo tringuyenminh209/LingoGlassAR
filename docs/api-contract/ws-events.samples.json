@@ -1,0 +1,78 @@
+{
+  "_comment": "Canonical example payloads. Used as a fixture to validate ws-events.schema.json. Each entry must validate against the schema's oneOf. Order matches the temporal flow of a single utterance: client opens, server acks, client streams audio, client ends, server returns deltas + final, optional error.",
+  "samples": [
+    {
+      "_direction": "client->server",
+      "_when": "first WS frame after socket open",
+      "type": "session.start",
+      "deviceId": "2c1e6f9d-1b8a-4f7e-9c2b-3a4d5e6f7a8b",
+      "sourceLang": "ja",
+      "targetLang": "vi",
+      "retainText": false,
+      "clientTs": "2026-05-21T09:00:00.000Z"
+    },
+    {
+      "_direction": "server->client",
+      "_when": "ack of session.start",
+      "type": "session.opened",
+      "sessionId": "8f4d2a1e-7b9c-4a3d-b5e6-f7a8b9c0d1e2",
+      "serverTs": "2026-05-21T09:00:00.150Z"
+    },
+    {
+      "_direction": "client->server",
+      "_when": "first audio chunk; seq=0",
+      "type": "audio.chunk",
+      "sessionId": "8f4d2a1e-7b9c-4a3d-b5e6-f7a8b9c0d1e2",
+      "seq": 0,
+      "codec": "pcm16",
+      "sampleRateHz": 16000,
+      "dataBase64": "AAAA",
+      "clientTs": "2026-05-21T09:00:00.250Z"
+    },
+    {
+      "_direction": "client->server",
+      "_when": "end-of-utterance; seq = last chunk seq + 1",
+      "type": "audio.end",
+      "sessionId": "8f4d2a1e-7b9c-4a3d-b5e6-f7a8b9c0d1e2",
+      "seq": 23,
+      "clientTs": "2026-05-21T09:00:02.300Z"
+    },
+    {
+      "_direction": "server->client",
+      "_when": "first translation delta",
+      "type": "translation.partial",
+      "sessionId": "8f4d2a1e-7b9c-4a3d-b5e6-f7a8b9c0d1e2",
+      "text": "Xin ",
+      "serverTs": "2026-05-21T09:00:03.100Z"
+    },
+    {
+      "_direction": "server->client",
+      "_when": "closes the utterance; durationMs from sessionOpened to here",
+      "type": "translation.final",
+      "sessionId": "8f4d2a1e-7b9c-4a3d-b5e6-f7a8b9c0d1e2",
+      "sourceText": "こんにちは",
+      "translatedText": "Xin chao",
+      "durationMs": 3400,
+      "serverTs": "2026-05-21T09:00:03.550Z"
+    },
+    {
+      "_direction": "client->server",
+      "_when": "optional telemetry; mobile-side timing",
+      "type": "metrics",
+      "sessionId": "8f4d2a1e-7b9c-4a3d-b5e6-f7a8b9c0d1e2",
+      "name": "mic_open_ms",
+      "valueMs": 2050,
+      "clientTs": "2026-05-21T09:00:02.301Z"
+    },
+    {
+      "_direction": "server->client",
+      "_when": "translator error; retryable=true so mobile may reopen",
+      "type": "error",
+      "sessionId": "8f4d2a1e-7b9c-4a3d-b5e6-f7a8b9c0d1e2",
+      "code": "translator_error",
+      "message": "OpenAI Realtime returned invalid JSON",
+      "retryable": true,
+      "serverTs": "2026-05-21T09:00:03.600Z"
+    }
+  ]
+}
