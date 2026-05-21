@@ -15,6 +15,15 @@ class Settings(BaseSettings):
     redis_pool_size: int = 10
     version: str = "0.1.0"
 
+    # S1 Day 8 cost logger / daily cap. Pricing defaults are placeholders
+    # carried over from the OpenAI Realtime preview pricing page and must
+    # be reconciled with the GA rate sheet before the pilot. Setting
+    # daily_usd_cap to 0 disables the cap check (dev / load-test mode).
+    daily_usd_cap: float = 5.0
+    usd_per_audio_minute_input: float = 0.10
+    usd_per_1k_tokens_in: float = 0.005
+    usd_per_1k_tokens_out: float = 0.020
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     @field_validator("cors_origins", mode="before")

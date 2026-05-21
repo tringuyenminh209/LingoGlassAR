@@ -24,11 +24,16 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 from dataclasses import dataclass
 from types import TracebackType
 from typing import AsyncIterator
 
 import websockets
+
+from app.services.cost_logger import CostUsage
+
+logger = logging.getLogger(__name__)
 
 
 SYSTEM_INSTRUCTIONS = (
@@ -65,11 +70,18 @@ class TextDelta:
         ``conversation.item.input_audio_transcription.completed``.
         Consumed by the S1 Day 8 cost logger; the BLE renderer ignores
         it. Never log this value.
+    usage:
+        Token / audio counts for the just-completed response. Populated
+        only on the closing delta (``final=True``) when OpenAI emits a
+        ``response.done`` event with a usage block. ``None`` when the
+        response ended without a usage report (legacy alias path, mock
+        WS in tests, or stream cut after ``response.output_text.done``).
     """
 
     text: str
     final: bool = False
     source_text: str | None = None
+    usage: CostUsage | None = None
 
 
 class TranslatorError(RuntimeError):
@@ -241,6 +253,9 @@ class Translator:
                 }
             )
 
+            output_text_done = False
+            finalized = False
+
             async for raw_event in self._ws:
                 event = _decode_event(raw_event)
                 event_type = event.get("type")
@@ -258,7 +273,29 @@ class Translator:
                     "response.output_text.done",
                     "response.text.done",
                 ):
-                    yield TextDelta(text="", final=True)
+                    # Defer the final yield until ``response.done`` so we can
+                    # attach usage. The trailing fallback below covers the
+                    # case where ``response.done`` never arrives.
+                    output_text_done = True
+                elif event_type == "response.done":
+                    usage = _extract_usage(event)
+                    # S1 Day 8 probe — confirm GA usage shape before locking
+                    # the cost_logger contract. Counts / keys only; never
+                    # transcripts or audio.
+                    response_obj = event.get("response")
+                    logger.info(
+                        "realtime.response.done usage=%s response_keys=%s "
+                        "usage_keys=%s",
+                        usage,
+                        _safe_keys(response_obj),
+                        _safe_keys(
+                            response_obj.get("usage")
+                            if isinstance(response_obj, dict)
+                            else None
+                        ),
+                    )
+                    finalized = True
+                    yield TextDelta(text="", final=True, usage=usage)
                     return
                 elif (
                     event_type
@@ -269,6 +306,11 @@ class Translator:
                         yield TextDelta(text="", source_text=transcript)
                 elif event_type == "error":
                     raise TranslatorError(_error_message(event))
+
+            # Stream ended without ``response.done``. Emit the final delta so
+            # the consumer's loop terminates cleanly; usage stays ``None``.
+            if output_text_done and not finalized:
+                yield TextDelta(text="", final=True)
         except TranslatorError:
             raise
         except Exception as exc:
@@ -303,3 +345,57 @@ def _error_message(event: dict[str, object]) -> str:
         if isinstance(message, str) and message:
             return message
     return "OpenAI Realtime error"
+
+
+def _safe_keys(obj: object) -> list[str] | None:
+    """Return a sorted list of keys for shape logging, or ``None``.
+
+    Used by the S1 Day 8 probe to log only the structure of OpenAI events
+    without their values. Counts and durations are safe; transcripts and
+    audio bytes are not, so the rest of the event is never logged.
+    """
+    if isinstance(obj, dict):
+        return sorted(obj.keys())
+    return None
+
+
+def _extract_usage(event: dict[str, object]) -> CostUsage | None:
+    """Best-effort parser for the GA ``response.done`` usage block.
+
+    Falls back gracefully when fields are absent or shaped differently;
+    the probe log in :meth:`Translator.translate_stream` will surface any
+    surprise so we can tighten this before Codex ships the cost logger.
+    """
+    response = event.get("response")
+    if not isinstance(response, dict):
+        return None
+    usage = response.get("usage")
+    if not isinstance(usage, dict):
+        return None
+
+    tokens_in = _int_or_zero(usage.get("input_tokens"))
+    tokens_out = _int_or_zero(usage.get("output_tokens"))
+
+    explicit_seconds = usage.get("input_audio_seconds")
+    if isinstance(explicit_seconds, (int, float)):
+        audio_seconds = float(explicit_seconds)
+    else:
+        details = usage.get("input_token_details")
+        audio_tokens = (
+            details.get("audio_tokens") if isinstance(details, dict) else None
+        )
+        # Placeholder rate: ~50 audio tokens / second per OpenAI Realtime
+        # docs. The Day 8 probe confirms (or refutes) this on real traffic.
+        audio_seconds = (
+            float(audio_tokens) / 50.0 if isinstance(audio_tokens, int) else 0.0
+        )
+
+    return CostUsage(
+        audio_seconds=audio_seconds,
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+    )
+
+
+def _int_or_zero(value: object) -> int:
+    return value if isinstance(value, int) else 0
