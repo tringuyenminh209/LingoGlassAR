@@ -292,6 +292,7 @@ Commit subject: `feat(mobile): S1 Day 6 backend WebSocket client`.
 | **Claude** | `mobile/lib/screens/translate_screen.dart`: push-to-talk button + log + connection chip (similar to `spike_screen.dart`). Hold -> recorder.start + WS connect. Release -> recorder.stop + WS close. On `TextDelta` -> append to in-progress subtitle buffer. On `text.final` -> push to `BleTransport.sendSubtitle()`. | Manual: hold mic, say JP phrase, OLED shows VN translation within 2.5 s. | 7a DONE `94ba294`, device verify pending |
 | **Claude** | Switch `MaterialApp.home` to `TranslateScreen` by default; keep `SpikeScreen` accessible via a debug drawer. | Build + run on device. | DONE `94ba294` |
 | **Codex** | Add a "Server status" widget that polls `/healthz` every 10 s and displays online/offline chip. | UI shows green when backend reachable. | pending Codex |
+| **Codex** | OLED text density + paging: switch JP to 12 px font, wrap long subtitles into pages, auto-advance every 2.5 s. Spec in `docs/codex/PROMPTS.md` §2h. | Long JP/VN subtitle fully visible across pages; native test_oled_wrap passes 6 cases. | pending Codex |
 
 **Phase 7a notes (commit `94ba294`)**:
 - Added 3 deps: `shared_preferences ^2.3.0`, `uuid ^3.0.7`, `http ^1.2.0`.

@@ -1025,6 +1025,163 @@ After opening the PR, post the URL and STOP.
 
 ---
 
+## 2h. Day 7 (Codex row) — OLED text density + paging for long subtitles
+
+**Precondition**: `69245ba` is merged on main. `lib/oled_view/oled_view.cpp`
+ships dual unifont (JP/VN) at 16 px with layout y=0, y=24, two-line.
+Live JP+VN translation works but a typical translated sentence
+("何か話してみようか？何でもいいんだよ、気軽に話してごらん…") only renders the
+first ~7 CJK characters before running off the right edge. The rest is
+lost. This task fixes that without losing the dual JP/VN font work.
+
+Goal: a translated subtitle of up to ~120 codepoints is fully visible —
+either by fitting more per screen (smaller font + word wrap) and/or by
+auto-advancing through pages (paging). Final result must render the same
+on JP and VN content; never garble script.
+
+```
+Your task: S1 Day 7 - OLED text density + paging. Make long JP/VN
+subtitles fully visible on the SSD1306 128x64 OLED. Currently a long
+sentence runs off the right edge after ~7 CJK or ~16 Latin characters
+and is silently truncated.
+
+## Concrete deliverables
+
+1. firmware/esp32s3/lib/oled_view/oled_view.cpp + .h - rework.
+
+   Smaller default font for JP (text density):
+   - Switch the JP font from `u8g2_font_unifont_t_japanese2` (16 px) to
+     `u8g2_font_b12_t_japanese2` (12 px). The b12 variant exists in
+     this u8g2 build (see u8g2.h line 3315) and covers Hiragana,
+     Katakana, and ~3000 Kanji.
+   - VN keeps `u8g2_font_unifont_t_vietnamese1` (16 px) because u8g2
+     ships no 12 px Vietnamese variant with precomposed diacritics.
+     This is acceptable — VN diacritics need the height to stay legible
+     on a 1.3 mm dot pitch.
+   - Per-line script detection (the existing pick_font() at the byte
+     0xE3-0xE9 boundary) keeps the right font per line. Variable
+     line-height is fine: layout below uses each font's ascent.
+
+   Word-wrap into a line buffer:
+   - Add a helper that takes a UTF-8 string and the active font, and
+     produces an ordered list of line slices that each fit within
+     128 px width. Use `u8g2.getUTF8Width(slice)` to measure. Break at
+     spaces / punctuation when possible; if no whitespace exists (long
+     CJK run), fall back to per-codepoint splitting. NEVER cut inside a
+     multi-byte UTF-8 codepoint — back the boundary up to the start of
+     the leading byte (`(b & 0xC0) != 0x80`).
+   - Cap the line buffer at 32 lines. Subtitles longer than that are
+     truncated with a trailing `…` on the last line.
+
+   Paging:
+   - JP page: ceil(64 / 12) = 5 lines per page at y = 0, 12, 24, 36, 48.
+   - VN page: ceil(64 / 16) = 4 lines per page at y = 0, 16, 32, 48.
+   - If the wrapped line count <= one page, render as before — no
+     paging, no timer.
+   - If line count > one page, auto-advance pages every PAGE_HOLD_MS
+     milliseconds (default 2500). When the last page is shown, hold it
+     2x as long (5000 ms by default), then loop back to page 0.
+   - The page advance is driven by the main-loop calling a new
+     `oled_view::tick(uint32_t now_ms)` once per loop iteration. Do
+     NOT use Arduino `delay()`, internal timers, or RTOS tasks — the
+     existing main loop already calls `loop()` at >100 Hz and tick()
+     is the cheapest integration point.
+
+   Public surface (header) - keep existing functions, add two:
+   - existing: `begin`, `is_ready`, `show_status`, `show_heartbeat`
+   - new: `void tick(uint32_t now_ms)` — drives paging
+   - new (optional, for tests): `size_t page_count()` — returns the
+     number of pages the current subtitle wraps into. Useful for
+     verifying the wrap math.
+
+   Behavior detail:
+   - `show_status(line1, line2)`: line1 is treated as a single short
+     header (e.g. "LingoGlass S0") that stays at the top across all
+     pages of line2. line2 is the long subtitle and gets wrapped /
+     paged. If line2 is null/empty, behave as today.
+   - `show_heartbeat(counter)`: unchanged — one screen, no paging.
+   - When `show_status` is called again with a new line2, reset page
+     state to page 0 immediately and re-wrap.
+
+2. firmware/esp32s3/src/main.cpp - tiny edit.
+   - Add a single call `oled_view::tick(millis())` inside `loop()`,
+     near the existing display calls. Nothing else changes here.
+
+3. firmware/esp32s3/test/test_oled_wrap/test_oled_wrap.cpp - new
+   native unit test (host-side, no hardware) for the wrap algorithm.
+   - Use the existing `pio test -e native` env.
+   - The U8g2 width measurement requires the display object, so factor
+     the wrap helper to take a `std::function<int(const char*)>` (or a
+     plain function pointer) that returns the pixel width of a UTF-8
+     slice. In production it wraps `g_display.getUTF8Width`; in tests
+     it returns `strlen * char_width_constant`.
+   - Test cases (minimum 6):
+     * Empty string -> 0 lines.
+     * Short JP that fits one line -> 1 line, no truncation.
+     * Long JP with no spaces -> wraps at codepoint boundary, never
+       mid-multi-byte.
+     * Long VN with spaces -> wraps at word boundaries when possible.
+     * Mixed JP+VN+ASCII -> still wraps cleanly.
+     * Subtitle longer than 32-line cap -> last line ends with `…`.
+
+## Hard constraints
+
+- Branch: feat/s1-day-7-oled-paging
+- Commit subject: feat(firmware): S1 Day 7 OLED text density + paging
+- Do not touch backend/, mobile/, docs/api-contract/, .claude/.
+- Do not change the BLE protocol or the subtitle assembler.
+- Flash budget: total firmware.bin must stay under 1.2 MB. The b12 JP
+  font is ~85 KB vs the unifont_t_japanese2 we drop (~110 KB), so net
+  budget should improve. Report `Flash: [X bytes from 6553600 bytes]`
+  from the build output in the PR.
+- Latency budget (BLE leg): adding `tick()` to the main loop must not
+  push the BLE-write -> render path above 200 ms. tick() is a cheap
+  comparison + optional redraw; do not redraw if the current page
+  hasn't changed.
+- UTF-8 correctness: every wrap point must fall on a codepoint
+  boundary. Test vector that exercises a Kanji at the 128-px edge is
+  mandatory in test_oled_wrap.cpp.
+
+## Verification
+
+cd firmware/esp32s3
+pio test -e native -f test_oled_wrap
+pio run -e esp32s3
+# capture and paste:
+# - "Flash: [X bytes from 6553600 bytes]" from the build output
+# - the 6 wrap test names that pass
+
+After flashing on real hardware (user does this), record a 5-second
+video of a long JP subtitle paging through. Attach to PR description
+or describe it in words ("page 1 shows L1-L5 of N, page 2 shows
+L6-L10, last page held 2x").
+
+## PR description template
+
+## Summary
+<one paragraph: density + paging summary>
+
+## Files added / modified
+<bullet list>
+
+## Verification output
+<paste raw pio output>
+
+## Open questions for review
+<things you decided>
+- Did you keep `show_status(null, null)` as a clear-screen? (Yes/No)
+- How did you handle the case where line1 height + first page line2
+  height exceeds 64 px? (Should not happen with current fonts, but
+  document the safety net.)
+
+## Time spent
+~X hours
+
+After opening the PR, post the URL and STOP.
+```
+
+---
+
 ## 3. Day-N task prompt — TEMPLATE (use for Day 8-10)
 
 Replace `<N>` with the day number, fill `<TASK_TITLE>`, `<COMMIT_SUBJECT>`,
