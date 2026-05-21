@@ -44,7 +44,7 @@ a specific Day-N task.
 | 1 | #1 | MERGED 2026-05-20 (clean) | `538eae1` + follow-up `3ff139c` |
 | 2 | #2 | MERGED 2026-05-21 (clean) | stub `812bc63`, impl `ab22deb` |
 | 3 | #3 | MERGED 2026-05-21 (clean) | contract `c2f8377`, impl `6bc9ce1` |
-| 4 | (Claude runbook + Codex scripts in parallel) | runbook on main, Codex prompt ready | - |
+| 4 | #4 | MERGED 2026-05-21 (clean) | runbook `6345efa`, CFN+drawio `37d31ef`, scripts `2b2e2bb` |
 
 ## 2. Day-N task prompt — Day 1 (ready to copy)
 

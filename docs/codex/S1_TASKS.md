@@ -142,9 +142,9 @@ Commit subject: `feat(backend): S1 Day 3 session API + WS bridge`.
 
 | Owner | Task | Verify | Status |
 |---|---|---|---|
-| **Claude (user-assisted)** | Provision EC2 t4g.small in `ap-northeast-3` via AWS console. Ubuntu 22.04 LTS. Allocate Elastic IP. Security group: 22/tcp from user IP, 80/tcp + 443/tcp from 0.0.0.0/0 (Cloudflare will front). | SSH in, `apt update` works. | runbook ready, user-execute |
-| **Codex** | `infra/ec2/bootstrap.sh` (idempotent): install Docker engine + compose plugin + ufw, allow 22/80/443, enable ufw, create deploy user, set up `~/lingoglass/` clone path. | Run on fresh EC2: exit 0, docker --version, ufw status. | pending Codex |
-| **Codex** | `infra/ec2/deploy.sh`: pull from git, `docker compose pull && docker compose up -d --build`. | Re-run is no-op when no git changes. | pending Codex |
+| **Claude (user-assisted)** | Provision EC2 t4g.small in `ap-northeast-3` via AWS console. Ubuntu 22.04 LTS. Allocate Elastic IP. Security group: 22/tcp from user IP, 80/tcp + 443/tcp from 0.0.0.0/0 (Cloudflare will front). | SSH in, `apt update` works. | runbook + CFN ready, user-execute |
+| **Codex** | `infra/ec2/bootstrap.sh` (idempotent): install Docker engine + compose plugin + ufw, allow 22/80/443, enable ufw, create deploy user, set up `~/lingoglass/` clone path. | Run on fresh EC2: exit 0, docker --version, ufw status. | DONE PR #4, `2b2e2bb` (arm64 guard + idempotent docker.list extra) |
+| **Codex** | `infra/ec2/deploy.sh`: pull from git, `docker compose pull && docker compose up -d --build`. | Re-run is no-op when no git changes. | DONE PR #4, `2b2e2bb` (60s health poll + log dump on fail) |
 | **Claude (user-assisted)** | Cloudflare DNS: add A record `api` -> EC2 EIP, proxied (orange). SSL/TLS mode = "Full". | `curl https://api.lingoglass.online/healthz` returns 200. | runbook ready, user-execute |
 
 **Manual runbook**: `docs/runbook/aws-osaka-deploy.md` (9 sections incl.
@@ -161,6 +161,22 @@ smoke test, cost watch, tear-down).
 Parallelism note: user can run runbook sections 1-5 while Codex writes
 the scripts. The user pauses at section 4 ("bootstrap") until Codex's
 PR is on main, then continues.
+
+**Notes from PR #4 review (small follow-up)**:
+- bootstrap.sh uses `systemctl enable` + `systemctl start` on separate
+  lines. `systemctl enable --now docker.service` would be one line.
+  Pure style nit; not worth a follow-up PR.
+- Day 1 review follow-up #4 (LOG_LEVEL → uvicorn) is now closed by the
+  Dockerfile shell-form CMD change. All Day 1 follow-ups are now
+  resolved.
+
+**Defensive code Codex added beyond spec**:
+- arm64 architecture guard in bootstrap.sh — exits 1 if accidentally
+  run on x86 instance.
+- Idempotent docker.list write — only overwrites when content differs.
+- `usermod --append` re-add if deploy user exists but is not in
+  docker group.
+- ISO 8601 UTC timestamps in log helper.
 
 Commit subject: `feat(infra): S1 Day 4 EC2 Osaka bootstrap + deploy scripts`.
 
