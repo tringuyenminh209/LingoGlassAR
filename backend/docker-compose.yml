@@ -3,8 +3,16 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     env_file:
       - .env
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-info}
     depends_on:
       redis:
         condition: service_healthy
@@ -13,6 +21,12 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     volumes:
       - redis-data:/data
     healthcheck:
