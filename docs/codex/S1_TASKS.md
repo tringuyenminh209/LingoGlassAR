@@ -223,7 +223,7 @@ Commit subject: `feat(mobile): S1 Day 5 audio recorder service`.
 
 | Owner | Task | Verify | Status |
 |---|---|---|---|
-| **Codex** | `mobile/lib/services/translator_ws.dart`: connects to `wss://api.lingoglass.online/v1/sessions/.../stream`. API: `connect(sessionId)`, `send(Uint8List audioChunk)`, `Stream<TextDelta> get textStream`, `disconnect()`. Use `package:web_socket_channel`. Reconnect with exponential backoff (1s, 2s, 4s, 8s, cap 30s). | Mock WS server unit test. | pending Codex |
+| **Codex** | `mobile/lib/services/translator_ws.dart`: connects to `wss://api.lingoglass.online/v1/sessions/.../stream`. API: `connect(sessionId)`, `send(Uint8List audioChunk)`, `Stream<TextDelta> get textStream`, `disconnect()`. Use `package:web_socket_channel`. Reconnect with exponential backoff (1s, 2s, 4s, 8s, cap 30s). | Mock WS server unit test. | DONE PR #6, `10c768a` (27/27 tests pass, TranslatorWsConnector DI + injectable delay) |
 | **Claude** | Review reconnect semantics: ensure session_id stays stable across reconnects (or document that mid-session disconnect aborts the utterance). | n/a | DONE 2026-05-22 (decisions below) |
 
 **Lifecycle + reconnect decisions (2026-05-22)**:
@@ -270,6 +270,18 @@ Commit subject: `feat(mobile): S1 Day 5 audio recorder service`.
    bytes. This catches the bug class "AudioRecorder upstream emitted
    short chunk" before it hits the wire (where validation would only
    surface as `invalid_event` from the backend).
+
+**Notes from PR #6 review (deferred follow-ups)**:
+- `connect()` defaults `deviceId` to `''`. Schema declares deviceId as
+  required UUID. Backend's `Draft202012Validator` does not strict-validate
+  `format: uuid`, so this passes in practice, but conceptually wrong.
+  **Day 7** must generate or cache a UUID v4 device ID (via
+  `shared_preferences` or similar) and pass it on every connect().
+- `textStream` is a broadcast `StreamController`. Broadcast streams do
+  not buffer events, so a listener that attaches AFTER the first
+  `translation.partial` arrives will miss it. For the push-to-talk
+  pattern (connect -> listen -> send), Dart microtask ordering makes
+  this safe in practice. Re-check during Day 7 device integration.
 
 Commit subject: `feat(mobile): S1 Day 6 backend WebSocket client`.
 
