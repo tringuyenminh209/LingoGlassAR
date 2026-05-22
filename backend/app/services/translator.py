@@ -286,20 +286,20 @@ class Translator:
                     output_text_done = True
                 elif event_type == "response.done":
                     usage = _extract_usage(event)
-                    # S1 Day 8 probe — confirm GA usage shape before locking
-                    # the cost_logger contract. Counts / keys only; never
-                    # transcripts or audio.
+                    # S1 Day 8 probe — confirm GA usage shape AND raw
+                    # token-detail counts so the cost_logger pricing model
+                    # can be locked. All values are integer counts; no
+                    # transcript or audio content is logged.
                     response_obj = event.get("response")
+                    raw_usage = (
+                        response_obj.get("usage")
+                        if isinstance(response_obj, dict)
+                        else None
+                    )
                     logger.info(
-                        "realtime.response.done usage=%s response_keys=%s "
-                        "usage_keys=%s",
+                        "realtime.response.done usage=%s raw_usage=%s",
                         usage,
-                        _safe_keys(response_obj),
-                        _safe_keys(
-                            response_obj.get("usage")
-                            if isinstance(response_obj, dict)
-                            else None
-                        ),
+                        raw_usage,
                     )
                     finalized = True
                     yield TextDelta(text="", final=True, usage=usage)
