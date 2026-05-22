@@ -168,18 +168,22 @@ class Translator:
     benchmarking; production callers should accept the default so they
     benefit from future probe updates without code changes.
 
-    S2 Day 2 body changes for Codex (do these in :meth:`connect` only,
-    not in :meth:`translate_stream`):
+    S2 Day 2 body changes for Codex:
 
-    1. ``audio.input.transcription`` becomes
-       ``{"model": stt_config.transcription_model,
-       "delay": stt_config.transcription_delay}``.
-    2. Add ``"turn_detection": None`` at the top level of ``session``
-       to disable server VAD (we manually commit; server VAD is dead
-       inference in PTT mode).
-    3. Drop the ``"instructions"`` field from the ``response.create``
-       payload (PR #2 review follow-up — already set in session.update,
-       duplicating it costs tokenisation).
+    1. In :meth:`connect`, set
+       ``audio.input.transcription = {"model":
+       stt_config.transcription_model, "delay":
+       stt_config.transcription_delay}``.
+    2. In :meth:`connect`, add ``"turn_detection": None`` INSIDE the
+       ``session.audio.input`` block (NOT at the top level of
+       ``session`` — GA rejects that as
+       ``Unknown parameter: 'session.turn_detection'``; live smoke
+       2026-05-23). Disables server VAD; we manually
+       ``input_audio_buffer.commit`` so VAD inference is dead work.
+    3. In :meth:`translate_stream`, drop the ``"instructions"`` field
+       from the ``response.create`` payload (PR #2 review follow-up —
+       already set in session.update, duplicating it costs
+       tokenisation).
     """
 
     def __init__(

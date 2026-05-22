@@ -1918,10 +1918,27 @@ session.update payload and trim two dead code paths. Single backend PR.
       Both fields come from self._stt_config (already stored by the
       __init__ change in Claude prep).
 
-   b. Add a top-level "turn_detection": None inside the "session"
-      object, right after "audio". This explicitly disables server
-      VAD; we manually `input_audio_buffer.commit` and the server-side
-      VAD inference is dead work in PTT mode.
+   b. Add "turn_detection": None INSIDE the "audio.input" object,
+      right after the "transcription" block. The correct GA nesting is
+      session.audio.input.turn_detection, not session.turn_detection
+      at the top level — the latter was rejected by live GA smoke on
+      2026-05-23 with "Unknown parameter: 'session.turn_detection'".
+      Final shape of the audio.input block:
+
+         "audio": {
+           "input": {
+             "format": {"type": "audio/pcm", "rate": 24000},
+             "transcription": {
+               "model": self._stt_config.transcription_model,
+               "delay": self._stt_config.transcription_delay,
+             },
+             "turn_detection": None,
+           }
+         }
+
+      This explicitly disables server VAD; we manually
+      `input_audio_buffer.commit` and the server-side VAD inference is
+      dead work in PTT mode.
 
    c. In Translator.translate_stream(), the `response.create` payload
       currently has both "output_modalities" and "instructions". DROP
@@ -1949,7 +1966,11 @@ session.update payload and trim two dead code paths. Single backend PR.
       assert the FIRST sent payload is a session.update with:
         - session.audio.input.transcription.model == "gpt-realtime-whisper"
         - session.audio.input.transcription.delay == "low"
-        - session.turn_detection is None (or the JSON null)
+        - session.audio.input.turn_detection is None
+          (the key MUST be present with a None/null value, not absent —
+          omitting it would leave default server_vad enabled).
+        - session.turn_detection key is NOT present at the top level
+          (live GA rejects it as Unknown parameter).
 
    c. New test `test_session_update_honours_custom_stt_config`:
       instantiate `Translator(api_key="x",
@@ -1965,41 +1986,36 @@ session.update payload and trim two dead code paths. Single backend PR.
    sessions.py, mobile/, firmware/, infra/, or docs/. The PR is
    strictly backend Translator + its test file.
 
-## Smoke checks BEFORE you push
+## Smoke findings (already resolved 2026-05-23, log in PR body)
 
-The S2 Day 1 probe (`docs/reports/S2_stt_probe.md` §7) flagged two
-unknowns that you should resolve in the PR description, not by
-guessing:
+The S2 Day 1 probe (`docs/reports/S2_stt_probe.md` §7) flagged three
+unknowns. Live smoke against `gpt-realtime-whisper` on 2026-05-23
+resolved them. Quote these findings verbatim in the PR's "Open
+questions for review" section:
 
-A. Does `gpt-realtime-whisper` still emit
-   `conversation.item.input_audio_transcription.completed` events with
-   a `.transcript` string field? If yes, no event-handler change
-   needed and TextDelta.source_text capture keeps working.
-   If the event renamed or restructured, STOP and report — Claude
-   will lock a follow-up change before you proceed.
+A. **`turn_detection` location**: `session.turn_detection` (top level)
+   is REJECTED by GA with `Unknown parameter: 'session.turn_detection'`.
+   The correct nesting is `session.audio.input.turn_detection`. The
+   payload spec in §1.b above already reflects this fix.
 
-   How to check: scan
-   https://platform.openai.com/docs/api-reference/realtime-server-events
-   or the OpenAI Realtime server events reference. If you cannot read
-   docs, run a one-shot smoke against the live API with a 1-second
-   sine-wave audio file and grep the event stream for the
-   transcription event name. Either path is fine; document what you
-   did in the PR.
+B. **Source transcript event**: `gpt-realtime-whisper` STILL emits
+   `conversation.item.input_audio_transcription.completed` with a
+   string `.transcript` field. No event-handler change needed;
+   `TextDelta.source_text` capture path keeps working untouched.
 
-B. Does `gpt-realtime-whisper` charge under the same token shape as
-   `whisper-1` (i.e. `usage.input_token_details.audio_tokens` still
-   meaningful) or does it have a separate billing line? This affects
-   whether `backend/app/services/cost_logger.py` pricing constants
-   need to be revisited in a follow-up.
+C. **Usage shape**: `response.done.usage` still has the existing
+   keys (`input_token_details.audio_tokens`,
+   `input_token_details.text_tokens`,
+   `input_token_details.cached_tokens_details`,
+   `output_token_details.text_tokens`, etc.). The cost_logger reads
+   the same fields, so no cost_logger change is needed in THIS PR.
+   Pricing: OpenAI pricing page does not list a separate row for
+   `gpt-realtime-whisper` (as of 2026-05-23); pricing constants
+   follow-up is a separate Claude-prep task — do NOT touch
+   cost_logger.py here.
 
-   How to check: scan OpenAI pricing page for `gpt-realtime-whisper`
-   row + check the response.done usage shape from your smoke test
-   in (A). Report findings in the PR's "Open questions for review"
-   section. Do NOT change cost_logger.py in this PR even if you find
-   a discrepancy — that is a separate Claude-prep task.
-
-If smoke (A) shows the event was renamed, abort the PR and report.
-If smoke (B) shows pricing differs, log it but proceed.
+If a fresh smoke contradicts any of A/B/C while you implement, STOP
+and report — Claude will re-prep.
 
 ## Branch / commit / PR
 

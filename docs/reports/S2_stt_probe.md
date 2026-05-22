@@ -154,25 +154,39 @@ complicate the Day 5-6 accuracy harness wiring. Revisit only if A fails.
    `transcription_delay: Literal["minimal","low","medium","high","xhigh"] = "low"`.
    Default the dataclass to the new values so callers get the
    optimisation without code change. Strip `instructions` from
-   `response.create`. Add `"turn_detection": None` to `session.update`.
-   Lock stubs only; the body changes are mechanical and Codex-safe.
+   `response.create`. Add `"turn_detection": None` to the
+   `session.audio.input` block (see §7 finding A — NOT at session
+   top level). Lock stubs only; the body changes are mechanical and
+   Codex-safe.
 2. **Codex**: update the session.update JSON, drop the instructions
    field from `response.create`, add a unit test that asserts the
    outgoing JSON contains the new fields.
 3. **Claude review + merge.**
 
-## 7. Open questions for Day 2
+## 7. Open questions for Day 2 — resolved by 2026-05-23 live smoke
 
-- Does `gpt-realtime-whisper` charge differently from `whisper-1`?
-  S1 Day 8 cost log captures audio_input_tokens which should remain
-  comparable, but pricing per token may differ. **Action**: check
-  `backend/app/services/cost_logger.py` pricing constants on Day 2
-  commit, and have Day 3 bench compute a cost-per-utterance delta.
-- Does `gpt-realtime-whisper` emit
-  `conversation.item.input_audio_transcription.completed` events with
-  the same shape? If the event name changed, our `source_text` capture
-  silently breaks. **Action**: Day 2 unit test must mock the new event
-  name (probe needed — Day 2 first-action smoke test).
+Codex ran a live smoke against `gpt-realtime-whisper` on 2026-05-23
+before opening the PR. Findings:
+
+- **`turn_detection` nesting**: `session.turn_detection` (top level) is
+  REJECTED by GA with `Unknown parameter: 'session.turn_detection'`.
+  Correct path is `session.audio.input.turn_detection`. Some OpenAI
+  guides still document the top-level form, so docs are inconsistent;
+  live API is the source of truth. §1 / §4 / §6 above corrected.
+- **Source transcript event**: `gpt-realtime-whisper` still emits
+  `conversation.item.input_audio_transcription.completed` with a
+  string `.transcript` field. `TextDelta.source_text` capture
+  unchanged.
+- **Usage shape**: `response.done.usage` keys unchanged
+  (`input_token_details.audio_tokens`,
+  `input_token_details.text_tokens`,
+  `input_token_details.cached_tokens_details`,
+  `output_token_details.text_tokens`, etc.). `cost_logger` reads
+  these fields untouched; no S2 Day 2 change needed.
+- **Pricing**: OpenAI pricing page does not list a separate row for
+  `gpt-realtime-whisper` as of 2026-05-23. Pricing constants
+  follow-up is a separate Claude-prep task (likely Day 3 if Day 3
+  bench shows a cost delta), NOT bundled in the Day 2 Codex PR.
 
 ## Sources
 
