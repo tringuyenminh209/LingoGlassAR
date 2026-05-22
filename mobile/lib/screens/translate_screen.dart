@@ -15,14 +15,15 @@
 // (text shows only on the phone).
 
 import 'dart:async';
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../audio/recorder.dart';
 import '../ble/ble_transport.dart';
+import '../data/s1_phrases.dart';
 import '../services/device_id.dart';
+import '../services/latency_logger.dart';
 import '../services/session_client.dart';
 import '../services/translator_ws.dart';
 
@@ -40,6 +41,7 @@ class _TranslateScreenState extends State<TranslateScreen> {
   final TranslatorWs _ws = TranslatorWs();
   final SessionClient _sessionClient = SessionClient();
   final BleTransport _ble = BleTransport();
+  final LatencyLogger _latency = LatencyLogger();
 
   String? _deviceId;
   String? _sessionId;
@@ -58,8 +60,13 @@ class _TranslateScreenState extends State<TranslateScreen> {
   final List<String> _logLines = <String>[];
 
   StreamSubscription<bool>? _bleConnSub;
+  StreamSubscription<AckEvent>? _bleAckSub;
   StreamSubscription<TextDelta>? _wsTextSub;
   StreamSubscription<Uint8List>? _audioSub;
+  Timer? _s1Timeout;
+  Timer? _s1Advance;
+  var _s1Running = false;
+  var _s1Index = 0;
 
   @override
   void initState() {
@@ -74,6 +81,7 @@ class _TranslateScreenState extends State<TranslateScreen> {
       setState(() => _isBleConnected = connected);
       _log(connected ? 'BLE connected' : 'BLE disconnected');
     });
+    _bleAckSub = _ble.acks.listen(_onBleAck);
     if (!mounted) return;
     setState(() => _deviceId = id);
     _log('Device ID ${id.substring(0, 8)}...');
@@ -92,8 +100,11 @@ class _TranslateScreenState extends State<TranslateScreen> {
   @override
   void dispose() {
     _bleConnSub?.cancel();
+    _bleAckSub?.cancel();
     _wsTextSub?.cancel();
     _audioSub?.cancel();
+    _s1Timeout?.cancel();
+    _s1Advance?.cancel();
     unawaited(_recorder.stop());
     unawaited(_ws.disconnect());
     _sessionClient.close();
@@ -130,6 +141,10 @@ class _TranslateScreenState extends State<TranslateScreen> {
       return;
     }
     _ptt = _PttState.starting;
+    final phrase = _currentS1Phrase;
+    if (phrase != null) {
+      _latency.e2eStart(phrase.id);
+    }
     setState(() {
       _isHolding = true;
       _partialBuffer = '';
@@ -141,6 +156,7 @@ class _TranslateScreenState extends State<TranslateScreen> {
       _log('Session ${_sessionId!.substring(0, 8)}...');
 
       await _ws.connect(_sessionId!, deviceId: _deviceId!);
+      _latency.e2eMarkSessionOpened(_sessionId!);
       if (_ptt != _PttState.starting) {
         // User released during connect; clean up the now-orphaned socket.
         await _ws.disconnect();
@@ -169,6 +185,9 @@ class _TranslateScreenState extends State<TranslateScreen> {
       _ptt = _PttState.recording;
       _log('Recording...');
     } catch (e) {
+      if (_latency.e2eAbort('start_error') != null) {
+        _scheduleS1Advance();
+      }
       _log('Start error: $e');
       await _teardownPtt();
     }
@@ -176,6 +195,8 @@ class _TranslateScreenState extends State<TranslateScreen> {
 
   Future<void> _onPressUp() async {
     if (_ptt == _PttState.idle) return;
+    _latency.e2eMarkPttRelease();
+    _s1Timeout?.cancel();
     setState(() => _isHolding = false);
 
     if (_ptt == _PttState.starting) {
@@ -222,6 +243,7 @@ class _TranslateScreenState extends State<TranslateScreen> {
 
   void _onTextDelta(TextDelta delta) {
     if (delta.isFinal) {
+      _latency.e2eMarkTranslationFinal();
       setState(() {
         _lastFinal = delta.text;
         _partialBuffer = '';
@@ -230,10 +252,16 @@ class _TranslateScreenState extends State<TranslateScreen> {
       if (_isBleConnected) {
         unawaited(_sendToBle(delta.text));
       } else {
+        if (_latency.e2eAbort('ble_unavailable') != null) {
+          _scheduleS1Advance();
+        }
         _log('(BLE not connected, OLED skipped)');
       }
       unawaited(_teardownPtt());
     } else {
+      if (delta.text.isNotEmpty) {
+        _latency.e2eMarkFirstText();
+      }
       setState(() => _partialBuffer += delta.text);
     }
   }
@@ -250,9 +278,79 @@ class _TranslateScreenState extends State<TranslateScreen> {
   }
 
   void _onWsError(Object error) {
+    if (_latency.e2eAbort('ws_error') != null) {
+      _scheduleS1Advance();
+    }
     _log('WS error: $error');
     setState(() => _isWsConnected = false);
     unawaited(_teardownPtt());
+  }
+
+  void _onBleAck(AckEvent ack) {
+    if (!ack.isOk || ack.sequenceId != _bleSeq) return;
+    _latency.e2eMarkBleAck(ack.sequenceId);
+    if (_latency.e2eFinalize() != null) {
+      _log('E2E row complete id=${_currentS1Phrase?.id ?? '-'}');
+      _scheduleS1Advance();
+    }
+  }
+
+  S1Phrase? get _currentS1Phrase {
+    if (!_s1Running || _s1Index >= s1Phrases.length) return null;
+    return s1Phrases[_s1Index];
+  }
+
+  void _startS1Run() {
+    if (_s1Running) return;
+    _latency.clearE2e();
+    setState(() {
+      _s1Running = true;
+      _s1Index = 0;
+    });
+    _log('S1 Run 10 started');
+    _armS1Phrase();
+  }
+
+  void _armS1Phrase() {
+    final phrase = _currentS1Phrase;
+    _s1Timeout?.cancel();
+    if (phrase == null) {
+      setState(() => _s1Running = false);
+      _log('S1 Run 10 finished');
+      return;
+    }
+    _log('S1 phrase ${phrase.id} ready');
+    _s1Timeout = Timer(const Duration(seconds: 30), () {
+      if (_latency.e2eAbort('timeout') != null) {
+        _log('S1 phrase ${phrase.id} timeout');
+      }
+      if (_ptt != _PttState.idle) {
+        unawaited(_teardownPtt());
+      }
+      _scheduleS1Advance(delay: Duration.zero);
+    });
+  }
+
+  void _scheduleS1Advance(
+      {Duration delay = const Duration(milliseconds: 1500)}) {
+    if (!_s1Running) return;
+    _s1Timeout?.cancel();
+    _s1Advance?.cancel();
+    _s1Advance = Timer(delay, () {
+      if (!mounted) return;
+      setState(() => _s1Index += 1);
+      _armS1Phrase();
+    });
+  }
+
+  Future<void> _copyE2eCsv() async {
+    await Clipboard.setData(ClipboardData(text: _latency.toE2eCsv()));
+    _log('E2E CSV copied');
+  }
+
+  void _clearE2e() {
+    _latency.clearE2e();
+    _log('E2E rows cleared');
   }
 
   @override
@@ -314,6 +412,19 @@ class _TranslateScreenState extends State<TranslateScreen> {
               ],
             ),
           ),
+          if (_currentS1Phrase != null)
+            MaterialBanner(
+              content: Text(
+                _currentS1Phrase!.text,
+                style: theme.textTheme.headlineSmall,
+              ),
+              actions: [
+                Text(
+                  '${_s1Index + 1}/${s1Phrases.length}',
+                  style: theme.textTheme.labelLarge,
+                ),
+              ],
+            ),
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -323,6 +434,27 @@ class _TranslateScreenState extends State<TranslateScreen> {
                 style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
               ),
             ),
+          ),
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 8,
+            children: [
+              TextButton.icon(
+                onPressed: _s1Running ? null : _startS1Run,
+                icon: const Icon(Icons.play_arrow),
+                label: const Text('S1 Run 10'),
+              ),
+              TextButton.icon(
+                onPressed: _copyE2eCsv,
+                icon: const Icon(Icons.copy),
+                label: const Text('Copy E2E CSV'),
+              ),
+              TextButton.icon(
+                onPressed: _clearE2e,
+                icon: const Icon(Icons.delete_outline),
+                label: const Text('Clear E2E'),
+              ),
+            ],
           ),
           GestureDetector(
             onTapDown: (_) => _onPressDown(),

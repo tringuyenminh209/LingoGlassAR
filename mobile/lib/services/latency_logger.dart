@@ -364,44 +364,62 @@ class LatencyLogger {
   /// by finalising it with `errorCode='discarded'` first so no data is
   /// lost; the operator sees the discard in the CSV.
   void e2eStart(String phraseId) {
-    throw UnimplementedError('S1 Day 9 — Codex implements e2eStart');
+    if (_activeTrace != null) {
+      _activeTrace!.errorCode = 'discarded';
+      e2eFinalize();
+    }
+    _activeTrace = _E2eTrace(
+      phraseId: phraseId,
+      pressTsMicros: DateTime.now().microsecondsSinceEpoch,
+    );
   }
 
   /// Record PTT release (audio.end semantically). Stores
   /// release_ts_micros on the active trace.
   void e2eMarkPttRelease() {
-    throw UnimplementedError('S1 Day 9 — Codex implements e2eMarkPttRelease');
+    final trace = _activeTrace;
+    if (trace == null) return;
+    trace.releaseTsMicros = DateTime.now().microsecondsSinceEpoch;
   }
 
   /// Record `session.opened` frame from backend WS. Stores
   /// sessionOpened_ts and the backend sessionId on the trace.
   void e2eMarkSessionOpened(String sessionId) {
-    throw UnimplementedError(
-      'S1 Day 9 — Codex implements e2eMarkSessionOpened',
-    );
+    final trace = _activeTrace;
+    if (trace == null) return;
+    trace.sessionOpenedTsMicros = DateTime.now().microsecondsSinceEpoch;
+    trace.sessionId = sessionId;
   }
 
   /// Record the first `translation.partial` frame.
   void e2eMarkFirstText() {
-    throw UnimplementedError('S1 Day 9 — Codex implements e2eMarkFirstText');
+    final trace = _activeTrace;
+    if (trace == null || trace.firstTextTsMicros != null) return;
+    trace.firstTextTsMicros = DateTime.now().microsecondsSinceEpoch;
   }
 
   /// Record the `translation.final` frame.
   void e2eMarkTranslationFinal() {
-    throw UnimplementedError(
-      'S1 Day 9 — Codex implements e2eMarkTranslationFinal',
-    );
+    final trace = _activeTrace;
+    if (trace == null) return;
+    trace.finalTextTsMicros = DateTime.now().microsecondsSinceEpoch;
   }
 
   /// Record the BLE ACK (status=0x01) for the subtitle send.
   void e2eMarkBleAck(int sequenceId) {
-    throw UnimplementedError('S1 Day 9 — Codex implements e2eMarkBleAck');
+    final trace = _activeTrace;
+    if (trace == null) return;
+    trace.bleAckTsMicros = DateTime.now().microsecondsSinceEpoch;
+    trace.bleSequenceId = sequenceId;
   }
 
   /// Close the active trace with an error code (no completion required).
   /// Subsequent e2eMark* calls are no-ops until [e2eStart] runs again.
   E2eLatencyRecord? e2eAbort(String errorCode) {
-    throw UnimplementedError('S1 Day 9 — Codex implements e2eAbort');
+    final trace = _activeTrace;
+    if (trace == null) return null;
+    trace.errorCode = errorCode;
+    return e2eFinalize();
   }
 
   /// Snapshot the active trace into an immutable [E2eLatencyRecord],
@@ -412,24 +430,73 @@ class LatencyLogger {
   /// `(ts - pressTsMicros) / 1000` rounded to the nearest millisecond.
   /// `totalMs` is set to `bleAckMs` (or null if BLE never acked).
   E2eLatencyRecord? e2eFinalize() {
-    throw UnimplementedError('S1 Day 9 — Codex implements e2eFinalize');
+    final trace = _activeTrace;
+    if (trace == null) return null;
+
+    int? delta(int? ts) {
+      if (ts == null) return null;
+      return ((ts - trace.pressTsMicros) / 1000).round();
+    }
+
+    final bleAckMs = delta(trace.bleAckTsMicros);
+    final record = E2eLatencyRecord(
+      phraseId: trace.phraseId,
+      pressTsMicros: trace.pressTsMicros,
+      audioMs: delta(trace.releaseTsMicros) ?? 0,
+      backendAckMs: delta(trace.sessionOpenedTsMicros),
+      firstTextMs: delta(trace.firstTextTsMicros),
+      fullTextMs: delta(trace.finalTextTsMicros),
+      bleAckMs: bleAckMs,
+      totalMs: bleAckMs,
+      sessionId: trace.sessionId,
+      bleSequenceId: trace.bleSequenceId,
+      errorCode: trace.errorCode,
+    );
+    _e2eRecords.add(record);
+    _activeTrace = null;
+    return record;
   }
 
   /// CSV body including [E2eLatencyRecord.csvHeader] and one row per
   /// finalised record.
   String toE2eCsv() {
-    throw UnimplementedError('S1 Day 9 — Codex implements toE2eCsv');
+    final sb = StringBuffer()..writeln(E2eLatencyRecord.csvHeader);
+    for (final record in _e2eRecords) {
+      sb.writeln(record.toCsvRow());
+    }
+    return sb.toString();
   }
 
   /// p50/p90/p95/p99 of `total_ms` across OK e2e records. Returns null
   /// when no OK samples exist. Per-stage breakdown is the report tool's
   /// job (`tools/latency_report.py --s1`).
   E2eLatencyStats? summariseE2e() {
-    throw UnimplementedError('S1 Day 9 — Codex implements summariseE2e');
+    final totals = _e2eRecords
+        .where((record) => record.isOk)
+        .map((record) => record.totalMs!.toDouble())
+        .toList()
+      ..sort();
+    if (totals.isEmpty) return null;
+
+    double pct(double p) {
+      final idx = ((totals.length - 1) * p).round();
+      return totals[idx];
+    }
+
+    return E2eLatencyStats(
+      count: totals.length,
+      p50: pct(0.50),
+      p90: pct(0.90),
+      p95: pct(0.95),
+      p99: pct(0.99),
+      min: totals.first,
+      max: totals.last,
+    );
   }
 
   /// Clear e2e state without touching Phase F records.
   void clearE2e() {
-    throw UnimplementedError('S1 Day 9 — Codex implements clearE2e');
+    _e2eRecords.clear();
+    _activeTrace = null;
   }
 }
