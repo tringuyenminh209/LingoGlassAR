@@ -141,13 +141,12 @@ Commit subject: `docs(s2): Day 9 final benchmark`.
 
 Commit subject: `docs(s2): close S2 with Go/No-Go verdict`.
 
-## Open questions (decide before Day 1)
+## Open questions (locked 2026-05-23)
 
-1. **Translation accuracy scoring**: self-score is fast but biased. Should
-   we recruit 1 native VN speaker (paid hour, ~$15) to dual-score the
-   VN outputs? Defer to budget call.
-2. **Cooldown duration**: 500 ms is a guess. Could be 300 ms (snappier)
-   or 800 ms (safer). Tune empirically in Day 4 device test.
-3. **Cloudflare Origin Cert vs LE**: choice affects future direct-origin
-   testing. Origin Cert simpler but locks traffic through CF. Recommend
-   LE for flexibility, but Origin Cert is acceptable.
+1. **Translation accuracy scoring**: self-score for S2 MVP. Paid native
+   VN speaker review deferred to S3 pilot.
+2. **Cooldown duration**: 500 ms initial. Tune empirically in Day 4
+   device test if retry rate still > 20 %.
+3. **Cloudflare cert**: Let's Encrypt (90 d auto-renew, valid for any
+   client). Origin Cert not chosen — preserves ability to bypass CF
+   during debugging.
