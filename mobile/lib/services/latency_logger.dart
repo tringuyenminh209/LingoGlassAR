@@ -1,14 +1,27 @@
-// LingoGlass AR S0 Phase F latency logger.
+// LingoGlass AR latency logger.
 //
-// Records send_ts per sequence_id, matches incoming AckEvent by sequence_id,
-// and accumulates LatencyRecord rows that can be exported as CSV or
-// summarised as p50/p90/p95 buckets.
+// Two record families share this file:
+//
+//   1. S0 Phase F BLE-leg measurements: `LatencyRecord` rows record one
+//      subtitle send -> ACK round-trip on the phone clock. Use
+//      `markSendStart` + `recordAck` and export via `toCsv` /
+//      `summarise`.  These keep the BLE leg honest against the 50-200 ms
+//      budget.
+//
+//   2. S1 Day 9 end-to-end measurements: `E2eLatencyRecord` rows track
+//      one push-to-talk utterance from press through audio recording,
+//      backend session handshake, STT/translation deltas, and the BLE
+//      ACK of the rendered subtitle.  Use `e2eStart` + the per-stage
+//      `e2eMark*` methods + `e2eFinalize`; export via `toE2eCsv` /
+//      `summariseE2e`.  Targets `p95(total_ms) <= 2500 ms` per
+//      docs/CLAUDE.md latency budget.
 //
 // Clock notes:
-//   - send_ts and ack_ts are phone-side microsecondsSinceEpoch. RTT is their
-//     difference and is the primary metric.
-//   - fw_proc_ms comes from ESP32 millis() (t_render_ms - t_recv_ms) and is
-//     a different clock; it is only ever interpreted as a delta.
+//   - send_ts / ack_ts / press_ts are phone-side microsecondsSinceEpoch.
+//     RTTs and stage durations are deltas on the same clock and so are
+//     monotone with sane error bars.
+//   - fw_proc_ms comes from ESP32 millis() (t_render_ms - t_recv_ms) and
+//     is a different clock; only ever interpreted as a delta.
 
 import '../ble/ble_transport.dart';
 
@@ -86,11 +99,164 @@ class LatencyStats {
       'min=${min.toStringAsFixed(1)} max=${max.toStringAsFixed(1)}';
 }
 
+/// One end-to-end record per push-to-talk utterance.
+///
+/// All `*Ms` fields are milliseconds **relative to PTT press** so they
+/// compose into a stacked timeline without re-anchoring in the report
+/// tool. `totalMs` is an alias of `bleAckMs` — the e2e budget gate —
+/// kept as its own column so a CSV row can be read top-to-bottom for
+/// the cumulative timeline without computing it.
+///
+/// Any field other than `phraseId`, `audioMs`, and `pressTsMicros` is
+/// nullable: a stage that did not complete (network failure, BLE
+/// disconnect, user abort) leaves its column empty and `errorCode`
+/// describes the failure. The report tool tolerates and reports on
+/// these.
+class E2eLatencyRecord {
+  const E2eLatencyRecord({
+    required this.phraseId,
+    required this.pressTsMicros,
+    required this.audioMs,
+    required this.backendAckMs,
+    required this.firstTextMs,
+    required this.fullTextMs,
+    required this.bleAckMs,
+    required this.totalMs,
+    required this.sessionId,
+    required this.bleSequenceId,
+    required this.errorCode,
+  });
+
+  /// Identifier of the prompt that was spoken — the catalog key in
+  /// `mobile/lib/data/s1_phrases.dart` (Codex adds that file in Day 9).
+  final String phraseId;
+
+  /// Phone-clock microsecondsSinceEpoch at PTT press. Stored for the
+  /// debug column and for cross-correlating against backend logs; the
+  /// stage fields below are deltas, not absolute times.
+  final int pressTsMicros;
+
+  /// PTT hold duration: release_ts - press_ts. Not a latency itself
+  /// (user-controlled), but the report tool uses it as the audio stage
+  /// in the stacked bar.
+  final int audioMs;
+
+  /// `session.opened` WS frame received, relative to press. Captures
+  /// HTTP `POST /v1/sessions` + WS connect + server-side accept. ~50 ms
+  /// on a warm connection.
+  final int? backendAckMs;
+
+  /// First `translation.partial` frame received, relative to press.
+  /// Reflects upload + STT first-token latency.
+  final int? firstTextMs;
+
+  /// `translation.final` frame received, relative to press. Reflects
+  /// full STT + translation processing time.
+  final int? fullTextMs;
+
+  /// BLE ACK (status=0x01) for the subtitle send, relative to press.
+  /// The user-visible "subtitle on the lens" event.
+  final int? bleAckMs;
+
+  /// Same value as [bleAckMs] when populated. The e2e Go/No-Go gate is
+  /// `p95(totalMs) <= 2500 ms`.
+  final int? totalMs;
+
+  /// Backend session id from `POST /v1/sessions`, for cross-correlation
+  /// with `redis-cli HGETALL session:<id>:cost`.
+  final String? sessionId;
+
+  /// BLE sequence id used for the subtitle send; lets the operator pair
+  /// the e2e row with the Phase F `LatencyRecord` for the same send.
+  final int? bleSequenceId;
+
+  /// Short tag when the utterance did not complete cleanly. Examples:
+  /// `ws_error`, `ble_disconnect`, `mic_denied`, `user_abort`, `timeout`.
+  final String? errorCode;
+
+  /// True iff every stage completed and `errorCode` is null.
+  bool get isOk =>
+      errorCode == null &&
+      backendAckMs != null &&
+      firstTextMs != null &&
+      fullTextMs != null &&
+      bleAckMs != null;
+
+  String toCsvRow() {
+    String n(int? v) => v?.toString() ?? '';
+    return '$phraseId,$audioMs,${n(backendAckMs)},${n(firstTextMs)},'
+        '${n(fullTextMs)},${n(bleAckMs)},${n(totalMs)},'
+        '${sessionId ?? ''},${n(bleSequenceId)},${errorCode ?? ''}';
+  }
+
+  static const String csvHeader =
+      'phrase_id,audio_ms,backend_ack_ms,first_text_ms,full_text_ms,'
+      'ble_ack_ms,total_ms,session_id,ble_seq_id,error';
+}
+
+/// p50/p90/p95/p99 of `total_ms` across OK e2e records.
+///
+/// Stage durations (computed by the report tool, not the logger):
+///   stage_audio_ms     = audio_ms
+///   stage_handshake_ms = backend_ack_ms - audio_ms       (>=0)
+///   stage_stt_ms       = first_text_ms - backend_ack_ms  (>=0)
+///   stage_translate_ms = full_text_ms - first_text_ms    (>=0)
+///   stage_ble_ms       = ble_ack_ms    - full_text_ms    (>=0)
+///
+/// The mobile-side `summariseE2e` returns only the overall total stats;
+/// the per-stage decomposition is produced by `tools/latency_report.py
+/// --s1` so a single source of truth handles negative-delta edge cases
+/// (server-clock skew) consistently.
+class E2eLatencyStats {
+  const E2eLatencyStats({
+    required this.count,
+    required this.p50,
+    required this.p90,
+    required this.p95,
+    required this.p99,
+    required this.min,
+    required this.max,
+  });
+
+  final int count;
+  final double p50;
+  final double p90;
+  final double p95;
+  final double p99;
+  final double min;
+  final double max;
+
+  @override
+  String toString() => 'n=$count p50=${p50.toStringAsFixed(0)}ms '
+      'p90=${p90.toStringAsFixed(0)}ms p95=${p95.toStringAsFixed(0)}ms '
+      'p99=${p99.toStringAsFixed(0)}ms';
+}
+
+/// Mutable per-utterance trace. Implementation detail of [LatencyLogger];
+/// not exposed.
+class _E2eTrace {
+  _E2eTrace({required this.phraseId, required this.pressTsMicros});
+
+  final String phraseId;
+  final int pressTsMicros;
+  int? releaseTsMicros;
+  int? sessionOpenedTsMicros;
+  int? firstTextTsMicros;
+  int? finalTextTsMicros;
+  int? bleAckTsMicros;
+  String? sessionId;
+  int? bleSequenceId;
+  String? errorCode;
+}
+
 class LatencyLogger {
   LatencyLogger();
 
   final List<LatencyRecord> _records = <LatencyRecord>[];
   final Map<int, _PendingSend> _pending = <int, _PendingSend>{};
+
+  final List<E2eLatencyRecord> _e2eRecords = <E2eLatencyRecord>[];
+  _E2eTrace? _activeTrace;
 
   /// Read-only view of all records collected so far.
   List<LatencyRecord> get records => List.unmodifiable(_records);
@@ -167,5 +333,103 @@ class LatencyLogger {
       min: okRtts.first,
       max: okRtts.last,
     );
+  }
+
+  // ------------------------------------------------------------------
+  // S1 Day 9 — end-to-end utterance trace
+  // ------------------------------------------------------------------
+  //
+  // Lifecycle (Codex implements; signatures locked):
+  //
+  //   logger.e2eStart('greeting-01')                  // on PTT press
+  //   logger.e2eMarkPttRelease()                      // on PTT release
+  //   logger.e2eMarkSessionOpened(sessionId)          // session.opened
+  //   logger.e2eMarkFirstText()                       // 1st partial
+  //   logger.e2eMarkTranslationFinal()                // final
+  //   logger.e2eMarkBleAck(sequenceId)                // BLE ack 0x01
+  //   final record = logger.e2eFinalize();            // commits
+  //
+  // Any e2eMark*/finalize call without a matching e2eStart is a no-op
+  // returning null. e2eAbort('error_code') closes the active trace
+  // with errorCode set, no e2eMark* required.
+
+  /// Read-only view of committed e2e records.
+  List<E2eLatencyRecord> get e2eRecords => List.unmodifiable(_e2eRecords);
+
+  /// True while an utterance is being traced (between [e2eStart] and
+  /// [e2eFinalize]/[e2eAbort]).
+  bool get e2eInProgress => _activeTrace != null;
+
+  /// Begin a new utterance trace. Discards any prior unfinalised trace
+  /// by finalising it with `errorCode='discarded'` first so no data is
+  /// lost; the operator sees the discard in the CSV.
+  void e2eStart(String phraseId) {
+    throw UnimplementedError('S1 Day 9 — Codex implements e2eStart');
+  }
+
+  /// Record PTT release (audio.end semantically). Stores
+  /// release_ts_micros on the active trace.
+  void e2eMarkPttRelease() {
+    throw UnimplementedError('S1 Day 9 — Codex implements e2eMarkPttRelease');
+  }
+
+  /// Record `session.opened` frame from backend WS. Stores
+  /// sessionOpened_ts and the backend sessionId on the trace.
+  void e2eMarkSessionOpened(String sessionId) {
+    throw UnimplementedError(
+      'S1 Day 9 — Codex implements e2eMarkSessionOpened',
+    );
+  }
+
+  /// Record the first `translation.partial` frame.
+  void e2eMarkFirstText() {
+    throw UnimplementedError('S1 Day 9 — Codex implements e2eMarkFirstText');
+  }
+
+  /// Record the `translation.final` frame.
+  void e2eMarkTranslationFinal() {
+    throw UnimplementedError(
+      'S1 Day 9 — Codex implements e2eMarkTranslationFinal',
+    );
+  }
+
+  /// Record the BLE ACK (status=0x01) for the subtitle send.
+  void e2eMarkBleAck(int sequenceId) {
+    throw UnimplementedError('S1 Day 9 — Codex implements e2eMarkBleAck');
+  }
+
+  /// Close the active trace with an error code (no completion required).
+  /// Subsequent e2eMark* calls are no-ops until [e2eStart] runs again.
+  E2eLatencyRecord? e2eAbort(String errorCode) {
+    throw UnimplementedError('S1 Day 9 — Codex implements e2eAbort');
+  }
+
+  /// Snapshot the active trace into an immutable [E2eLatencyRecord],
+  /// append it to [e2eRecords], and clear the active trace. Returns the
+  /// record (or null if nothing was active).
+  ///
+  /// `audioMs`, `backendAckMs`, etc. are computed as
+  /// `(ts - pressTsMicros) / 1000` rounded to the nearest millisecond.
+  /// `totalMs` is set to `bleAckMs` (or null if BLE never acked).
+  E2eLatencyRecord? e2eFinalize() {
+    throw UnimplementedError('S1 Day 9 — Codex implements e2eFinalize');
+  }
+
+  /// CSV body including [E2eLatencyRecord.csvHeader] and one row per
+  /// finalised record.
+  String toE2eCsv() {
+    throw UnimplementedError('S1 Day 9 — Codex implements toE2eCsv');
+  }
+
+  /// p50/p90/p95/p99 of `total_ms` across OK e2e records. Returns null
+  /// when no OK samples exist. Per-stage breakdown is the report tool's
+  /// job (`tools/latency_report.py --s1`).
+  E2eLatencyStats? summariseE2e() {
+    throw UnimplementedError('S1 Day 9 — Codex implements summariseE2e');
+  }
+
+  /// Clear e2e state without touching Phase F records.
+  void clearE2e() {
+    throw UnimplementedError('S1 Day 9 — Codex implements clearE2e');
   }
 }

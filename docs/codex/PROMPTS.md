@@ -1420,6 +1420,226 @@ After opening the PR, post the URL and STOP. Do not start Day 9.
 
 ---
 
+## 2j. Day 9 (Codex rows) — End-to-end latency suite (ready to copy)
+
+**Precondition**: Day 9 prep is on `main`. `E2eLatencyRecord` dataclass +
+`E2eLatencyStats` dataclass + `LatencyLogger.e2e*` method signatures
+are locked in `mobile/lib/services/latency_logger.dart` (all bodies
+throw `UnimplementedError`). `tools/latency_report.py` ships the
+`--s1` flag dispatch + `S1_TARGET_TOTAL_MS` + `S1_STAGES` constants;
+`render_s1_markdown()` is a `NotImplementedError` stub with the output
+spec in the block comment above it.
+
+Codex job: fill the `UnimplementedError` bodies in `latency_logger.dart`,
+add the 10-phrase catalog, wire the S1-Run-10 button into
+`TranslateScreen`, implement `render_s1_markdown()`, and add tests on
+both sides. **Do not change the locked contract** — `E2eLatencyRecord`
+field names, `LatencyLogger.e2e*` method signatures, CSV header, and
+`S1_STAGES` shape are frozen.
+
+```
+Your task: S1 Day 9 — end-to-end latency suite. Implement the rows
+marked "Codex" in the Day 9 table of docs/codex/S1_TASKS.md. The
+interfaces in mobile/lib/services/latency_logger.dart and
+tools/latency_report.py are LOCKED — fill the UnimplementedError /
+NotImplementedError bodies, do not rename E2eLatencyRecord /
+E2eLatencyStats fields or LatencyLogger.e2e* method signatures, the
+CSV header, or the S1_STAGES list.
+
+## Concrete deliverables
+
+1. mobile/lib/services/latency_logger.dart — fill bodies for the e2e
+   methods.
+
+   State model:
+   - `_activeTrace` (an `_E2eTrace`) holds the in-progress utterance.
+     A new `e2eStart` discards any prior unfinalised trace by
+     finalising it with `errorCode='discarded'` first (so no data is
+     lost; the operator sees the discard in the CSV).
+   - All `e2eMark*` methods are no-ops when `_activeTrace == null`.
+   - `e2eMarkSessionOpened` stores both `sessionOpenedTsMicros` and
+     `sessionId` on the trace.
+   - `e2eMarkBleAck` stores both `bleAckTsMicros` and `bleSequenceId`.
+   - `e2eAbort('code')` sets `errorCode` then calls the same
+     finalisation path used by `e2eFinalize` so the row still lands
+     in `_e2eRecords`.
+   - `e2eFinalize` computes `(ts - pressTsMicros) / 1000` rounded to
+     nearest int for each delta. `audioMs` defaults to 0 when
+     `releaseTsMicros` is null. `totalMs` = `bleAckMs` (null when
+     bleAckMs is null).
+   - `toE2eCsv` emits `E2eLatencyRecord.csvHeader` then one
+     `toCsvRow()` per record, newline-terminated. Match the existing
+     `toCsv` style.
+   - `summariseE2e` filters by `isOk`, sorts by `totalMs`, returns
+     `E2eLatencyStats` with p50/p90/p95/p99 via the same percentile
+     formula `LatencyStats.summarise` uses (`((n-1)*p).round()`
+     index).
+   - `clearE2e` empties `_e2eRecords` and sets `_activeTrace=null`.
+     Phase F state (`_records`, `_pending`) untouched.
+
+   Privacy: never store or log the spoken text or any audio bytes
+   in the trace. Only ids, counts, and timestamps.
+
+2. mobile/lib/data/s1_phrases.dart — new file.
+
+   ```dart
+   class S1Phrase {
+     const S1Phrase({required this.id, required this.text});
+     final String id;   // kebab-case, unique
+     final String text; // Japanese prompt the user reads
+   }
+
+   const List<S1Phrase> s1Phrases = <S1Phrase>[
+     S1Phrase(id: 'greeting-01', text: 'おはようございます'),
+     // ...9 more, 5-10 chars each, varied (greetings, weather,
+     //   directions, food, time, numbers). No personal info, no
+     //   long sentences — keep under ~10 chars so PTT is short and
+     //   STT latency dominated by system overhead not audio length.
+   ];
+   ```
+
+   Picks must be ids without collisions. Text must be plain JP, no
+   emoji.
+
+3. mobile/lib/screens/translate_screen.dart — add the runner.
+
+   - One new IconButton or row of buttons near the existing PTT
+     control:
+       * "S1 Run 10" — starts the catalog loop
+       * "Copy E2E CSV" — copies `logger.toE2eCsv()` to the
+         clipboard (mirror the existing Copy CSV behaviour)
+       * "Clear E2E" — `logger.clearE2e()` + on-screen log line
+   - Runner state machine:
+       For each phrase in s1Phrases:
+         (a) Show the phrase text in a banner / overlay so the user
+             reads it.
+         (b) Wait up to 30 s for one full PTT cycle. If the user
+             presses, the existing PTT flow fires; the runner is
+             passive once PTT starts.
+         (c) On PTT press, call `logger.e2eStart(phrase.id)`.
+         (d) On PTT release, call `logger.e2eMarkPttRelease()`.
+         (e) On `session.opened` in the WS callback, call
+             `logger.e2eMarkSessionOpened(sessionId)`.
+         (f) On first `translation.partial`, call
+             `logger.e2eMarkFirstText()`.
+         (g) On `translation.final`, call
+             `logger.e2eMarkTranslationFinal()`.
+         (h) On BLE ACK with `status==0x01`, call
+             `logger.e2eMarkBleAck(sequenceId)` then
+             `logger.e2eFinalize()`.
+         (i) Wait 1.5 s for OLED clear, advance to next phrase.
+       If 30 s elapses without a release, call
+       `logger.e2eAbort('timeout')` and advance.
+   - Do not break the existing single-press PTT flow. The S1 runner
+     is additive: it just feeds phrase ids into the same hooks.
+
+4. tools/latency_report.py — implement `render_s1_markdown()`.
+
+   Follow the in-file spec block. Output sections in this exact
+   order: title + target line, "Stacked-bar by stage (median ms)"
+   table (one row per phrase id + a median row), "Overall total_ms"
+   table, "Per-stage percentiles" table, verdict, failures (only if
+   any). Excluded rows: any with non-empty `error` column or with
+   missing required ms columns for the stage being computed.
+   Clamp negative stage durations to 0 in display; if any
+   appeared, add a "Clock skew: N rows had negative stage deltas"
+   footer.
+
+5. tools/test_latency_report.py — new pytest file (project root
+   pytest is already configured; this lives in tools/ and runs via
+   `python -m pytest tools/`).
+
+   - `test_s1_render_happy_path`: 3-row fixture, asserts the output
+     contains the verdict line "GO" and the right p95 number.
+   - `test_s1_render_failure_section`: include 1 row with
+     `error=ws_error`; assert "Failures" header appears and the
+     row is excluded from percentiles.
+   - `test_s1_render_clock_skew_footer`: include 1 row with
+     `backend_ack_ms < audio_ms`; assert the footer is emitted.
+
+6. mobile/test/latency_logger_test.dart — add e2e tests.
+
+   - happy path: press → release → sessionOpened → firstText →
+     final → bleAck → finalize → assert record fields populated.
+   - abort path: start → abort('timeout') → finalize returns the
+     aborted record with errorCode='timeout'.
+   - discard on overlapping start: start('a') → start('b') (no
+     finalize between) → assert `_e2eRecords` has the 'a' record
+     with errorCode='discarded'.
+   - markBleAck without active trace is a no-op.
+   - clearE2e leaves Phase F records intact.
+
+## Hard constraints (always apply)
+
+- Branch from main: `feat/s1-day-9-latency-suite`.
+- NEVER push to main. NEVER force-push. NEVER add Co-Authored-By
+  trailers.
+- Conventional commit subject: `feat(mobile): S1 Day 9 end-to-end latency suite`.
+- Do not add dependencies in mobile or tools. Stdlib + flutter
+  built-ins only. Clipboard already used via `services.dart`
+  (`Clipboard.setData`).
+- Do not change `E2eLatencyRecord.csvHeader`, the field names, or
+  the `S1_STAGES` shape. The downstream report consumes the CSV
+  by column name.
+- Do not modify firmware/, backend/, infra/ec2/, .claude/, docs/
+  (except `docs/codex/S1_TASKS.md` to mark your rows DONE).
+- Privacy: never write the spoken prompt text into the CSV or any
+  log line. The phrase_id is the only reference; the report tool
+  joins back to the catalog if needed.
+- Match the existing latency_logger.dart style: `microsecondsSinceEpoch`
+  for clocks, `round()` for ms conversion, `List.unmodifiable` for
+  the public records getter.
+
+## Verification
+
+cd mobile
+flutter test test/latency_logger_test.dart
+# expect: green, including the 5 new e2e cases
+
+flutter test
+# expect: all tests green (no regressions)
+
+cd ../
+python -m pytest tools/
+# expect: tools/test_latency_report.py 3/3 green
+
+# On device:
+flutter run
+# tap "S1 Run 10", read 10 prompts one by one. Tap "Copy E2E CSV"
+# and paste the 10-row CSV into the PR description verification
+# output. Capture a screenshot of the runner banner if practical.
+
+python tools/latency_report.py --s1 the_pasted.csv > /tmp/r.md
+# expect: markdown with stacked-bar table, verdict line, no
+#         python tracebacks
+
+## PR description template
+
+## Summary
+<one paragraph: e2e logger + runner + report wired end-to-end>
+
+## Files added / modified
+<bullet list>
+
+## Verification output
+<paste raw command output, one block per command, plus the 10-row
+CSV from the device run>
+
+## Open questions for review
+<things you decided without explicit guidance>
+- Catalog text: which 10 phrases did you choose, and how long
+  is each in characters?
+- Did the 30 s per-phrase timeout fire on any phrase during
+  your manual run? (If yes, list which.)
+
+## Time spent
+~X hours
+
+After opening the PR, post the URL and STOP. Do not start Day 10.
+```
+
+---
+
 ## 3. Day-N task prompt — TEMPLATE (use for Day 8-10)
 
 Replace `<N>` with the day number, fill `<TASK_TITLE>`, `<COMMIT_SUBJECT>`,

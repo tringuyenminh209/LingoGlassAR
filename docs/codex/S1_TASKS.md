@@ -332,11 +332,19 @@ Commit subject: `feat(backend): S1 Day 8 cost logging + daily cap`.
 
 ## Day 9 — Latency suite end-to-end
 
+Prep (Claude, 2026-05-22 evening): `E2eLatencyRecord` + the
+`LatencyLogger.e2e*` method signatures are locked in
+`mobile/lib/services/latency_logger.dart`. The `--s1` flag dispatch
++ stage constants are stubbed in `tools/latency_report.py`. Codex
+implements the `UnimplementedError` bodies + UI wiring + tests.
+
 | Owner | Task | Verify |
 |---|---|---|
-| **Claude** | Design the e2e latency record shape: `phrase_id, audio_ms (push-to-talk duration), backend_ack_ms (first ack from WS), first_text_ms (first delta), full_text_ms (text.final), ble_ack_ms (Phase F ACK), total_ms`. | Document in `mobile/lib/services/latency_logger.dart` (extend or sibling file). |
-| **Codex** | Extend `LatencyLogger` to handle the e2e record (or new `S1LatencyLogger`). Add S1-Run-10 button on `TranslateScreen`. 10 pre-recorded JP phrases (record once, replay from assets), each triggers a session. Export CSV via existing Copy CSV pattern. | Run 10 phrases, CSV has 10 rows with all 7 columns populated. |
-| **Codex** | Extend `tools/latency_report.py`: add an `--s1` mode that summarises by stage (audio/backend/ble) instead of by MTU. | `py tools/latency_report.py --s1 out/s1_run.csv` produces stacked-bar markdown. |
+| **Claude** [DONE] | Design the e2e latency record shape: `phrase_id, audio_ms, backend_ack_ms, first_text_ms, full_text_ms, ble_ack_ms, total_ms` (relative to PTT press). Document in `mobile/lib/services/latency_logger.dart` as `E2eLatencyRecord` dataclass + `LatencyLogger.e2e*` API. | Locked in `latency_logger.dart`. |
+| **Codex** | Implement the `UnimplementedError` bodies in `LatencyLogger.e2e*` (start / markPttRelease / markSessionOpened / markFirstText / markTranslationFinal / markBleAck / abort / finalize / toE2eCsv / summariseE2e / clearE2e). Don't rename anything. | `flutter test test/latency_logger_test.dart` covers: start→complete happy path produces row with all 7 cols; abort sets `errorCode`; markBleAck without start is no-op; clearE2e leaves Phase F state untouched. |
+| **Codex** | Add a JP phrase catalog at `mobile/lib/data/s1_phrases.dart` with 10 short prompts (id + text, ~5-10 chars each, e.g. `greeting-01`, `weather-02`, `direction-03`). No audio assets — these are read by the user holding PTT, the catalog just paces the runner. | `flutter test` includes a smoke test verifying 10 entries with unique ids. |
+| **Codex** | Add an `S1-Run-10` button on `TranslateScreen` that iterates the catalog: for each phrase, displays the prompt to read, waits for one full PTT cycle (or timeout), records the e2e trace through the existing translator + BLE pipeline, then advances. CSV export via the existing Copy CSV pattern (new "Copy E2E CSV" button next to it). | Run on device, paste 10 rows. All `total_ms` populated for OK rows. |
+| **Codex** | Implement `render_s1_markdown()` in `tools/latency_report.py` per the in-file spec block: stacked-bar by stage, overall percentiles, per-stage percentiles, verdict against `p95(total_ms) <= 2500 ms`, failures section. | `python tools/latency_report.py --s1 path/to/sample.csv` runs on a 10-row fixture and prints the markdown. Unit test in `tools/test_latency_report.py` (new) covers a 3-row sample. |
 
 Commit subject: `feat(mobile): S1 Day 9 end-to-end latency suite`.
 

@@ -1,16 +1,28 @@
 #!/usr/bin/env python3
-"""Phase F latency report generator.
+"""Latency report generator.
 
-Reads a CSV emitted by the mobile spike harness (Copy CSV button in the
-Flutter app) and prints a markdown summary with per-MTU p50/p90/p95 plus
-the Go/No-Go verdict against the 50-200ms BLE leg budget.
+Two modes, selected by the input CSV's column shape (or by the explicit
+`--s1` flag for the S1 Day 9 e2e report):
+
+* **Phase F (default)**: per-MTU BLE-leg RTT p50/p90/p95 from the
+  `LatencyRecord` CSV produced by the Flutter "Copy CSV" button.
+  Target: BLE leg `p95 <= 200 ms`.
+
+* **S1 (--s1)**: per-stage end-to-end timeline from the
+  `E2eLatencyRecord` CSV produced by the Flutter "S1-Run-10" button
+  (Codex adds the button on Day 9). Stages are decomposed into audio,
+  handshake, STT, translation, and BLE legs, then rendered as a
+  stacked-bar markdown table with overall p50/p90/p95/p99 of
+  `total_ms`. Target: `p95(total_ms) <= 2500 ms`.
 
 Usage:
-    python tools/latency_report.py path/to/latency.csv
-    python tools/latency_report.py - < latency.csv  # stdin
+    python tools/latency_report.py path/to/latency.csv         # Phase F
+    python tools/latency_report.py - < latency.csv             # stdin
+    python tools/latency_report.py --s1 path/to/s1_run.csv     # Day 9
+    python tools/latency_report.py --s1 - < s1_run.csv         # stdin
 
-Output is markdown on stdout - paste into docs/phase_f_report.md or pipe to
-a file. No external dependencies; standard library only.
+Output is markdown on stdout - paste into the matching report doc or
+pipe to a file. No external dependencies; standard library only.
 """
 
 from __future__ import annotations
@@ -25,6 +37,21 @@ from typing import Iterable
 # BLE leg of the LingoGlass AR latency budget. See CLAUDE.md "Latency Budget".
 TARGET_MIN_MS = 50.0
 TARGET_MAX_MS = 200.0
+
+# S1 Day 9 end-to-end budget. p95(total_ms) <= 2500 ms is the Go gate.
+S1_TARGET_TOTAL_MS = 2500.0
+
+# Per-stage decomposition for the S1 stacked-bar report. Each entry is
+# (stage_label, csv_start_column, csv_end_column). Subtracting end-start
+# yields the stage duration; the audio stage is special-cased because its
+# start column is implicitly t=0 (PTT press).
+S1_STAGES: list[tuple[str, str | None, str]] = [
+    ("audio",     None,             "audio_ms"),
+    ("handshake", "audio_ms",       "backend_ack_ms"),
+    ("stt",       "backend_ack_ms", "first_text_ms"),
+    ("translate", "first_text_ms",  "full_text_ms"),
+    ("ble",       "full_text_ms",   "ble_ack_ms"),
+]
 
 
 def percentile(sorted_values: list[float], p: float) -> float:
@@ -129,7 +156,72 @@ def render_markdown(groups: dict[int, list[dict[str, str]]]) -> str:
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------------
+# S1 Day 9 — end-to-end stacked-bar report (Codex implements)
+# ---------------------------------------------------------------------------
+#
+# Input CSV header (matches E2eLatencyRecord.csvHeader in
+# mobile/lib/services/latency_logger.dart):
+#
+#   phrase_id,audio_ms,backend_ack_ms,first_text_ms,full_text_ms,
+#   ble_ack_ms,total_ms,session_id,ble_seq_id,error
+#
+# Required output:
+#
+#   # S1 Day 9 End-to-End Latency Report
+#
+#   Target: e2e `p95(total_ms) <= 2500 ms` per docs/CLAUDE.md.
+#
+#   ## Stacked-bar by stage (median ms)
+#
+#   | phrase | audio | handshake | stt | translate | ble | total |
+#   |--------|-------|-----------|-----|-----------|-----|-------|
+#   | greeting-01 | ... |
+#   ...
+#   | **median** | ... | ... | ... | ... | ... | ... |
+#
+#   ## Overall total_ms
+#
+#   | n_ok / n_total | p50 | p90 | p95 | p99 | min | max |
+#
+#   ## Per-stage percentiles
+#
+#   (one row per stage with p50/p90/p95)
+#
+#   ## Verdict
+#
+#   - p95(total_ms) = X ms vs target 2500 ms
+#   - **GO** / **NO-GO**
+#   - If NO-GO: which stage is the biggest contributor (highest median).
+#
+# Errors: rows with non-empty `error` column are reported in a "Failures"
+# section by error code count, and excluded from percentile math.
+#
+# Codex fills the body of render_s1_markdown and the --s1 dispatch in main.
+
+
+def render_s1_markdown(rows: list[dict[str, str]]) -> str:
+    """Build the S1 Day 9 stacked-bar markdown.  See block comment above
+    for the required output structure and the verdict gate.
+
+    Implementation hints:
+    - Use percentile() and a per-stage list comprehension on `rows`.
+    - Skip rows where any required column for a given stage is missing
+      (empty string) and count them under "Failures" instead.
+    - Clamp negative stage durations to 0 in display, but flag them in
+      a "Clock skew" footer if any appear (server-clock drift symptom).
+    """
+    raise NotImplementedError("S1 Day 9 — Codex implements render_s1_markdown")
+
+
 def main(argv: list[str]) -> int:
+    if len(argv) == 3 and argv[1] == "--s1":
+        rows = load_rows(argv[2])
+        if not rows:
+            print("no rows in input CSV", file=sys.stderr)
+            return 1
+        print(render_s1_markdown(rows))
+        return 0
     if len(argv) != 2:
         print(__doc__, file=sys.stderr)
         return 2
