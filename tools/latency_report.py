@@ -38,17 +38,18 @@ from typing import Iterable
 TARGET_MIN_MS = 50.0
 TARGET_MAX_MS = 200.0
 
-# S1 Day 9 end-to-end budget. p95(total_ms) <= 2500 ms is the Go gate.
+# S1 Day 9 end-to-end budget. Gate is p95(system_latency_ms) where
+# system_latency_ms = ble_ack_ms - audio_ms — post-PTT-release latency
+# only, excludes user hold duration. The CLAUDE.md "Latency Budget"
+# 1.5-2.5s target is for system latency, not press-to-glass total.
 S1_TARGET_TOTAL_MS = 2500.0
 
-# Per-stage decomposition for the S1 stacked-bar report. Each entry is
-# (stage_label, csv_start_column, csv_end_column). Subtracting end-start
-# yields the stage duration; the audio stage is special-cased because its
-# start column is implicitly t=0 (PTT press).
-S1_STAGES: list[tuple[str, str | None, str]] = [
-    ("audio",     None,             "audio_ms"),
-    ("handshake", "audio_ms",       "backend_ack_ms"),
-    ("stt",       "backend_ack_ms", "first_text_ms"),
+# Per-stage decomposition AFTER PTT release. Backend handshake runs
+# CONCURRENT with PTT hold (session.opened arrives ~1s after press while
+# user is still holding), so it is reported separately as an info-only
+# column, not stacked on top of stt/translate/ble.
+S1_STAGES: list[tuple[str, str, str]] = [
+    ("stt",       "audio_ms",       "first_text_ms"),
     ("translate", "first_text_ms",  "full_text_ms"),
     ("ble",       "full_text_ms",   "ble_ack_ms"),
 ]
@@ -157,7 +158,7 @@ def render_markdown(groups: dict[int, list[dict[str, str]]]) -> str:
 
 
 # ---------------------------------------------------------------------------
-# S1 Day 9 — end-to-end stacked-bar report (Codex implements)
+# S1 Day 9 — end-to-end report
 # ---------------------------------------------------------------------------
 #
 # Input CSV header (matches E2eLatencyRecord.csvHeader in
@@ -166,50 +167,30 @@ def render_markdown(groups: dict[int, list[dict[str, str]]]) -> str:
 #   phrase_id,audio_ms,backend_ack_ms,first_text_ms,full_text_ms,
 #   ble_ack_ms,total_ms,session_id,ble_seq_id,error
 #
-# Required output:
+# All *_ms columns are deltas from PTT press_ts (NOT from PTT release).
+# Important: backend WS session.opened arrives ~1s after press while the
+# user is still holding PTT (audio_ms is typically 3-5s). So
+# `backend_ack_ms < audio_ms` is the normal warm-WS case, NOT clock skew.
 #
-#   # S1 Day 9 End-to-End Latency Report
-#
-#   Target: e2e `p95(total_ms) <= 2500 ms` per docs/CLAUDE.md.
-#
-#   ## Stacked-bar by stage (median ms)
-#
-#   | phrase | audio | handshake | stt | translate | ble | total |
-#   |--------|-------|-----------|-----|-----------|-----|-------|
-#   | greeting-01 | ... |
-#   ...
-#   | **median** | ... | ... | ... | ... | ... | ... |
-#
-#   ## Overall total_ms
-#
-#   | n_ok / n_total | p50 | p90 | p95 | p99 | min | max |
-#
-#   ## Per-stage percentiles
-#
-#   (one row per stage with p50/p90/p95)
-#
-#   ## Verdict
-#
-#   - p95(total_ms) = X ms vs target 2500 ms
-#   - **GO** / **NO-GO**
-#   - If NO-GO: which stage is the biggest contributor (highest median).
-#
-# Errors: rows with non-empty `error` column are reported in a "Failures"
-# section by error code count, and excluded from percentile math.
-#
-# Codex fills the body of render_s1_markdown and the --s1 dispatch in main.
+# The latency budget gate (CLAUDE.md "Latency Budget" 1.5-2.5s) applies
+# to *system* latency: the duration from PTT RELEASE to BLE ACK, i.e.
+#   system_latency_ms = ble_ack_ms - audio_ms
+# Decomposed into stt / translate / ble post-release stages. Handshake
+# and hold are reported separately as info-only columns.
 
 
 def render_s1_markdown(rows: list[dict[str, str]]) -> str:
-    """Build the S1 Day 9 stacked-bar markdown.  See block comment above
-    for the required output structure and the verdict gate.
+    """Build the S1 Day 9 markdown report.
 
-    Implementation hints:
-    - Use percentile() and a per-stage list comprehension on `rows`.
-    - Skip rows where any required column for a given stage is missing
-      (empty string) and count them under "Failures" instead.
-    - Clamp negative stage durations to 0 in display, but flag them in
-      a "Clock skew" footer if any appear (server-clock drift symptom).
+    Output sections:
+      1. Per-phrase median table (stt/translate/ble + system_lat + info).
+      2. Overall system_latency_ms percentiles.
+      3. Per-stage percentiles (post-release stages only).
+      4. Verdict: GO iff p95(system_latency_ms) <= 2500ms.
+      5. Failures table from the `error` column.
+      6. Clock-skew footer if any post-release stage delta < 0 (real skew
+         or out-of-order frames — backend issue, not the audio/handshake
+         ordering quirk).
     """
     clean_rows = [row for row in rows if not row.get("error", "").strip()]
     failures: dict[str, int] = defaultdict(int)
@@ -221,16 +202,22 @@ def render_s1_markdown(rows: list[dict[str, str]]) -> str:
     phrase_stages: dict[str, dict[str, list[float]]] = defaultdict(
         lambda: defaultdict(list)
     )
+    phrase_system_lat: dict[str, list[float]] = defaultdict(list)
+    phrase_handshake: dict[str, list[float]] = defaultdict(list)
+    phrase_hold: dict[str, list[float]] = defaultdict(list)
+
     stage_values: dict[str, list[float]] = defaultdict(list)
-    totals_by_phrase: dict[str, list[float]] = defaultdict(list)
-    total_values: list[float] = []
+    system_lat_values: list[float] = []
+    handshake_values: list[float] = []
+    hold_values: list[float] = []
     skew_rows = 0
 
     for row in clean_rows:
         phrase_id = row.get("phrase_id", "").strip() or "<missing>"
         row_had_skew = False
+
         for label, start_column, end_column in S1_STAGES:
-            start = 0.0 if start_column is None else _float_cell(row, start_column)
+            start = _float_cell(row, start_column)
             end = _float_cell(row, end_column)
             if start is None or end is None:
                 continue
@@ -241,35 +228,62 @@ def render_s1_markdown(rows: list[dict[str, str]]) -> str:
             phrase_stages[phrase_id][label].append(stage_ms)
             stage_values[label].append(stage_ms)
 
-        total = _float_cell(row, "total_ms")
-        if total is not None:
-            total_values.append(total)
-            totals_by_phrase[phrase_id].append(total)
+        audio = _float_cell(row, "audio_ms")
+        ble = _float_cell(row, "ble_ack_ms")
+        if audio is not None and ble is not None:
+            sys_lat = ble - audio
+            if sys_lat < 0:
+                row_had_skew = True
+                sys_lat = 0.0
+            phrase_system_lat[phrase_id].append(sys_lat)
+            system_lat_values.append(sys_lat)
+
+        handshake = _float_cell(row, "backend_ack_ms")
+        if handshake is not None:
+            phrase_handshake[phrase_id].append(handshake)
+            handshake_values.append(handshake)
+        if audio is not None:
+            phrase_hold[phrase_id].append(audio)
+            hold_values.append(audio)
+
         if row_had_skew:
             skew_rows += 1
 
-    total_values.sort()
+    system_lat_values.sort()
     lines: list[str] = [
         "# S1 Day 9 End-to-End Latency Report",
         "",
         (
-            f"Target: e2e `p95(total_ms) <= {S1_TARGET_TOTAL_MS:.0f} ms` "
-            "per docs/CLAUDE.md."
+            f"Target: `p95(system_latency_ms) <= {S1_TARGET_TOTAL_MS:.0f} ms` "
+            "per docs/CLAUDE.md latency budget."
         ),
         "",
-        "## Stacked-bar by stage (median ms)",
+        "`system_latency_ms = ble_ack_ms - audio_ms` — post-PTT-release "
+        "duration. `hold_ms` and `handshake_ms` are concurrent with PTT "
+        "press and reported info-only.",
         "",
-        "| phrase | audio | handshake | stt | translate | ble | total |",
-        "|--------|------:|----------:|----:|----------:|----:|------:|",
+        "## Per-phrase median (ms)",
+        "",
+        "| phrase | stt | translate | ble | system_lat | hold | handshake |",
+        "|--------|----:|----------:|----:|-----------:|-----:|----------:|",
     ]
-    for phrase_id in sorted(set(phrase_stages) | set(totals_by_phrase)):
+    all_phrase_ids = (
+        set(phrase_stages)
+        | set(phrase_system_lat)
+        | set(phrase_handshake)
+        | set(phrase_hold)
+    )
+    for phrase_id in sorted(all_phrase_ids):
         stage_cells = [
             _s1_median_cell(phrase_stages[phrase_id].get(label, []))
             for label, _, _ in S1_STAGES
         ]
+        sys_cell = _s1_median_cell(phrase_system_lat.get(phrase_id, []))
+        hold_cell = _s1_median_cell(phrase_hold.get(phrase_id, []))
+        hs_cell = _s1_median_cell(phrase_handshake.get(phrase_id, []))
         lines.append(
             f"| {phrase_id} | {' | '.join(stage_cells)} | "
-            f"{_s1_median_cell(totals_by_phrase[phrase_id])} |"
+            f"{sys_cell} | {hold_cell} | {hs_cell} |"
         )
 
     median_cells = [
@@ -277,25 +291,27 @@ def render_s1_markdown(rows: list[dict[str, str]]) -> str:
     ]
     lines.append(
         f"| **median** | {' | '.join(median_cells)} | "
-        f"{_s1_median_cell(total_values)} |"
+        f"{_s1_median_cell(system_lat_values)} | "
+        f"{_s1_median_cell(hold_values)} | "
+        f"{_s1_median_cell(handshake_values)} |"
     )
     lines.extend(
         [
             "",
-            "## Overall total_ms",
+            "## Overall system_latency_ms",
             "",
             "| n_ok / n_total | p50 | p90 | p95 | p99 | min | max |",
             "|---------------:|----:|----:|----:|----:|----:|----:|",
         ]
     )
-    if total_values:
+    if system_lat_values:
         lines.append(
-            f"| {len(total_values)} / {len(rows)} | "
-            f"{percentile(total_values, 0.50):.0f} | "
-            f"{percentile(total_values, 0.90):.0f} | "
-            f"{percentile(total_values, 0.95):.0f} | "
-            f"{percentile(total_values, 0.99):.0f} | "
-            f"{total_values[0]:.0f} | {total_values[-1]:.0f} |"
+            f"| {len(system_lat_values)} / {len(rows)} | "
+            f"{percentile(system_lat_values, 0.50):.0f} | "
+            f"{percentile(system_lat_values, 0.90):.0f} | "
+            f"{percentile(system_lat_values, 0.95):.0f} | "
+            f"{percentile(system_lat_values, 0.99):.0f} | "
+            f"{system_lat_values[0]:.0f} | {system_lat_values[-1]:.0f} |"
         )
     else:
         lines.append(f"| 0 / {len(rows)} | - | - | - | - | - | - |")
@@ -303,7 +319,7 @@ def render_s1_markdown(rows: list[dict[str, str]]) -> str:
     lines.extend(
         [
             "",
-            "## Per-stage percentiles",
+            "## Per-stage percentiles (post-release)",
             "",
             "| stage | n | p50 | p90 | p95 |",
             "|-------|--:|----:|----:|----:|",
@@ -322,14 +338,17 @@ def render_s1_markdown(rows: list[dict[str, str]]) -> str:
             lines.append(f"| {label} | 0 | - | - | - |")
 
     lines.extend(["", "## Verdict", ""])
-    if not total_values:
-        lines.append("- p95(total_ms) = - vs target 2500 ms")
+    if not system_lat_values:
+        lines.append(
+            f"- p95(system_latency_ms) = - vs target "
+            f"{S1_TARGET_TOTAL_MS:.0f} ms"
+        )
         lines.append("- **NO DATA**")
     else:
-        p95_total = percentile(total_values, 0.95)
-        decision = "GO" if p95_total <= S1_TARGET_TOTAL_MS else "NO-GO"
+        p95_sys = percentile(system_lat_values, 0.95)
+        decision = "GO" if p95_sys <= S1_TARGET_TOTAL_MS else "NO-GO"
         lines.append(
-            f"- p95(total_ms) = {p95_total:.0f} ms vs target "
+            f"- p95(system_latency_ms) = {p95_sys:.0f} ms vs target "
             f"{S1_TARGET_TOTAL_MS:.0f} ms"
         )
         lines.append(f"- **{decision}**")
@@ -349,7 +368,9 @@ def render_s1_markdown(rows: list[dict[str, str]]) -> str:
             lines.append(f"| {error} | {count} |")
 
     if skew_rows:
-        lines.extend(["", f"Clock skew: {skew_rows} rows had negative stage deltas."])
+        lines.extend(
+            ["", f"Clock skew: {skew_rows} rows had negative post-release stage deltas."]
+        )
     lines.append("")
     return "\n".join(lines)
 

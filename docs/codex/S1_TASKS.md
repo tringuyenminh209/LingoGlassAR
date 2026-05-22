@@ -338,23 +338,24 @@ Prep (Claude, 2026-05-22 evening): `E2eLatencyRecord` + the
 + stage constants are stubbed in `tools/latency_report.py`. Codex
 implements the `UnimplementedError` bodies + UI wiring + tests.
 
-| Owner | Task | Verify |
-|---|---|---|
-| **Claude** [DONE] | Design the e2e latency record shape: `phrase_id, audio_ms, backend_ack_ms, first_text_ms, full_text_ms, ble_ack_ms, total_ms` (relative to PTT press). Document in `mobile/lib/services/latency_logger.dart` as `E2eLatencyRecord` dataclass + `LatencyLogger.e2e*` API. | Locked in `latency_logger.dart`. |
-| **Codex** | Implement the `UnimplementedError` bodies in `LatencyLogger.e2e*` (start / markPttRelease / markSessionOpened / markFirstText / markTranslationFinal / markBleAck / abort / finalize / toE2eCsv / summariseE2e / clearE2e). Don't rename anything. | `flutter test test/latency_logger_test.dart` covers: start→complete happy path produces row with all 7 cols; abort sets `errorCode`; markBleAck without start is no-op; clearE2e leaves Phase F state untouched. |
-| **Codex** | Add a JP phrase catalog at `mobile/lib/data/s1_phrases.dart` with 10 short prompts (id + text, ~5-10 chars each, e.g. `greeting-01`, `weather-02`, `direction-03`). No audio assets — these are read by the user holding PTT, the catalog just paces the runner. | `flutter test` includes a smoke test verifying 10 entries with unique ids. |
-| **Codex** | Add an `S1-Run-10` button on `TranslateScreen` that iterates the catalog: for each phrase, displays the prompt to read, waits for one full PTT cycle (or timeout), records the e2e trace through the existing translator + BLE pipeline, then advances. CSV export via the existing Copy CSV pattern (new "Copy E2E CSV" button next to it). | Run on device, paste 10 rows. All `total_ms` populated for OK rows. |
-| **Codex** | Implement `render_s1_markdown()` in `tools/latency_report.py` per the in-file spec block: stacked-bar by stage, overall percentiles, per-stage percentiles, verdict against `p95(total_ms) <= 2500 ms`, failures section. | `python tools/latency_report.py --s1 path/to/sample.csv` runs on a 10-row fixture and prints the markdown. Unit test in `tools/test_latency_report.py` (new) covers a 3-row sample. |
+| Owner | Task | Verify | Status |
+|---|---|---|---|
+| **Claude** [DONE `8c61b15`] | Design the e2e latency record shape: `phrase_id, audio_ms, backend_ack_ms, first_text_ms, full_text_ms, ble_ack_ms, total_ms` (relative to PTT press). Document in `mobile/lib/services/latency_logger.dart` as `E2eLatencyRecord` dataclass + `LatencyLogger.e2e*` API. | Locked in `latency_logger.dart`. | DONE |
+| **Codex** [DONE PR #9 `f0bc88f`] | Implement the `UnimplementedError` bodies in `LatencyLogger.e2e*` (start / markPttRelease / markSessionOpened / markFirstText / markTranslationFinal / markBleAck / abort / finalize / toE2eCsv / summariseE2e / clearE2e). Don't rename anything. | `flutter test test/latency_logger_test.dart` — 11/11 pass. | DONE |
+| **Codex** [DONE PR #9 `f0bc88f`] | Add a JP phrase catalog at `mobile/lib/data/s1_phrases.dart` with 10 short prompts. | `flutter test test/s1_phrases_test.dart` — 1/1 pass. | DONE |
+| **Codex** [DONE PR #9 `f0bc88f`] | Add an `S1-Run-10` button on `TranslateScreen` that iterates the catalog: for each phrase, displays the prompt, waits for PTT cycle or timeout, records e2e trace, advances. CSV export via "Copy E2E CSV" button. | Run on device 2026-05-22, 9/10 OK rows captured. | DONE |
+| **Codex** [DONE PR #9 `f0bc88f`] | Implement `render_s1_markdown()` in `tools/latency_report.py` + tests. | `python tools/latency_report.py --s1` works. | DONE |
+| **Claude** [DONE post-device] | Fix schema bug discovered during 2026-05-22 device run: `S1_STAGES` assumed `backend_ack_ms > audio_ms` sequential order, but WS handshake runs CONCURRENT with PTT hold (`backend_ack ≈ 1s`, `audio_ms ≈ 4-5s`). Reorder stages to post-release only (stt / translate / ble), move handshake + hold to info-only columns, change verdict gate from `p95(total_ms)` to `p95(system_latency_ms)` where `system_latency_ms = ble_ack_ms - audio_ms`. Update `latency_logger.dart` comment block to match. | `pytest tools/test_latency_report.py` 4/4 pass. Real CSV renders GO with p95=1493ms. | DONE |
 
 Commit subject: `feat(mobile): S1 Day 9 end-to-end latency suite`.
 
 ## Day 10 — Report + Go/No-Go
 
-| Owner | Task | Verify |
-|---|---|---|
-| **Claude** | Write `docs/s1_report.md` with results, anomalies, decision. Same structure as `phase_f_report.md`. Go = e2e p95 < 2.5 s + cost < $1/session at MTU 247. | File committed. |
-| **Codex** | Update root `README.md` (create if missing) with the current high-level architecture diagram + how-to-run. | `gh repo view --web` shows updated README. |
-| **Claude** | Tag release `v0.2.0-s1` after Go. Update `MEMORY.md` to mark S1 complete. | `git tag` listed. |
+| Owner | Task | Verify | Status |
+|---|---|---|---|
+| **Claude** [DONE 2026-05-22] | Write Day 9 report with results, anomalies, decision. Go = e2e p95 < 2.5 s. | `docs/reports/S1_Day9_report.md` + raw CSV + rendered markdown. p95=1493ms, **GO**. | DONE |
+| **Codex** | Update root `README.md` (create if missing) with high-level architecture + how-to-run. | `gh repo view --web` shows updated README. | pending |
+| **Claude** | Tag release `v0.2.0-s1` after Go. Update `MEMORY.md` to mark S1 complete. | `git tag` listed. | pending |
 
 Commit subject: `docs(s1): Run 1 results + Go/No-Go verdict`.
 

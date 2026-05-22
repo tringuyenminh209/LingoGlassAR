@@ -196,17 +196,24 @@ class E2eLatencyRecord {
 
 /// p50/p90/p95/p99 of `total_ms` across OK e2e records.
 ///
-/// Stage durations (computed by the report tool, not the logger):
-///   stage_audio_ms     = audio_ms
-///   stage_handshake_ms = backend_ack_ms - audio_ms       (>=0)
-///   stage_stt_ms       = first_text_ms - backend_ack_ms  (>=0)
-///   stage_translate_ms = full_text_ms - first_text_ms    (>=0)
+/// Note: `total_ms` is `ble_ack_ms` relative to PTT press — it includes
+/// the user's PTT hold duration. The CLAUDE.md latency budget gate
+/// (1.5-2.5s) applies to *system* latency, NOT press-to-glass total.
+/// The report tool computes:
+///   system_latency_ms  = ble_ack_ms    - audio_ms        (>=0)
+/// Decomposed into post-release stages:
+///   stage_stt_ms       = first_text_ms - audio_ms        (>=0)
+///   stage_translate_ms = full_text_ms  - first_text_ms   (>=0)
 ///   stage_ble_ms       = ble_ack_ms    - full_text_ms    (>=0)
 ///
-/// The mobile-side `summariseE2e` returns only the overall total stats;
-/// the per-stage decomposition is produced by `tools/latency_report.py
-/// --s1` so a single source of truth handles negative-delta edge cases
-/// (server-clock skew) consistently.
+/// Concurrent with PTT hold (NOT part of system latency):
+///   handshake_ms       = backend_ack_ms (info-only — session.opened
+///                                        arrives during hold)
+///   hold_ms            = audio_ms       (user-controlled, info-only)
+///
+/// The mobile-side `summariseE2e` returns total_ms stats only; the
+/// per-stage and system_latency_ms decomposition is the job of
+/// `tools/latency_report.py --s1`.
 class E2eLatencyStats {
   const E2eLatencyStats({
     required this.count,
