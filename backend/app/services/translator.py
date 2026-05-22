@@ -241,6 +241,9 @@ class Translator:
                 )
 
             await self._send_json({"type": "input_audio_buffer.commit"})
+            # S1 Day 8 probe — confirms the commit/create sequence reached
+            # the broker. No payload bytes logged.
+            logger.info("realtime.audio_committed model=%s", self._model)
             # GA `response.create` uses `output_modalities` to mirror the
             # session-level field; `modalities` is rejected.
             await self._send_json(
@@ -259,6 +262,10 @@ class Translator:
             async for raw_event in self._ws:
                 event = _decode_event(raw_event)
                 event_type = event.get("type")
+                # S1 Day 8 probe — log only the event type so we can see
+                # which response.* arrive in real traffic. Removed once
+                # response.done usage shape is locked.
+                logger.info("realtime.event type=%s", event_type)
 
                 # GA renamed the text streaming events
                 # (`response.text.*` -> `response.output_text.*`). Accept the
