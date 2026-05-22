@@ -245,7 +245,11 @@ class Translator:
                                     "type": "audio/pcm",
                                     "rate": 24000,
                                 },
-                                "transcription": {"model": "whisper-1"},
+                                "transcription": {
+                                    "model": self._stt_config.transcription_model,
+                                    "delay": self._stt_config.transcription_delay,
+                                },
+                                "turn_detection": None,
                             },
                         },
                     },
@@ -308,7 +312,6 @@ class Translator:
                     "type": "response.create",
                     "response": {
                         "output_modalities": ["text"],
-                        "instructions": SYSTEM_INSTRUCTIONS,
                     },
                 }
             )
