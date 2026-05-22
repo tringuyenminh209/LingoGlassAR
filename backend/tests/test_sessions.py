@@ -9,32 +9,12 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from app.api import sessions
+from app.core.config import Settings, get_settings
 from app.core.redis import get_redis
 from app.main import create_app
+from app.services.cost_logger import CostUsage
 from app.services.translator import TextDelta
-
-
-class FakeRedis:
-    def __init__(self) -> None:
-        self.hashes: dict[str, dict[str, str]] = {}
-        self.expires: dict[str, int] = {}
-        self.hset_calls: list[tuple[str, dict[str, str]]] = []
-        self.expire_calls: list[tuple[str, int]] = []
-        self.hgetall_calls: list[str] = []
-
-    async def hset(self, name: str, mapping: dict[str, str]) -> int:
-        self.hashes.setdefault(name, {}).update(mapping)
-        self.hset_calls.append((name, mapping))
-        return len(mapping)
-
-    async def expire(self, name: str, time: int) -> bool:
-        self.expires[name] = time
-        self.expire_calls.append((name, time))
-        return True
-
-    async def hgetall(self, name: str) -> dict[str, str]:
-        self.hgetall_calls.append(name)
-        return self.hashes.get(name, {})
+from tests.fakes import FakeRedis
 
 
 class FakeTranslator:
@@ -54,16 +34,33 @@ class FakeTranslator:
         self.audio = [frame async for frame in audio_frames]
         yield TextDelta("Xin ")
         yield TextDelta("chao")
-        yield TextDelta("", final=True)
+        yield TextDelta(
+            "",
+            final=True,
+            usage=CostUsage(
+                audio_input_tokens=10,
+                text_input_tokens=46,
+                cached_audio_input_tokens=0,
+                cached_text_input_tokens=0,
+                text_output_tokens=5,
+                audio_output_tokens=0,
+                total_tokens=61,
+            ),
+        )
 
 
-def make_client(fake_redis: FakeRedis) -> TestClient:
+def make_client(
+    fake_redis: FakeRedis,
+    settings: Settings | None = None,
+) -> TestClient:
     app = create_app()
 
     async def override_get_redis() -> AsyncIterator[FakeRedis]:
         yield fake_redis
 
     app.dependency_overrides[get_redis] = override_get_redis
+    if settings is not None:
+        app.dependency_overrides[get_settings] = lambda: settings
     return TestClient(app)
 
 
@@ -88,7 +85,7 @@ def audio_chunk(session_id: str, seq: int, payload: bytes) -> dict[str, object]:
         "sessionId": session_id,
         "seq": seq,
         "codec": "pcm16",
-        "sampleRateHz": 16000,
+        "sampleRateHz": 24000,
         "dataBase64": base64.b64encode(payload).decode("ascii"),
         "clientTs": now_iso(),
     }
@@ -160,6 +157,10 @@ def test_ws_happy_path_relays_translation(monkeypatch) -> None:
     assert second["text"] == "chao"
     assert final["type"] == "translation.final"
     assert final["translatedText"] == "Xin chao"
+    cost_fields = fake_redis.hashes[f"session:{session_id}:cost"]
+    assert cost_fields["audio_input_tokens"] == "10"
+    assert cost_fields["text_input_tokens"] == "46"
+    assert cost_fields["text_output_tokens"] == "5"
 
 
 def test_ws_invalid_frame_returns_error_and_stays_open(monkeypatch) -> None:
@@ -179,3 +180,16 @@ def test_ws_invalid_frame_returns_error_and_stays_open(monkeypatch) -> None:
             ws.send_json(session_start(str(uuid4())))
             opened = ws.receive_json()
             assert opened["type"] == "session.opened"
+
+
+def test_create_session_blocked_by_cap() -> None:
+    fake_redis = FakeRedis()
+    today = datetime.now(UTC).date().isoformat()
+    fake_redis.hashes[f"cost:daily:{today}"] = {"usd": "0.001"}
+    settings = Settings(daily_usd_cap=0.0001)
+
+    with make_client(fake_redis, settings) as client:
+        response = client.post("/v1/sessions")
+
+    assert response.status_code == 429
+    assert response.json()["error"]["code"] == "daily_cap_exceeded"
