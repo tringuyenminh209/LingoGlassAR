@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -17,6 +18,8 @@ from redis.asyncio import Redis
 from app.core.config import get_settings
 from app.core.redis import get_redis
 from app.services.translator import Translator, TranslatorError
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -140,7 +143,19 @@ async def session_stream(
 
             try:
                 _validate_ws_event(event)
-            except ValidationError:
+            except ValidationError as ve:
+                # S1 Day 8 probe — log validation failures so we can see
+                # what the mobile client actually sends without waiting for
+                # it to report the error back.  Only the event type and
+                # JSON-pointer path of the failing field are logged; no
+                # payload values (which could include base64 audio).
+                logger.info(
+                    "ws.invalid_event session=%s type=%s path=%s reason=%s",
+                    session_id,
+                    event.get("type") if isinstance(event, dict) else None,
+                    "/".join(str(p) for p in ve.absolute_path) or "<root>",
+                    ve.validator,
+                )
                 await _send_error(
                     websocket,
                     code="invalid_event",
@@ -151,6 +166,9 @@ async def session_stream(
                 continue
 
             event_type = event.get("type")
+            # S1 Day 8 probe — track which events reach the session loop
+            # and in what order. Logs type only (no payload).
+            logger.info("ws.event session=%s type=%s", session_id, event_type)
 
             if event_type == "metrics":
                 continue
