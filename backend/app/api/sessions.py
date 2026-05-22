@@ -9,14 +9,20 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Body, Depends, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Body, Depends, WebSocket, WebSocketDisconnect
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 from pydantic import BaseModel, Field
 from redis.asyncio import Redis
+from starlette.responses import JSONResponse
 
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.core.redis import get_redis
+from app.services.cost_logger import (
+    CostLogger,
+    DailyCapExceeded,
+    enforce_daily_cap,
+)
 from app.services.translator import Translator, TranslatorError
 
 logger = logging.getLogger(__name__)
@@ -54,6 +60,23 @@ class ApiFail(BaseModel):
     error: ApiError
 
 
+def get_cost_logger(
+    redis: Annotated[Redis, Depends(get_redis)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> CostLogger:
+    return CostLogger(
+        redis,
+        usd_per_m_audio_input=settings.usd_per_m_audio_input,
+        usd_per_m_text_input=settings.usd_per_m_text_input,
+        usd_per_m_audio_cached_input=settings.usd_per_m_audio_cached_input,
+        usd_per_m_text_cached_input=settings.usd_per_m_text_cached_input,
+        usd_per_m_text_output=settings.usd_per_m_text_output,
+        usd_per_m_audio_output=settings.usd_per_m_audio_output,
+        daily_usd_cap=settings.daily_usd_cap,
+        session_ttl_seconds=SESSION_TTL_SECONDS,
+    )
+
+
 def _utc_now() -> datetime:
     return datetime.now(UTC)
 
@@ -77,13 +100,25 @@ def _ws_url(session_id: UUID) -> str:
     responses={429: {"model": ApiFail}},
 )
 async def create_session(
-    request: Request,
     redis: Annotated[Redis, Depends(get_redis)],
+    cost_logger: Annotated[CostLogger, Depends(get_cost_logger)],
+    settings: Annotated[Settings, Depends(get_settings)],
     payload: Annotated[SessionCreateRequest | None, Body()] = None,
-) -> SessionCreateResponse:
-    del request  # Reserved for Day 8 cap checks that may need client metadata.
-    # TODO(S1 Day 8): enforce DAILY_USD_CAP here and return ApiFail with
-    # code="daily_cap_exceeded" and HTTP 429 when the cap is breached.
+) -> SessionCreateResponse | JSONResponse:
+    try:
+        await enforce_daily_cap(cost_logger, cap_usd=settings.daily_usd_cap)
+    except DailyCapExceeded as exc:
+        return JSONResponse(
+            status_code=429,
+            content=ApiFail(
+                success=False,
+                error=ApiError(
+                    code="daily_cap_exceeded",
+                    message=str(exc),
+                ),
+            ).model_dump(),
+        )
+
     session_id = uuid4()
     created_at = _utc_now()
     expires_at = created_at + timedelta(seconds=SESSION_TTL_SECONDS)
@@ -113,6 +148,7 @@ async def session_stream(
     websocket: WebSocket,
     session_id: UUID,
     redis: Annotated[Redis, Depends(get_redis)],
+    cost_logger: Annotated[CostLogger, Depends(get_cost_logger)],
 ) -> None:
     await websocket.accept()
     session_key = f"session:{session_id}"
@@ -264,6 +300,8 @@ async def session_stream(
                             if source_text is not None:
                                 payload["sourceText"] = source_text
                             await websocket.send_json(payload)
+                            if delta.usage is not None:
+                                await cost_logger.record(session_id, delta.usage)
                             break
                 except TranslatorError as exc:
                     await _send_error(
