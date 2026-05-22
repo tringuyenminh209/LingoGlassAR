@@ -3,7 +3,7 @@ from collections.abc import AsyncIterator
 
 import pytest
 
-from app.services.translator import TextDelta, Translator, TranslatorError
+from app.services.translator import STTConfig, TextDelta, Translator, TranslatorError
 
 
 class FakeWebSocket:
@@ -67,6 +67,74 @@ async def test_translate_stream_emits_text_deltas_in_order(monkeypatch) -> None:
         "response.create",
     ]
     assert fake_ws.closed is True
+
+
+@pytest.mark.asyncio
+async def test_session_update_uses_stt_config_defaults(monkeypatch) -> None:
+    fake_ws = FakeWebSocket([])
+
+    async def fake_connect(*args, **kwargs) -> FakeWebSocket:
+        return fake_ws
+
+    monkeypatch.setattr("app.services.translator.websockets.connect", fake_connect)
+
+    async with Translator(api_key="x"):
+        pass
+
+    session_update = fake_ws.sent[0]
+    session = session_update["session"]
+    audio_input = session["audio"]["input"]
+
+    assert session_update["type"] == "session.update"
+    assert audio_input["transcription"] == {
+        "model": "gpt-realtime-whisper",
+        "delay": "low",
+    }
+    assert "turn_detection" in audio_input
+    assert audio_input["turn_detection"] is None
+    assert "turn_detection" not in session
+
+
+@pytest.mark.asyncio
+async def test_session_update_honours_custom_stt_config(monkeypatch) -> None:
+    fake_ws = FakeWebSocket([])
+
+    async def fake_connect(*args, **kwargs) -> FakeWebSocket:
+        return fake_ws
+
+    monkeypatch.setattr("app.services.translator.websockets.connect", fake_connect)
+
+    async with Translator(
+        api_key="x",
+        stt_config=STTConfig(transcription_delay="minimal"),
+    ):
+        pass
+
+    session_update = fake_ws.sent[0]
+    transcription = session_update["session"]["audio"]["input"]["transcription"]
+
+    assert transcription["delay"] == "minimal"
+
+
+@pytest.mark.asyncio
+async def test_response_create_omits_instructions(monkeypatch) -> None:
+    fake_ws = FakeWebSocket([{"type": "response.text.done"}])
+
+    async def fake_connect(*args, **kwargs) -> FakeWebSocket:
+        return fake_ws
+
+    monkeypatch.setattr("app.services.translator.websockets.connect", fake_connect)
+
+    async with Translator(api_key="x") as translator:
+        _ = [delta async for delta in translator.translate_stream(audio_chunks())]
+
+    response_create = next(
+        event for event in fake_ws.sent if event["type"] == "response.create"
+    )
+    response = response_create["response"]
+
+    assert response["output_modalities"] == ["text"]
+    assert "instructions" not in response
 
 
 @pytest.mark.asyncio
