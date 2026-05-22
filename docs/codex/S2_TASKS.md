@@ -36,10 +36,10 @@ If any criterion fails, log as a No-Go reason and trim S3 scope.
 
 | Owner | Task | Verify | Status |
 |---|---|---|---|
-| **Claude** | Read OpenAI Realtime API docs for `turn_detection`, `voice_activity_detection`, `input_audio_transcription`, `session.update` knobs. Document each tunable + observed default in `docs/reports/S2_stt_probe.md`. | doc exists, lists at least: VAD threshold, prefix-padding, silence-duration, eagerness modes. | pending |
-| **Claude** | Inspect current `backend/app/services/translator.py` `session.update` payload. List every field we send today + every field we COULD send but do not. | doc section "current vs available knobs". | pending |
-| **Claude** | From the S1 CSV (`docs/reports/s1_run10_2026-05-22.csv`) compute the STT-only sub-distribution: `first_text_ms - full_text_ms_for_release_marker` for each OK row. Confirm 884 ms median claim and identify variance. | doc section "S1 STT distribution: p50/p90/p95 + per-phrase". | pending |
-| **Claude** | Propose top 3 tuning candidates ranked by expected impact + risk. Lock one as Day 2 implementation target. | doc section "Day 2 target + hypothesis". | pending |
+| **Claude** [DONE `19bd628`] | Read OpenAI Realtime API docs for `turn_detection`, `voice_activity_detection`, `input_audio_transcription`, `session.update` knobs. Document each tunable + observed default in `docs/reports/S2_stt_probe.md`. | doc exists, lists at least: VAD threshold, prefix-padding, silence-duration, eagerness modes. | DONE |
+| **Claude** [DONE `19bd628`] | Inspect current `backend/app/services/translator.py` `session.update` payload. List every field we send today + every field we COULD send but do not. | doc section "current vs available knobs". | DONE |
+| **Claude** [DONE `19bd628`] | From the S1 CSV (`docs/reports/s1_run10_2026-05-22.csv`) compute the STT-only sub-distribution: `first_text_ms - full_text_ms_for_release_marker` for each OK row. Confirm 884 ms median claim and identify variance. | doc section "S1 STT distribution: p50/p90/p95 + per-phrase". | DONE (p50=884, p90=1078, p95=1169 ms) |
+| **Claude** [DONE `19bd628`] | Propose top 3 tuning candidates ranked by expected impact + risk. Lock one as Day 2 implementation target. | doc section "Day 2 target + hypothesis". | DONE (Cand A: gpt-realtime-whisper + delay=low) |
 
 Output file: `docs/reports/S2_stt_probe.md`.
 
@@ -50,11 +50,11 @@ No commit subject — research only, doc-only commit
 
 | Owner | Task | Verify | Status |
 |---|---|---|---|
-| **Claude (prep)** | Lock the contract change in `backend/app/services/translator.py` (e.g., add `STTConfig` field to `Translator.__init__` or extend `SYSTEM_INSTRUCTIONS` / `session.update` payload, depending on Day 1 finding). Stubs only, `NotImplementedError` if needed. | locked stub commit. | pending |
-| **Codex** | Implement bodies against the locked stub. Update `tests/test_translator.py` to cover the new config path. | `pytest backend/tests/test_translator.py` green. | pending |
+| **Claude (prep)** [DONE] | Lock the contract change in `backend/app/services/translator.py`: add `STTConfig` (frozen dataclass with `transcription_model` + `transcription_delay`), `DEFAULT_STT_CONFIG`, `TranscriptionDelay` literal, and `stt_config: STTConfig \| None = None` on `Translator.__init__`. Body of `connect()` is intentionally left at S1 values for Codex. | locked stub commit. | DONE |
+| **Codex** | Implement bodies against the locked stub per §2l in `docs/codex/PROMPTS.md`: wire `stt_config` fields into `audio.input.transcription`, add `turn_detection: None`, drop duplicate `instructions` from `response.create`. 3 new pytest cases. | `pytest backend/tests/test_translator.py` green. | pending (§2l ready) |
 | **Claude** | Code review + merge. | n/a | pending |
 
-Commit subject: `feat(backend): S2 Day 2 STT tuning <knob-name>`.
+Commit subject: `feat(backend): S2 Day 2 STT tuning gpt-realtime-whisper + delay=low`.
 
 ## Day 3 — STT benchmark re-run (device)
 

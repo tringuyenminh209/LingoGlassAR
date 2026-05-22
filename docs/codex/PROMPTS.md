@@ -1876,6 +1876,160 @@ After opening the PR, post the URL here and STOP. Do not start the next day.
 
 ---
 
+## 2l. S2 Day 2 (Codex row) — STT tuning gpt-realtime-whisper + delay=low (ready to copy)
+
+**Tag**: implement bodies only. Do NOT add new public fields, rename the
+`STTConfig` dataclass, or extend `Translator.__init__` beyond what
+already exists. The contract surface is locked by Claude prep — your
+job is the JSON payload wiring + tests.
+
+**Precondition**: Claude prep landed on `main` at commit
+`<paste from git log -1>`. That commit added `STTConfig`,
+`DEFAULT_STT_CONFIG`, `TranscriptionDelay`, and the
+`stt_config: STTConfig | None = None` parameter to
+`Translator.__init__`. The body of `Translator.connect()` still sends
+the S1 payload (whisper-1, no delay, default server_vad, duplicate
+instructions in `response.create`). Your PR flips the body to the
+S2 Day 1 probe target. Background in `docs/reports/S2_stt_probe.md`.
+
+**Hypothesis** (Day 3 will measure): median `stt_ms` drops from
+884 ms (S1) to ≤ 600 ms (S2 exit criterion #1).
+
+```
+Your task: S2 Day 2 — wire the locked STTConfig into the
+session.update payload and trim two dead code paths. Single backend PR.
+
+## Concrete deliverables
+
+1. backend/app/services/translator.py — modify Translator.connect() ONLY:
+
+   a. In the `session.update` payload sent on connect, replace the
+      `audio.input.transcription` block:
+
+         BEFORE:
+            "transcription": {"model": "whisper-1"}
+
+         AFTER:
+            "transcription": {
+              "model": self._stt_config.transcription_model,
+              "delay": self._stt_config.transcription_delay,
+            }
+
+      Both fields come from self._stt_config (already stored by the
+      __init__ change in Claude prep).
+
+   b. Add a top-level "turn_detection": None inside the "session"
+      object, right after "audio". This explicitly disables server
+      VAD; we manually `input_audio_buffer.commit` and the server-side
+      VAD inference is dead work in PTT mode.
+
+   c. In Translator.translate_stream(), the `response.create` payload
+      currently has both "output_modalities" and "instructions". DROP
+      the "instructions" field. The instructions are already set in
+      session.update; duplicating them in response.create costs
+      tokenisation on every utterance (~50 ms). Keep
+      "output_modalities".
+
+   Do NOT change anything else in connect() or translate_stream() —
+   no event-handler edits, no new fields, no docstring rewrites
+   (Claude's docstring already describes the new behaviour).
+
+2. backend/tests/test_translator.py — add or extend coverage:
+
+   a. Existing test `test_translate_stream_emits_text_deltas_in_order`
+      (or whatever it is called locally) must still pass with no
+      change to its assertions. The FakeWebSocket only inspects sent
+      events by type, so the payload edits should be transparent. If
+      it breaks, your change is wrong — investigate before patching
+      the test.
+
+   b. New test `test_session_update_uses_stt_config_defaults`:
+      instantiate `Translator(api_key="x")` with the default
+      STTConfig, drive `__aenter__()` against a FakeWebSocket, then
+      assert the FIRST sent payload is a session.update with:
+        - session.audio.input.transcription.model == "gpt-realtime-whisper"
+        - session.audio.input.transcription.delay == "low"
+        - session.turn_detection is None (or the JSON null)
+
+   c. New test `test_session_update_honours_custom_stt_config`:
+      instantiate `Translator(api_key="x",
+      stt_config=STTConfig(transcription_delay="minimal"))`, drive
+      __aenter__, assert the session.update has delay == "minimal".
+
+   d. New test `test_response_create_omits_instructions`: drive a
+      full translate_stream through a FakeWebSocket and assert the
+      `response.create` payload sent contains "output_modalities" but
+      NO "instructions" key.
+
+3. Do NOT add a new dependency. Do NOT touch cost_logger.py,
+   sessions.py, mobile/, firmware/, infra/, or docs/. The PR is
+   strictly backend Translator + its test file.
+
+## Smoke checks BEFORE you push
+
+The S2 Day 1 probe (`docs/reports/S2_stt_probe.md` §7) flagged two
+unknowns that you should resolve in the PR description, not by
+guessing:
+
+A. Does `gpt-realtime-whisper` still emit
+   `conversation.item.input_audio_transcription.completed` events with
+   a `.transcript` string field? If yes, no event-handler change
+   needed and TextDelta.source_text capture keeps working.
+   If the event renamed or restructured, STOP and report — Claude
+   will lock a follow-up change before you proceed.
+
+   How to check: scan
+   https://platform.openai.com/docs/api-reference/realtime-server-events
+   or the OpenAI Realtime server events reference. If you cannot read
+   docs, run a one-shot smoke against the live API with a 1-second
+   sine-wave audio file and grep the event stream for the
+   transcription event name. Either path is fine; document what you
+   did in the PR.
+
+B. Does `gpt-realtime-whisper` charge under the same token shape as
+   `whisper-1` (i.e. `usage.input_token_details.audio_tokens` still
+   meaningful) or does it have a separate billing line? This affects
+   whether `backend/app/services/cost_logger.py` pricing constants
+   need to be revisited in a follow-up.
+
+   How to check: scan OpenAI pricing page for `gpt-realtime-whisper`
+   row + check the response.done usage shape from your smoke test
+   in (A). Report findings in the PR's "Open questions for review"
+   section. Do NOT change cost_logger.py in this PR even if you find
+   a discrepancy — that is a separate Claude-prep task.
+
+If smoke (A) shows the event was renamed, abort the PR and report.
+If smoke (B) shows pricing differs, log it but proceed.
+
+## Branch / commit / PR
+
+- Branch: `feat/s2-day-2-stt-tuning`
+- Commit subject: `feat(backend): S2 Day 2 STT tuning gpt-realtime-whisper + delay=low`
+- PR title: same as commit subject
+- No `Co-Authored-By: Claude/OpenAI` trailer (hard rule, see
+  `docs/codex/S1_TASKS.md` "How Codex receives a task" §6).
+
+## Verification commands to paste raw output for
+
+  cd backend
+  ../backend/.venv/Scripts/python.exe -m pytest tests/test_translator.py -v
+
+Must show all tests pass (existing + 3 new). Paste the full pytest
+output, not a summary.
+
+## What this PR explicitly does NOT do
+
+- It does NOT change the cost logger pricing constants.
+- It does NOT touch mobile/, firmware/, or infra/.
+- It does NOT update `docs/reports/S2_stt_probe.md` (Claude's doc).
+- It does NOT add the Day 3 device bench (that is a Claude row).
+- It does NOT introduce any new module.
+
+After opening the PR, post the URL here and STOP. Do not start Day 3.
+```
+
+---
+
 ## 4. PR-ready check (paste when Codex says "done")
 
 ```

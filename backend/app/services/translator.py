@@ -27,7 +27,7 @@ import json
 import logging
 from dataclasses import dataclass
 from types import TracebackType
-from typing import AsyncIterator
+from typing import AsyncIterator, Literal
 
 import websockets
 
@@ -49,6 +49,38 @@ SYSTEM_INSTRUCTIONS = (
 # `audio.input.format` object, `output_modalities`, `session.type`) is now the
 # only accepted shape, and `gpt-realtime` is the matching GA model.
 DEFAULT_MODEL = "gpt-realtime"
+
+
+TranscriptionDelay = Literal["minimal", "low", "medium", "high", "xhigh"]
+
+
+@dataclass(frozen=True)
+class STTConfig:
+    """Tunables for the speech-to-text leg of the Realtime session.
+
+    Defaults reflect the S2 Day 1 probe decision (see
+    ``docs/reports/S2_stt_probe.md``):
+
+    - ``transcription_model = "gpt-realtime-whisper"`` replaces the S1
+      default ``"whisper-1"``. The newer model is streaming-first with
+      OpenAI-quoted partial latency 200-400 ms vs. whisper-1's
+      finished-audio orientation.
+    - ``transcription_delay = "low"`` favours latency over WER. Valid
+      values: ``minimal`` / ``low`` / ``medium`` / ``high`` / ``xhigh``.
+      Only honoured when ``transcription_model == "gpt-realtime-whisper"``.
+
+    Codex (Day 2 body impl): wire both fields into the
+    ``audio.input.transcription`` block of the ``session.update`` payload
+    in :meth:`Translator.connect`. Do NOT rename fields or add new ones
+    here; if a tuning knob needs to change, extend this dataclass and
+    re-prep on Day 3 with a fresh probe row.
+    """
+
+    transcription_model: str = "gpt-realtime-whisper"
+    transcription_delay: TranscriptionDelay = "low"
+
+
+DEFAULT_STT_CONFIG = STTConfig()
 
 
 @dataclass(frozen=True)
@@ -126,6 +158,28 @@ class Translator:
     ``audio.input.format`` object, ``output_modalities = ["text"]``).
     ``audio.input.transcription`` must be enabled so we get the
     source-language text on :attr:`TextDelta.source_text`.
+
+    STT tuning (S2 Day 2)
+    ---------------------
+    ``stt_config`` (defaults to :data:`DEFAULT_STT_CONFIG`) controls the
+    transcription model + delay sent inside ``audio.input.transcription``.
+    Default values are the S2 Day 1 probe target (``gpt-realtime-whisper``
+    + ``delay="low"``). Pass a non-default ``STTConfig`` only for A/B
+    benchmarking; production callers should accept the default so they
+    benefit from future probe updates without code changes.
+
+    S2 Day 2 body changes for Codex (do these in :meth:`connect` only,
+    not in :meth:`translate_stream`):
+
+    1. ``audio.input.transcription`` becomes
+       ``{"model": stt_config.transcription_model,
+       "delay": stt_config.transcription_delay}``.
+    2. Add ``"turn_detection": None`` at the top level of ``session``
+       to disable server VAD (we manually commit; server VAD is dead
+       inference in PTT mode).
+    3. Drop the ``"instructions"`` field from the ``response.create``
+       payload (PR #2 review follow-up — already set in session.update,
+       duplicating it costs tokenisation).
     """
 
     def __init__(
@@ -133,9 +187,11 @@ class Translator:
         api_key: str,
         *,
         model: str = DEFAULT_MODEL,
+        stt_config: STTConfig | None = None,
     ) -> None:
         self._api_key = api_key
         self._model = model
+        self._stt_config = stt_config if stt_config is not None else DEFAULT_STT_CONFIG
         self._ws = None
         self._streaming = False
 
