@@ -1182,6 +1182,244 @@ After opening the PR, post the URL and STOP.
 
 ---
 
+## 2i. Day 8 (Codex rows) — Cost logger + daily cap (ready to copy)
+
+**Precondition**: `f8dc457` is merged on main. `backend/app/services/cost_logger.py`
+ships the locked public surface (`CostUsage`, `CostRecord`, `DailyStats`,
+`DailyCapExceeded`, `compute_usd`, `CostLogger` skeleton with
+`NotImplementedError` bodies, `enforce_daily_cap` stub). The
+`response.done` usage shape was verified against `gpt-realtime` GA on
+2026-05-22; the per-million-token pricing fields are already on
+`Settings` and `.env.example`. `translator.Translator.translate_stream`
+already yields the final `TextDelta` with `usage: CostUsage | None`
+populated.
+
+Codex job: fill the `NotImplementedError` bodies, wire the logger into
+the WS session handler, expose `GET /v1/stats`, and enforce the daily
+cap in `POST /v1/sessions`. **Do not change the locked interface** —
+field names, method signatures, exception types, and the redis key
+schema in the cost_logger.py module docstring are the contract.
+
+```
+Your task: S1 Day 8 — cost logger + daily cap. Implement the rows
+marked "Codex" in the Day 8 table of docs/codex/S1_TASKS.md. The
+interface in backend/app/services/cost_logger.py is LOCKED — fill the
+NotImplementedError bodies, do not rename CostUsage / CostRecord /
+DailyStats fields, the CostLogger method signatures, the
+DailyCapExceeded exception, or the redis key schema documented in the
+module docstring.
+
+## Concrete deliverables
+
+1. backend/app/services/cost_logger.py — implement bodies.
+
+   CostLogger.__init__:
+   - Store the redis client + the six per-million USD rates + the cap +
+     session_ttl_seconds on self. Tighten the redis annotation from
+     `object` to `redis.asyncio.Redis`.
+
+   CostLogger.record(session_id, usage, *, now=None):
+   - Compute `usd = compute_usd(usage, **rates)`.
+   - Resolve `day = (now or datetime.now(UTC)).date()`.
+   - One redis pipeline that issues, in order:
+       HINCRBY session:{sid}:cost audio_input_tokens N
+       HINCRBY session:{sid}:cost text_input_tokens N
+       HINCRBY session:{sid}:cost cached_audio_input_tokens N
+       HINCRBY session:{sid}:cost cached_text_input_tokens N
+       HINCRBY session:{sid}:cost text_output_tokens N
+       HINCRBY session:{sid}:cost audio_output_tokens N
+       HINCRBYFLOAT session:{sid}:cost usd <usd>
+       HSET session:{sid}:cost updated_at <iso>
+       EXPIRE session:{sid}:cost (session_ttl_seconds + 600)
+       (same six HINCRBYs + HINCRBYFLOAT against cost:daily:<YYYY-MM-DD>)
+       EXPIRE cost:daily:<YYYY-MM-DD> 172800
+       SADD cost:daily:<YYYY-MM-DD>:sessions <session_id>
+       EXPIRE cost:daily:<YYYY-MM-DD>:sessions 172800
+   - If SADD returned 1, issue a second pipeline with one HINCRBY
+     `cost:daily:<YYYY-MM-DD> sessions 1`.
+   - Return `CostRecord(session_id, usage, usd, day, now or
+     datetime.now(UTC))`.
+
+   CostLogger.session_cost(session_id):
+   - HGETALL session:{sid}:cost. If empty, return None.
+   - Rebuild CostUsage from the six token fields (default 0 each),
+     CostRecord with usd from the `usd` field (parse float), recorded_at
+     from `updated_at`. total_tokens = sum of the six token fields
+     (the redis hash does not store total_tokens separately).
+   - Day = recorded_at.date() (UTC).
+
+   CostLogger.daily(day=None):
+   - day defaults to today UTC. HGETALL cost:daily:<YYYY-MM-DD>.
+   - Return DailyStats with all fields zero-filled when the hash is
+     empty (so /v1/stats can be called before any session).
+
+   enforce_daily_cap(cost_logger, *, cap_usd, now=None):
+   - If cap_usd <= 0, return immediately.
+   - Call `await cost_logger.daily(day=(now or now()).date())`.
+   - If usd >= cap_usd, raise `DailyCapExceeded(current_usd=usd,
+     cap_usd=cap_usd)`. Strictly `>=`, not `>`.
+
+2. backend/app/api/sessions.py — wire it in.
+
+   - Add a FastAPI dependency `get_cost_logger(redis: Redis = Depends(
+     get_redis), settings: Settings = Depends(get_settings))` that
+     constructs a CostLogger with all six rates + cap. Keep get_settings
+     lru_cached as today.
+   - In `create_session`, before allocating session_id:
+       try:
+           await enforce_daily_cap(cost_logger, cap_usd=settings.daily_usd_cap)
+       except DailyCapExceeded as e:
+           return JSONResponse(
+               status_code=429,
+               content=ApiFail(success=False, error=ApiError(
+                   code="daily_cap_exceeded",
+                   message=str(e),
+               )).model_dump(),
+           )
+     (Use the existing ApiFail model. Update the response_model and the
+     200 responses dict if needed to allow returning JSONResponse.)
+   - In the WS handler `session_stream`, after the `if delta.final:`
+     branch builds the translation.final payload and BEFORE breaking,
+     call `await cost_logger.record(session_id, delta.usage)` IF
+     `delta.usage is not None`. Do not raise if it is None (legacy
+     fallback path). Pass the same cost_logger instance injected via
+     Depends() (use `websocket.app.dependency_overrides` only if
+     needed — prefer constructing it once per session from get_redis +
+     get_settings inside the handler, matching the existing redis
+     Depends pattern).
+
+3. backend/app/api/stats.py — new router.
+
+   - `GET /v1/stats?days=1` (int, default 1, max 2). Returns
+     `{success: true, data: {days: [DailyStats, ...]}}` newest first.
+     For days=1 the list has length 1; days=2 returns today + yesterday.
+   - Use the same CostLogger dependency.
+   - Pydantic response model. No new Pydantic v2 features beyond what
+     sessions.py already uses.
+   - Register the router in backend/app/main.py next to the other
+     routers.
+
+4. backend/tests/test_cost_logger.py — new pytest file.
+
+   - Unit test for `compute_usd`: cover (a) all-non-cached input, (b)
+     all-cached input (audio + text), (c) mixed cached/non-cached audio,
+     (d) zero usage → 0 USD. Hand-compute expected values from the
+     defaults in Settings.
+   - Unit test for CostLogger.record(): inject a fake redis (in-memory
+     dict-of-dicts is fine; mirror the FakeRedis pattern from
+     test_sessions.py and extend it with hincrby / hincrbyfloat / sadd
+     / pipeline()). Assert the six token HINCRBYs hit both the session
+     hash and the daily hash; assert SADD-first-touch increments
+     `sessions` exactly once across two record() calls with the same
+     session_id.
+   - Unit test for daily() returns zero-DailyStats when the bucket
+     is absent.
+   - Unit test for enforce_daily_cap: pre-seed daily hash usd, assert
+     raises DailyCapExceeded with correct current_usd / cap_usd.
+
+5. backend/tests/test_sessions.py — extend.
+
+   - Use the extended FakeRedis from #4 so the WS happy-path test now
+     also asserts that record() was called with the FakeTranslator's
+     yielded usage. (FakeTranslator currently does not yield usage;
+     update it to yield TextDelta(text="", final=True,
+     usage=CostUsage(audio_input_tokens=10, text_input_tokens=46,
+     cached_audio_input_tokens=0, cached_text_input_tokens=0,
+     text_output_tokens=5, audio_output_tokens=0, total_tokens=61)) so
+     the assertion has values.)
+   - Add a new test_create_session_blocked_by_cap that monkeypatches
+     `get_settings` to return daily_usd_cap=0.0001 and pre-seeds
+     cost:daily:<today> usd=0.001, asserts 429 + code=daily_cap_exceeded.
+   - Note: the existing test_ws_happy_path is failing on main with a
+     fixture bug (sampleRateHz=16000 vs schema const 24000). Fix that
+     fixture as part of this PR while you are in the file.
+
+6. backend/tests/test_stats.py — new.
+
+   - GET /v1/stats?days=1 with no traffic → success=True,
+     data.days has 1 entry, usd=0.
+   - After a record() call (using the same fake-redis pattern), days[0]
+     reflects the recorded counts and USD.
+   - days=3 → 422 (validation rejects out-of-range int).
+
+## Hard constraints (always apply)
+
+- Branch from main: feat/s1-day-8-cost-logger
+- NEVER push to main. NEVER force-push. NEVER add Co-Authored-By
+  trailers (hard rule for this repo).
+- Conventional commit subject: `feat(backend): S1 Day 8 cost logging + daily cap`
+- Do not add dependencies. The locked stub uses only stdlib + redis +
+  pydantic + fastapi which are already present. If you find a need,
+  STOP and ask.
+- Do not modify firmware/, mobile/, .claude/, infra/ec2/, docs/.
+  Backend + its tests + docs/codex/S1_TASKS.md (close your rows) only.
+- Do not change the field names, method signatures, exception class, or
+  the redis key schema documented in cost_logger.py. The probe sessions
+  on EC2 fed those decisions; rewriting them invalidates Claude's
+  pricing reconciliation work.
+- Privacy boundary (from backend/CLAUDE.md): never log audio bytes,
+  translated text, source transcripts, OpenAI tokens, or API keys.
+  Counts and USD only, USD at DEBUG, session_id only when
+  `settings.app_env == "dev"`. The translator's per-utterance
+  `realtime.usage` INFO line is the established style — match it.
+
+## Verification
+
+cd backend
+.venv/Scripts/python.exe -m pytest tests/ --no-header -q
+# expect: all green, NO deselected. (Day 8 fixes the preexisting
+# test_ws_happy_path_relays_translation 16k sample-rate bug.)
+
+# end-to-end with running stack
+docker compose up -d --build
+curl -s http://localhost:8000/v1/stats?days=1 | jq
+# expect: success=true, data.days[0].usd=0, all token counts 0
+
+# fire one session from the mobile app (or a synthetic test you choose),
+# then:
+docker compose exec redis redis-cli HGETALL session:<id>:cost
+docker compose exec redis redis-cli HGETALL cost:daily:$(date -u +%Y-%m-%d)
+curl -s http://localhost:8000/v1/stats?days=1 | jq
+
+# expect: six token fields + usd + updated_at present on the session
+# hash, daily hash totals match, /v1/stats reflects the same numbers.
+
+# cap test (transient)
+DAILY_USD_CAP=0.0001 docker compose up -d --build api
+# pre-seed daily bucket so cap is breached:
+docker compose exec redis redis-cli HINCRBYFLOAT cost:daily:$(date -u +%Y-%m-%d) usd 0.001
+curl -s -X POST http://localhost:8000/v1/sessions -H 'Content-Type: application/json' -d '{}' -o /tmp/r.json -w '%{http_code}\n'
+cat /tmp/r.json | jq
+# expect: 429, code="daily_cap_exceeded"
+
+# reset cap after testing
+docker compose exec redis redis-cli DEL cost:daily:$(date -u +%Y-%m-%d)
+
+## PR description template
+
+## Summary
+<one paragraph: cost logger + cap + /v1/stats wired up>
+
+## Files added / modified
+<bullet list>
+
+## Verification output
+<paste raw command output for every command above, one block per command>
+
+## Open questions for review
+<things you decided without explicit guidance>
+- Did the CostLogger dependency end up scoped per-request or per-app?
+  Either is acceptable as long as redis is pooled.
+- Any pricing edge case (e.g. negative cached delta) you noticed?
+
+## Time spent
+~X hours
+
+After opening the PR, post the URL and STOP. Do not start Day 9.
+```
+
+---
+
 ## 3. Day-N task prompt — TEMPLATE (use for Day 8-10)
 
 Replace `<N>` with the day number, fill `<TASK_TITLE>`, `<COMMIT_SUBJECT>`,

@@ -314,11 +314,19 @@ Commit subject: `feat(mobile): S1 Day 7 push-to-talk translation pipeline`.
 
 ## Day 8 — Cost + diagnostics
 
+Prep (2026-05-22, commits 02fbb8a..f8dc457): probe confirmed
+`response.done.usage` shape on `gpt-realtime` GA; `CostUsage`,
+pricing settings, Redis key schema, and `compute_usd()` are locked in
+`backend/app/services/cost_logger.py`. Codex implements the
+`NotImplementedError` bodies against that stub; do **not** rename
+fields or change the schema.
+
 | Owner | Task | Verify |
 |---|---|---|
-| **Codex** | Backend `app/services/cost_logger.py`: log per-session `audio_seconds`, `tokens_in`, `tokens_out` to Redis hash `session:{id}:cost`. Use OpenAI usage events from Realtime API (`response.done` carries usage). **Never log audio bytes or translated text content** - this is a hard privacy boundary. | Run a session, check Redis: `HGETALL session:foo:cost`. |
-| **Codex** | `GET /v1/stats` aggregates last 24 h: total cost, total sessions, p50 / p95 session length. Reads from Redis ZSET indexed by timestamp. | curl returns sane JSON. |
-| **Claude** | Define hard daily spend cap (env: `DAILY_USD_CAP=5.0`). When exceeded, `/v1/sessions` returns 429. | Force cap to $0.01, attempt session, assert 429. |
+| **Codex** | Implement `CostLogger` (`__init__`, `record`, `session_cost`, `daily`) and `enforce_daily_cap()` against the locked stub in `backend/app/services/cost_logger.py`. Pipeline all redis writes for one round-trip; SADD-based first-touch counter for daily sessions. **Never log audio bytes, transcripts, or translated text** — counts only, USD numbers at DEBUG. | `pytest tests/test_cost_logger.py` (new) all green. Live session → `redis-cli HGETALL session:<id>:cost` shows six token fields + `usd` + `updated_at`. |
+| **Codex** | Wire the logger into the WS session handler (`app/api/sessions.py`): after the translator yields the final delta with `usage`, await `cost_logger.record(session_id, delta.usage)`. Pool a single `CostLogger` per app via FastAPI dependency. | `pytest tests/test_sessions.py` includes a case proving `record()` was called with the right usage on the happy path (using the existing `FakeTranslator` + extended `FakeRedis`). |
+| **Codex** | `GET /v1/stats?days=1` returns `{success, data: {daily: DailyStats}}` reading `cost:daily:<today>`. Optional `days=2` sums today + yesterday. No new dependencies. | `curl http://localhost:8000/v1/stats?days=1` after a session returns a JSON object with `usd >= 0`, `audio_input_tokens > 0`, `sessions >= 1`. |
+| **Codex** | Enforce `DAILY_USD_CAP` in `POST /v1/sessions`: call `enforce_daily_cap()` before allocating the session, catch `DailyCapExceeded`, return HTTP 429 with `{success:false, error:{code:"daily_cap_exceeded", message:...}}`. | Pytest case sets `DAILY_USD_CAP=0.0001` + pre-seeds `cost:daily:<today>` usd to 0.001, asserts `POST /v1/sessions` returns 429 with the documented error code. |
 
 Commit subject: `feat(backend): S1 Day 8 cost logging + daily cap`.
 
