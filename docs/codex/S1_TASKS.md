@@ -354,7 +354,7 @@ Commit subject: `feat(mobile): S1 Day 9 end-to-end latency suite`.
 | Owner | Task | Verify | Status |
 |---|---|---|---|
 | **Claude** [DONE 2026-05-22] | Write Day 9 report with results, anomalies, decision. Go = e2e p95 < 2.5 s. | `docs/reports/S1_Day9_report.md` + raw CSV + rendered markdown. p95=1493ms, **GO**. | DONE |
-| **Codex** | Update root `README.md` (create if missing) with high-level architecture + how-to-run. | `gh repo view --web` shows updated README. | pending |
+| **Codex** | Create root `README.md` per §2k in `docs/codex/PROMPTS.md` — high-level architecture + quick start + sprint progress. Single new file, 150-250 lines. | `git diff --stat main..HEAD` shows exactly 1 added file. README renders on GitHub. | pending (§2k ready) |
 | **Claude** | Tag release `v0.2.0-s1` after Go. Update `MEMORY.md` to mark S1 complete. | `git tag` listed. | pending |
 
 Commit subject: `docs(s1): Run 1 results + Go/No-Go verdict`.

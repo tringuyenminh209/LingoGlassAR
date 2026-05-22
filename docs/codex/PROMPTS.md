@@ -1640,6 +1640,188 @@ After opening the PR, post the URL and STOP. Do not start Day 10.
 
 ---
 
+## 2k. Day 10 (Codex row) — Root README (ready to copy)
+
+**Precondition**: S1 sprint closed with GO verdict (commit `5c30385`).
+Day 9 report doc at `docs/reports/S1_Day9_report.md`. No root
+`README.md` exists yet — this is a new-file task. The audience is a
+future contributor (or future-Tri) landing on the GitHub repo for the
+first time; the README is the entry point, not a comprehensive doc.
+
+Codex job: create `README.md` at repo root, ~150-250 lines. Reuse the
+high-level facts from `CLAUDE.md` (Project Overview, MVP architecture,
+locked technical decisions) but rewrite for an external reader — no
+Vietnamese mixed in the doc, English only since it is the
+public-facing surface. Link out to the existing detailed docs rather
+than duplicating them.
+
+```
+Your task: S1 Day 10 — create the root README.md. This is the only
+Codex row in Day 10 (see docs/codex/S1_TASKS.md). It is a single new
+file at the repo root, no other files touched.
+
+## Concrete deliverables
+
+1. README.md at the repo root (new file). Sections in this order:
+
+   ### Header
+   - Project name: "LingoGlass AR"
+   - One-line tagline in English describing the product (real-time
+     subtitle + translation eyewear for travel & multilingual
+     communication).
+   - Status badges (optional, only if you can write them without
+     adding GitHub Actions config): replace with a plain line
+     "Status: S1 sprint complete — see docs/reports/S1_Day9_report.md".
+
+   ### Architecture (high-level)
+   - One ASCII diagram showing the data flow:
+       Phone (Flutter) -> Backend (FastAPI on AWS Osaka) ->
+       OpenAI Realtime API -> Backend -> Phone (BLE central) ->
+       ESP32-S3 (BLE peripheral) -> SSD1306 OLED
+   - 3-5 sentences describing what runs where. Pull from
+     CLAUDE.md "Project Overview" section. Mention:
+       * Phone records audio (PCM16 24 kHz mono)
+       * Backend bridges to OpenAI Realtime for STT + translation
+       * Translated text goes back over WS, then via BLE to the
+         ESP32-S3 controller
+       * OLED renders the subtitle
+   - Note the latency budget: p95 system_latency ≤ 2500 ms
+     (measured 1493 ms on 2026-05-22, see Day 9 report).
+
+   ### Repository layout
+   - One-line description for each top-level directory:
+       mobile/      Flutter app (Android + iOS)
+       backend/     FastAPI service + WS bridge to OpenAI Realtime
+       firmware/    ESP32-S3 ESP-IDF / PlatformIO firmware
+       infra/       EC2 bootstrap + deploy scripts
+       docs/        Architecture, API contract, runbooks, reports
+       tools/       CSV report renderers (Phase F + S1)
+       tests/       BLE protocol vectors (Dart + C++ shared)
+
+   ### Quick start
+   - Three subsections, one per component. Each shows the minimum
+     commands a fresh clone needs to get the thing running. Pull
+     command strings verbatim from the existing CLAUDE.md files
+     (root, mobile/CLAUDE.md, backend/CLAUDE.md) — do not invent
+     new commands.
+
+     #### Backend (local docker)
+     ```bash
+     cd backend
+     cp .env.example .env  # add OPENAI_API_KEY
+     docker compose up
+     # http://localhost:8000/healthz -> {"status":"ok",...}
+     ```
+
+     #### Mobile (Flutter)
+     ```powershell
+     cd mobile
+     flutter pub get
+     flutter test       # 33/33 tests
+     flutter run        # device required
+     ```
+
+     #### Firmware (ESP32-S3)
+     ```bash
+     cd firmware/esp32s3
+     pio run -t upload  # PlatformIO; ESPr Developer S3 + SSD1306
+     ```
+
+   ### Key technical decisions
+   - Bullet list from CLAUDE.md "Quyết định kỹ thuật đã được lock"
+     section, translated to English:
+       * Audio source: phone mic (NOT a mic on the eyewear)
+       * Camera (OCR future S3): phone camera
+       * Subtitle transport: BLE first, Wi-Fi fallback only for debug
+       * Controller: ESP32-S3 (ESP-IDF / Arduino)
+       * Backend: FastAPI + WebSockets, no Kubernetes
+       * Privacy LED: physical hardware LED required (S2+), not just
+         an on-OLED icon
+
+   ### Sprint progress
+   - A small table:
+     | Sprint | Status | Highlights |
+     | ------ | ------ | ---------- |
+     | S0     | DONE 2026-05-18 | BLE + OLED spike, MTU 23/185/247 verified |
+     | S1     | DONE 2026-05-22 | Audio + WS + OpenAI Realtime + cost cap + e2e latency 1493ms p95 |
+     | S2     | starting       | STT optimisation, Cloudflare Full(Strict), UX polish |
+   - One sentence linking to docs/reports/S1_Day9_report.md.
+
+   ### Documentation map
+   - Bullet list with one-line descriptions:
+       docs/LingoGlass_AR_Project_Plan.md — product spec, BOM, roadmap
+       docs/LingoGlass_AR_Strategic_Analysis.md — market analysis
+       docs/LingoGlass_AR_Development_Plan.md — V-model dev plan
+       docs/api-contract/ — WS schema + samples + OpenAPI
+       docs/codex/ — Codex briefing + per-day task table + prompts
+       docs/runbook/ — AWS deploy runbook
+       docs/reports/ — sprint reports
+       docs/nippo/ — daily Japanese work reports
+       CLAUDE.md (root) — high-level Claude Code rules for this repo
+       mobile/CLAUDE.md, backend/CLAUDE.md, firmware/CLAUDE.md
+         — per-component rules
+
+   ### License
+   - Just a placeholder: "All rights reserved. Contact: <email>".
+     Do not add an OSS license, the project is private/founder-stage.
+
+## Hard constraints
+
+- Branch from main: feat/s1-day-10-readme
+- NEVER push to main. NEVER force-push. NEVER add Co-Authored-By
+  trailers (see [[feedback-no-claude-coauthor]] equivalent in this
+  repo's commit history — search `git log --format=%B HEAD~20..HEAD
+  | grep -i co-author` should return zero hits).
+- Conventional commit subject: `docs: add root README with
+  architecture + quick start`
+- Single file change: README.md at repo root. Do not touch any
+  other file. If you find a typo elsewhere, leave it.
+- Do not add badges that link to services we have not configured
+  (no codecov, no build badges from non-existent CI). Plain text
+  status line only.
+- ASCII diagrams only, no Mermaid blocks. The README must render
+  cleanly on GitHub without enabling any extensions.
+- No emoji.
+- Length budget: 150-250 lines. If your draft exceeds 250 lines,
+  trim by moving detail into linked docs.
+
+## Verification
+
+- Open `README.md` in a markdown previewer (VS Code Ctrl+Shift+V) and
+  visually verify all sections render.
+- `git diff --stat main..HEAD` should show exactly one file added.
+- Run `wc -l README.md` and confirm 150 ≤ lines ≤ 250.
+- `grep -i "co-author" $(git log --format=%H main..HEAD | xargs -I {} git
+  show --format=%B {} -s)` returns nothing.
+
+## PR description template
+
+## Summary
+<one paragraph: README created at repo root, links to existing docs,
+no other files touched>
+
+## Files added / modified
+- README.md (new, NNN lines)
+
+## Verification output
+<paste `git diff --stat`, `wc -l README.md`, and a small excerpt of the
+rendered preview if you can capture it>
+
+## Open questions for review
+<things you decided without explicit guidance>
+- Tagline phrasing (you may have picked your own English wording)
+- Whether to include the architecture ASCII diagram inline or punt
+  to docs/
+
+## Time spent
+~X hours
+
+After opening the PR, post the URL and STOP. Do not tag any release —
+that is a Claude row.
+```
+
+---
+
 ## 3. Day-N task prompt — TEMPLATE (use for Day 8-10)
 
 Replace `<N>` with the day number, fill `<TASK_TITLE>`, `<COMMIT_SUBJECT>`,
