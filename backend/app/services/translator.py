@@ -241,9 +241,6 @@ class Translator:
                 )
 
             await self._send_json({"type": "input_audio_buffer.commit"})
-            # S1 Day 8 probe — confirms the commit/create sequence reached
-            # the broker. No payload bytes logged.
-            logger.info("realtime.audio_committed model=%s", self._model)
             # GA `response.create` uses `output_modalities` to mirror the
             # session-level field; `modalities` is rejected.
             await self._send_json(
@@ -262,10 +259,6 @@ class Translator:
             async for raw_event in self._ws:
                 event = _decode_event(raw_event)
                 event_type = event.get("type")
-                # S1 Day 8 probe — log only the event type so we can see
-                # which response.* arrive in real traffic. Removed once
-                # response.done usage shape is locked.
-                logger.info("realtime.event type=%s", event_type)
 
                 # GA renamed the text streaming events
                 # (`response.text.*` -> `response.output_text.*`). Accept the
@@ -286,21 +279,9 @@ class Translator:
                     output_text_done = True
                 elif event_type == "response.done":
                     usage = _extract_usage(event)
-                    # S1 Day 8 probe — confirm GA usage shape AND raw
-                    # token-detail counts so the cost_logger pricing model
-                    # can be locked. All values are integer counts; no
-                    # transcript or audio content is logged.
-                    response_obj = event.get("response")
-                    raw_usage = (
-                        response_obj.get("usage")
-                        if isinstance(response_obj, dict)
-                        else None
-                    )
-                    logger.info(
-                        "realtime.response.done usage=%s raw_usage=%s",
-                        usage,
-                        raw_usage,
-                    )
+                    # Counts only, no content. Stays in for the pilot so
+                    # the cost logger has a paper trail per session.
+                    logger.info("realtime.usage %s", usage)
                     finalized = True
                     yield TextDelta(text="", final=True, usage=usage)
                     return
@@ -354,24 +335,13 @@ def _error_message(event: dict[str, object]) -> str:
     return "OpenAI Realtime error"
 
 
-def _safe_keys(obj: object) -> list[str] | None:
-    """Return a sorted list of keys for shape logging, or ``None``.
-
-    Used by the S1 Day 8 probe to log only the structure of OpenAI events
-    without their values. Counts and durations are safe; transcripts and
-    audio bytes are not, so the rest of the event is never logged.
-    """
-    if isinstance(obj, dict):
-        return sorted(obj.keys())
-    return None
-
-
 def _extract_usage(event: dict[str, object]) -> CostUsage | None:
-    """Best-effort parser for the GA ``response.done`` usage block.
+    """Parse the ``response.done.usage`` block into :class:`CostUsage`.
 
-    Falls back gracefully when fields are absent or shaped differently;
-    the probe log in :meth:`Translator.translate_stream` will surface any
-    surprise so we can tighten this before Codex ships the cost logger.
+    Shape was verified 2026-05-22 against ``gpt-realtime`` GA. All
+    sub-fields default to 0 when absent so newer responses with extra
+    keys (e.g. image-related counts on a future modality) won't crash
+    the pipeline.
     """
     response = event.get("response")
     if not isinstance(response, dict):
@@ -380,27 +350,21 @@ def _extract_usage(event: dict[str, object]) -> CostUsage | None:
     if not isinstance(usage, dict):
         return None
 
-    tokens_in = _int_or_zero(usage.get("input_tokens"))
-    tokens_out = _int_or_zero(usage.get("output_tokens"))
-
-    explicit_seconds = usage.get("input_audio_seconds")
-    if isinstance(explicit_seconds, (int, float)):
-        audio_seconds = float(explicit_seconds)
-    else:
-        details = usage.get("input_token_details")
-        audio_tokens = (
-            details.get("audio_tokens") if isinstance(details, dict) else None
-        )
-        # Placeholder rate: ~50 audio tokens / second per OpenAI Realtime
-        # docs. The Day 8 probe confirms (or refutes) this on real traffic.
-        audio_seconds = (
-            float(audio_tokens) / 50.0 if isinstance(audio_tokens, int) else 0.0
-        )
+    in_details = usage.get("input_token_details")
+    in_details = in_details if isinstance(in_details, dict) else {}
+    out_details = usage.get("output_token_details")
+    out_details = out_details if isinstance(out_details, dict) else {}
+    cached_details = in_details.get("cached_tokens_details")
+    cached_details = cached_details if isinstance(cached_details, dict) else {}
 
     return CostUsage(
-        audio_seconds=audio_seconds,
-        tokens_in=tokens_in,
-        tokens_out=tokens_out,
+        audio_input_tokens=_int_or_zero(in_details.get("audio_tokens")),
+        text_input_tokens=_int_or_zero(in_details.get("text_tokens")),
+        cached_audio_input_tokens=_int_or_zero(cached_details.get("audio_tokens")),
+        cached_text_input_tokens=_int_or_zero(cached_details.get("text_tokens")),
+        text_output_tokens=_int_or_zero(out_details.get("text_tokens")),
+        audio_output_tokens=_int_or_zero(out_details.get("audio_tokens")),
+        total_tokens=_int_or_zero(usage.get("total_tokens")),
     )
 
 

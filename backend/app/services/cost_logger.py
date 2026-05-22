@@ -5,21 +5,56 @@ Day 8. Dataclasses, method signatures, exceptions, and the Redis key
 schema below are the contract; do not rename them. Implementation
 details (pipeline vs multi, exact TTL refresh policy, etc.) are open.
 
+Token field shape was confirmed against a real session against
+``gpt-realtime`` GA on 2026-05-22 (probe commit 8d7f29f). Sample
+``response.done.usage`` for one utterance::
+
+    {
+      "total_tokens": 97,
+      "input_tokens": 85,
+      "output_tokens": 12,
+      "input_token_details": {
+        "text_tokens": 46,
+        "audio_tokens": 39,
+        "image_tokens": 0,
+        "cached_tokens": 0,
+        "cached_tokens_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0
+        }
+      },
+      "output_token_details": {"text_tokens": 12, "audio_tokens": 0}
+    }
+
+The fixed 46-token text input is :data:`SYSTEM_INSTRUCTIONS`. There is no
+``input_audio_seconds`` field on the GA event, so audio is billed by
+token; the ~50 audio-tokens / second rate documented in the Realtime
+API guide is only used for human-readable reporting in
+:attr:`CostUsage.estimated_audio_seconds`.
+
 Redis key schema
 ----------------
 ``session:{session_id}:cost`` — hash, TTL = parent session TTL + 600 s
-    audio_seconds  HINCRBYFLOAT  cumulative seconds of input audio
-    tokens_in      HINCRBY       cumulative input tokens (text + audio)
-    tokens_out     HINCRBY       cumulative output tokens
-    usd            HINCRBYFLOAT  cumulative USD cost
-    updated_at     HSET          ISO-8601 UTC of last record()
+    audio_input_tokens         HINCRBY       cumulative
+    text_input_tokens          HINCRBY       cumulative (incl. system prompt)
+    cached_audio_input_tokens  HINCRBY       cumulative
+    cached_text_input_tokens   HINCRBY       cumulative
+    text_output_tokens         HINCRBY       cumulative
+    audio_output_tokens        HINCRBY       cumulative (always 0 today,
+                                             retained for forward-compat)
+    usd                        HINCRBYFLOAT  cumulative USD cost
+    updated_at                 HSET          ISO-8601 UTC of last record()
 
 ``cost:daily:{YYYY-MM-DD}`` — hash, TTL = 48 h
-    audio_seconds  HINCRBYFLOAT
-    tokens_in      HINCRBY
-    tokens_out     HINCRBY
-    usd            HINCRBYFLOAT
-    sessions       HINCRBY       count of distinct session_ids in this bucket
+    audio_input_tokens         HINCRBY
+    text_input_tokens          HINCRBY
+    cached_audio_input_tokens  HINCRBY
+    cached_text_input_tokens   HINCRBY
+    text_output_tokens         HINCRBY
+    audio_output_tokens        HINCRBY
+    usd                        HINCRBYFLOAT
+    sessions                   HINCRBY       distinct session_id count
 
 ``cost:daily:{YYYY-MM-DD}:sessions`` — set, TTL = 48 h
     members: session_id strings already counted in this day's ``sessions``
@@ -31,22 +66,27 @@ uses; no separate connection pool.
 
 Pricing
 -------
-USD is computed at ``record()`` time from these :class:`Settings` fields:
+USD is computed at ``record()`` time from these :class:`Settings` fields
+(all are USD per million tokens, matching the OpenAI pricing-page units;
+verified 2026-05-22 against the gpt-realtime GA rate sheet):
 
-    settings.usd_per_audio_minute_input  - input audio billed by minute
-    settings.usd_per_1k_tokens_in        - input tokens (text + audio)
-    settings.usd_per_1k_tokens_out       - output tokens (text)
+    settings.usd_per_m_audio_input        $32.00 default
+    settings.usd_per_m_text_input         $ 4.00 default
+    settings.usd_per_m_audio_cached_input $ 0.40 default
+    settings.usd_per_m_text_cached_input  $ 0.40 default
+    settings.usd_per_m_text_output        $16.00 default
+    settings.usd_per_m_audio_output       $64.00 default (today unused)
 
-Defaults are placeholders. Final values must be verified against the
-OpenAI Realtime GA pricing page before the S5 pilot. The S1 Day 8 probe
-in :func:`app.services.translator.Translator.translate_stream` logs the
-raw ``response.done`` usage shape so we can confirm field names.
+Cached vs. uncached: the ``cached_*_input_tokens`` fields on
+:class:`CostUsage` carry the *cached subset*, not the delta. The pricing
+formula in :func:`compute_usd` bills only the non-cached remainder at the
+full rate.
 
 Privacy
 -------
 Per ``backend/CLAUDE.md``: never log audio bytes, translated text, source
 transcripts, OpenAI session tokens, or API keys here. This module only
-ever sees counts, durations, and derived USD numbers.
+ever sees counts and derived USD numbers.
 """
 from __future__ import annotations
 
@@ -54,6 +94,12 @@ from dataclasses import dataclass
 from datetime import date as date_cls
 from datetime import datetime
 from uuid import UUID
+
+
+AUDIO_TOKENS_PER_SECOND = 50
+"""Documented rate for OpenAI Realtime audio tokenisation (~50 / sec at
+24 kHz PCM16). Used only to derive a human-readable seconds estimate; the
+billing path never multiplies by this constant."""
 
 
 @dataclass(frozen=True)
@@ -64,32 +110,94 @@ class CostUsage:
     a running total. The cost logger sums them into the per-session and
     daily buckets.
 
+    All token counts are billed at the per-million-token rates defined on
+    :class:`Settings`. ``cached_*_input_tokens`` are the cached
+    subset of the same input — the cost formula bills the non-cached
+    remainder at the full rate and the cached subset at the cheap rate.
+
     Attributes
     ----------
-    audio_seconds:
-        Duration of input audio billed by OpenAI for this utterance. The
-        Realtime GA event currently reports audio as a token count in
-        ``input_token_details.audio_tokens``; the translator converts to
-        seconds before populating this field. If OpenAI later adds an
-        explicit ``input_audio_seconds`` field, the translator switches
-        to it transparently.
-    tokens_in:
-        Total input tokens (``response.usage.input_tokens``) including
-        the audio-tokenised input. Logged separately from ``audio_seconds``
-        so we can sanity-check the conversion rate.
-    tokens_out:
-        Total output tokens (``response.usage.output_tokens``); text-only
-        because :data:`SYSTEM_INSTRUCTIONS` constrains the session to
-        ``output_modalities = ["text"]``.
+    audio_input_tokens:
+        ``input_token_details.audio_tokens`` from the response. Includes
+        the cached portion (separate field below).
+    text_input_tokens:
+        ``input_token_details.text_tokens``. Today this is dominated by
+        the 46-token :data:`SYSTEM_INSTRUCTIONS` prompt.
+    cached_audio_input_tokens:
+        ``input_token_details.cached_tokens_details.audio_tokens``. Zero
+        on a cold session; non-zero once OpenAI prompt-caching kicks in
+        for repeated audio prefixes (rare in our flow).
+    cached_text_input_tokens:
+        ``input_token_details.cached_tokens_details.text_tokens``. Will
+        be non-zero whenever the system prompt is reused across responses
+        within the same session.
+    text_output_tokens:
+        ``output_token_details.text_tokens`` — the translation itself.
+        Equal to ``response.usage.output_tokens`` because we constrain
+        ``output_modalities=["text"]``.
+    audio_output_tokens:
+        ``output_token_details.audio_tokens``. Always 0 today; kept on
+        the schema so we never have to migrate redis hashes if we ever
+        ship audio output.
+    total_tokens:
+        ``response.usage.total_tokens``. Stored for sanity-check
+        reconciliation only; never used in the USD math.
     """
 
-    audio_seconds: float
-    tokens_in: int
-    tokens_out: int
+    audio_input_tokens: int
+    text_input_tokens: int
+    cached_audio_input_tokens: int
+    cached_text_input_tokens: int
+    text_output_tokens: int
+    audio_output_tokens: int
+    total_tokens: int
 
     @classmethod
     def zero(cls) -> "CostUsage":
-        return cls(audio_seconds=0.0, tokens_in=0, tokens_out=0)
+        return cls(
+            audio_input_tokens=0,
+            text_input_tokens=0,
+            cached_audio_input_tokens=0,
+            cached_text_input_tokens=0,
+            text_output_tokens=0,
+            audio_output_tokens=0,
+            total_tokens=0,
+        )
+
+    @property
+    def estimated_audio_seconds(self) -> float:
+        """Convenience reporter for dashboards / nippo. Not used for
+        billing — divide by :data:`AUDIO_TOKENS_PER_SECOND`."""
+        return self.audio_input_tokens / float(AUDIO_TOKENS_PER_SECOND)
+
+
+def compute_usd(
+    usage: CostUsage,
+    *,
+    usd_per_m_audio_input: float,
+    usd_per_m_text_input: float,
+    usd_per_m_audio_cached_input: float,
+    usd_per_m_text_cached_input: float,
+    usd_per_m_text_output: float,
+    usd_per_m_audio_output: float,
+) -> float:
+    """Pure pricing function. Bills the non-cached input remainder at the
+    full rate and the cached subset at the cheap rate.
+
+    Lives at module scope so unit tests can exercise it without standing
+    up a redis. The :class:`CostLogger` is expected to delegate to it
+    rather than re-implement the math.
+    """
+    raw_audio = max(0, usage.audio_input_tokens - usage.cached_audio_input_tokens)
+    raw_text = max(0, usage.text_input_tokens - usage.cached_text_input_tokens)
+    return (
+        raw_audio * usd_per_m_audio_input
+        + raw_text * usd_per_m_text_input
+        + usage.cached_audio_input_tokens * usd_per_m_audio_cached_input
+        + usage.cached_text_input_tokens * usd_per_m_text_cached_input
+        + usage.text_output_tokens * usd_per_m_text_output
+        + usage.audio_output_tokens * usd_per_m_audio_output
+    ) / 1_000_000.0
 
 
 @dataclass(frozen=True)
@@ -113,10 +221,17 @@ class DailyStats:
 
     day: date_cls
     usd: float
-    audio_seconds: float
-    tokens_in: int
-    tokens_out: int
+    audio_input_tokens: int
+    text_input_tokens: int
+    cached_audio_input_tokens: int
+    cached_text_input_tokens: int
+    text_output_tokens: int
+    audio_output_tokens: int
     sessions: int
+
+    @property
+    def estimated_audio_seconds(self) -> float:
+        return self.audio_input_tokens / float(AUDIO_TOKENS_PER_SECOND)
 
 
 class DailyCapExceeded(RuntimeError):
@@ -147,9 +262,12 @@ class CostLogger:
         redis: object,  # redis.asyncio.Redis — typed `object` to keep this
                         # stub import-light. Codex tightens the annotation.
         *,
-        usd_per_audio_minute_input: float,
-        usd_per_1k_tokens_in: float,
-        usd_per_1k_tokens_out: float,
+        usd_per_m_audio_input: float,
+        usd_per_m_text_input: float,
+        usd_per_m_audio_cached_input: float,
+        usd_per_m_text_cached_input: float,
+        usd_per_m_text_output: float,
+        usd_per_m_audio_output: float,
         daily_usd_cap: float,
         session_ttl_seconds: int = 3600,
     ) -> None:
@@ -165,31 +283,30 @@ class CostLogger:
         """Persist one usage delta and return the computed record.
 
         Steps (Codex pseudocode):
-        1. Compute USD = audio_seconds / 60 * usd_per_audio_minute_input
-                       + tokens_in / 1000 * usd_per_1k_tokens_in
-                       + tokens_out / 1000 * usd_per_1k_tokens_out
-        2. Pipeline:
-           - HINCRBYFLOAT session:{id}:cost audio_seconds <secs>
-           - HINCRBY      session:{id}:cost tokens_in <n>
-           - HINCRBY      session:{id}:cost tokens_out <n>
-           - HINCRBYFLOAT session:{id}:cost usd <usd>
-           - HSET         session:{id}:cost updated_at <iso>
-           - EXPIRE       session:{id}:cost session_ttl_seconds + 600
-           - SADD         cost:daily:<today>:sessions <session_id>
-           - HINCRBYFLOAT cost:daily:<today> audio_seconds <secs>
-           - HINCRBY      cost:daily:<today> tokens_in <n>
-           - HINCRBY      cost:daily:<today> tokens_out <n>
-           - HINCRBYFLOAT cost:daily:<today> usd <usd>
-           - EXPIRE       cost:daily:<today> 48*3600
-           - EXPIRE       cost:daily:<today>:sessions 48*3600
-        3. If SADD returned 1, also HINCRBY cost:daily:<today> sessions 1.
-           Do this in a second pipeline so step 2 stays single-trip; the
-           extra hop only happens on the first record() of a session.
-        4. Return CostRecord with computed values.
+        1. usd = compute_usd(usage, **per_million_rates)
+        2. Pipeline (one round-trip):
+           For each of (audio_input_tokens, text_input_tokens,
+           cached_audio_input_tokens, cached_text_input_tokens,
+           text_output_tokens, audio_output_tokens):
+             - HINCRBY session:{id}:cost <field> <count>
+             - HINCRBY cost:daily:<today> <field> <count>
+           Plus:
+             - HINCRBYFLOAT session:{id}:cost usd <usd>
+             - HSET         session:{id}:cost updated_at <iso>
+             - EXPIRE       session:{id}:cost session_ttl_seconds + 600
+             - HINCRBYFLOAT cost:daily:<today> usd <usd>
+             - EXPIRE       cost:daily:<today> 48*3600
+             - SADD         cost:daily:<today>:sessions <session_id>
+             - EXPIRE       cost:daily:<today>:sessions 48*3600
+        3. If SADD returned 1, run a follow-up HINCRBY
+           ``cost:daily:<today> sessions 1`` so first-touch is counted
+           exactly once. The extra round-trip is acceptable because it
+           only fires on the first record() of a session.
+        4. Return CostRecord with the freshly-computed USD and the day
+           bucket the record was written into.
 
-        Privacy: do not log the usage object or USD if log level is INFO;
-        use DEBUG only and never include session_id in pilot logs unless
-        ``app_env == "dev"``.
+        Privacy: log USD and counts at DEBUG only and never include
+        session_id in pilot logs unless ``app_env == "dev"``.
         """
         raise NotImplementedError("S1 Day 8 — Codex implements")
 

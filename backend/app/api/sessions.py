@@ -144,12 +144,10 @@ async def session_stream(
             try:
                 _validate_ws_event(event)
             except ValidationError as ve:
-                # S1 Day 8 probe — log validation failures so we can see
-                # what the mobile client actually sends without waiting for
-                # it to report the error back.  Only the event type and
-                # JSON-pointer path of the failing field are logged; no
-                # payload values (which could include base64 audio).
-                logger.info(
+                # Log validation failures so we can debug malformed client
+                # events without trusting the client to report them. Type +
+                # JSON-pointer path only; no payload values.
+                logger.warning(
                     "ws.invalid_event session=%s type=%s path=%s reason=%s",
                     session_id,
                     event.get("type") if isinstance(event, dict) else None,
@@ -166,9 +164,6 @@ async def session_stream(
                 continue
 
             event_type = event.get("type")
-            # S1 Day 8 probe — track which events reach the session loop
-            # and in what order. Logs type only (no payload).
-            logger.info("ws.event session=%s type=%s", session_id, event_type)
 
             if event_type == "metrics":
                 continue
