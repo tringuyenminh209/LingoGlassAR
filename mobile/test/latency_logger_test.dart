@@ -47,7 +47,7 @@ void main() {
       final logger = LatencyLogger();
       logger.markSendStart(
           sequenceId: 7, mtu: 185, payloadBytes: 300, fragments: 2);
-      logger.recordAck(AckEvent(
+      logger.recordAck(const AckEvent(
         sequenceId: 7,
         status: 0x01,
         receivedAtMicros: 2000000,
@@ -99,6 +99,82 @@ void main() {
         tRenderMs: 0,
       ));
       expect(logger.summarise(), isNull);
+    });
+
+    test('e2e happy path finalises a complete record', () {
+      final logger = LatencyLogger();
+
+      logger.e2eStart('greeting-01');
+      logger.e2eMarkPttRelease();
+      logger.e2eMarkSessionOpened('session-1');
+      logger.e2eMarkFirstText();
+      logger.e2eMarkTranslationFinal();
+      logger.e2eMarkBleAck(12);
+      final record = logger.e2eFinalize();
+
+      expect(record, isNotNull);
+      expect(record!.phraseId, 'greeting-01');
+      expect(record.audioMs, greaterThanOrEqualTo(0));
+      expect(record.backendAckMs, isNotNull);
+      expect(record.firstTextMs, isNotNull);
+      expect(record.fullTextMs, isNotNull);
+      expect(record.bleAckMs, isNotNull);
+      expect(record.totalMs, record.bleAckMs);
+      expect(record.sessionId, 'session-1');
+      expect(record.bleSequenceId, 12);
+      expect(record.isOk, true);
+    });
+
+    test('e2e abort stores the error row', () {
+      final logger = LatencyLogger()..e2eStart('weather-03');
+
+      final record = logger.e2eAbort('timeout');
+
+      expect(record, isNotNull);
+      expect(record!.errorCode, 'timeout');
+      expect(logger.e2eRecords, contains(record));
+      expect(logger.e2eFinalize(), isNull);
+    });
+
+    test('e2e overlapping start discards prior trace', () {
+      final logger = LatencyLogger()
+        ..e2eStart('a')
+        ..e2eStart('b');
+
+      expect(logger.e2eRecords, hasLength(1));
+      expect(logger.e2eRecords.single.phraseId, 'a');
+      expect(logger.e2eRecords.single.errorCode, 'discarded');
+      expect(logger.e2eInProgress, true);
+    });
+
+    test('e2e mark BLE ACK without active trace is no-op', () {
+      final logger = LatencyLogger();
+
+      logger.e2eMarkBleAck(9);
+
+      expect(logger.e2eRecords, isEmpty);
+      expect(logger.e2eInProgress, false);
+    });
+
+    test('clearE2e leaves Phase F records intact', () {
+      final logger = LatencyLogger();
+      logger.markSendStart(
+          sequenceId: 5, mtu: 247, payloadBytes: 5, fragments: 1);
+      logger.recordAck(AckEvent(
+        sequenceId: 5,
+        status: 0x01,
+        receivedAtMicros: DateTime.now().microsecondsSinceEpoch,
+        tRecvMs: 0,
+        tRenderMs: 0,
+      ));
+      logger.e2eStart('time-09');
+      logger.e2eAbort('timeout');
+
+      logger.clearE2e();
+
+      expect(logger.records, hasLength(1));
+      expect(logger.e2eRecords, isEmpty);
+      expect(logger.e2eInProgress, false);
     });
   });
 }

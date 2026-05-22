@@ -211,7 +211,162 @@ def render_s1_markdown(rows: list[dict[str, str]]) -> str:
     - Clamp negative stage durations to 0 in display, but flag them in
       a "Clock skew" footer if any appear (server-clock drift symptom).
     """
-    raise NotImplementedError("S1 Day 9 — Codex implements render_s1_markdown")
+    clean_rows = [row for row in rows if not row.get("error", "").strip()]
+    failures: dict[str, int] = defaultdict(int)
+    for row in rows:
+        error = row.get("error", "").strip()
+        if error:
+            failures[error] += 1
+
+    phrase_stages: dict[str, dict[str, list[float]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
+    stage_values: dict[str, list[float]] = defaultdict(list)
+    totals_by_phrase: dict[str, list[float]] = defaultdict(list)
+    total_values: list[float] = []
+    skew_rows = 0
+
+    for row in clean_rows:
+        phrase_id = row.get("phrase_id", "").strip() or "<missing>"
+        row_had_skew = False
+        for label, start_column, end_column in S1_STAGES:
+            start = 0.0 if start_column is None else _float_cell(row, start_column)
+            end = _float_cell(row, end_column)
+            if start is None or end is None:
+                continue
+            stage_ms = end - start
+            if stage_ms < 0:
+                row_had_skew = True
+                stage_ms = 0.0
+            phrase_stages[phrase_id][label].append(stage_ms)
+            stage_values[label].append(stage_ms)
+
+        total = _float_cell(row, "total_ms")
+        if total is not None:
+            total_values.append(total)
+            totals_by_phrase[phrase_id].append(total)
+        if row_had_skew:
+            skew_rows += 1
+
+    total_values.sort()
+    lines: list[str] = [
+        "# S1 Day 9 End-to-End Latency Report",
+        "",
+        (
+            f"Target: e2e `p95(total_ms) <= {S1_TARGET_TOTAL_MS:.0f} ms` "
+            "per docs/CLAUDE.md."
+        ),
+        "",
+        "## Stacked-bar by stage (median ms)",
+        "",
+        "| phrase | audio | handshake | stt | translate | ble | total |",
+        "|--------|------:|----------:|----:|----------:|----:|------:|",
+    ]
+    for phrase_id in sorted(set(phrase_stages) | set(totals_by_phrase)):
+        stage_cells = [
+            _s1_median_cell(phrase_stages[phrase_id].get(label, []))
+            for label, _, _ in S1_STAGES
+        ]
+        lines.append(
+            f"| {phrase_id} | {' | '.join(stage_cells)} | "
+            f"{_s1_median_cell(totals_by_phrase[phrase_id])} |"
+        )
+
+    median_cells = [
+        _s1_median_cell(stage_values.get(label, [])) for label, _, _ in S1_STAGES
+    ]
+    lines.append(
+        f"| **median** | {' | '.join(median_cells)} | "
+        f"{_s1_median_cell(total_values)} |"
+    )
+    lines.extend(
+        [
+            "",
+            "## Overall total_ms",
+            "",
+            "| n_ok / n_total | p50 | p90 | p95 | p99 | min | max |",
+            "|---------------:|----:|----:|----:|----:|----:|----:|",
+        ]
+    )
+    if total_values:
+        lines.append(
+            f"| {len(total_values)} / {len(rows)} | "
+            f"{percentile(total_values, 0.50):.0f} | "
+            f"{percentile(total_values, 0.90):.0f} | "
+            f"{percentile(total_values, 0.95):.0f} | "
+            f"{percentile(total_values, 0.99):.0f} | "
+            f"{total_values[0]:.0f} | {total_values[-1]:.0f} |"
+        )
+    else:
+        lines.append(f"| 0 / {len(rows)} | - | - | - | - | - | - |")
+
+    lines.extend(
+        [
+            "",
+            "## Per-stage percentiles",
+            "",
+            "| stage | n | p50 | p90 | p95 |",
+            "|-------|--:|----:|----:|----:|",
+        ]
+    )
+    for label, _, _ in S1_STAGES:
+        values = sorted(stage_values.get(label, []))
+        if values:
+            lines.append(
+                f"| {label} | {len(values)} | "
+                f"{percentile(values, 0.50):.0f} | "
+                f"{percentile(values, 0.90):.0f} | "
+                f"{percentile(values, 0.95):.0f} |"
+            )
+        else:
+            lines.append(f"| {label} | 0 | - | - | - |")
+
+    lines.extend(["", "## Verdict", ""])
+    if not total_values:
+        lines.append("- p95(total_ms) = - vs target 2500 ms")
+        lines.append("- **NO DATA**")
+    else:
+        p95_total = percentile(total_values, 0.95)
+        decision = "GO" if p95_total <= S1_TARGET_TOTAL_MS else "NO-GO"
+        lines.append(
+            f"- p95(total_ms) = {p95_total:.0f} ms vs target "
+            f"{S1_TARGET_TOTAL_MS:.0f} ms"
+        )
+        lines.append(f"- **{decision}**")
+        if decision == "NO-GO":
+            stage_medians = {
+                label: statistics.median(values)
+                for label, values in stage_values.items()
+                if values
+            }
+            if stage_medians:
+                biggest = max(stage_medians, key=stage_medians.get)
+                lines.append(f"- Biggest median contributor: **{biggest}**")
+
+    if failures:
+        lines.extend(["", "## Failures", "", "| error | rows |", "|-------|-----:|"])
+        for error, count in sorted(failures.items()):
+            lines.append(f"| {error} | {count} |")
+
+    if skew_rows:
+        lines.extend(["", f"Clock skew: {skew_rows} rows had negative stage deltas."])
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _float_cell(row: dict[str, str], column: str) -> float | None:
+    value = row.get(column, "").strip()
+    if not value:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def _s1_median_cell(values: Iterable[float]) -> str:
+    values = list(values)
+    return f"{statistics.median(values):.0f}" if values else "-"
 
 
 def main(argv: list[str]) -> int:
