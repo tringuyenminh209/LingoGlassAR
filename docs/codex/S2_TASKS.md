@@ -51,8 +51,8 @@ No commit subject — research only, doc-only commit
 | Owner | Task | Verify | Status |
 |---|---|---|---|
 | **Claude (prep)** [DONE] | Lock the contract change in `backend/app/services/translator.py`: add `STTConfig` (frozen dataclass with `transcription_model` + `transcription_delay`), `DEFAULT_STT_CONFIG`, `TranscriptionDelay` literal, and `stt_config: STTConfig \| None = None` on `Translator.__init__`. Body of `connect()` is intentionally left at S1 values for Codex. | locked stub commit. | DONE |
-| **Codex** | Implement bodies against the locked stub per §2l in `docs/codex/PROMPTS.md`: wire `stt_config` fields into `audio.input.transcription`, add `turn_detection: None`, drop duplicate `instructions` from `response.create`. 3 new pytest cases. | `pytest backend/tests/test_translator.py` green. | pending (§2l ready) |
-| **Claude** | Code review + merge. | n/a | pending |
+| **Codex** [DONE PR #11 `19ad38e`] | Implement bodies against the locked stub per §2l in `docs/codex/PROMPTS.md`: wire `stt_config` fields into `audio.input.transcription`, add `turn_detection: None` (nested under `audio.input`, not session top-level — re-locked after live smoke), drop duplicate `instructions` from `response.create`. 3 new pytest cases + 2 bonus. | `pytest backend/tests/test_translator.py` green (6/6). | DONE |
+| **Claude** [DONE 2026-05-23] | Code review + merge. Smoke caught wrong `turn_detection` nesting before code — re-locked spec in `d9f8e19`. | n/a | DONE |
 
 Commit subject: `feat(backend): S2 Day 2 STT tuning gpt-realtime-whisper + delay=low`.
 
