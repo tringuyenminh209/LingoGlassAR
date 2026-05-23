@@ -344,8 +344,10 @@ class _TranslateScreenState extends State<TranslateScreen> {
   /// Until Codex flips this, short-press detection is OFF and existing
   /// S1 behaviour is preserved.
   bool _isShortPress() {
-    if (_pressDownTsMicros == null) return false;
-    return false; // Codex Day 4: see docstring.
+    final pressed = _pressDownTsMicros;
+    if (pressed == null) return false;
+    final heldMicros = DateTime.now().microsecondsSinceEpoch - pressed;
+    return heldMicros < _kShortPressMin.inMicroseconds;
   }
 
   /// Show transient feedback when the user released too fast.
@@ -355,7 +357,16 @@ class _TranslateScreenState extends State<TranslateScreen> {
   /// keep the duration short (≤ 2 s) so it doesn't stack on a series
   /// of accidental taps.
   void _showShortPressWarning() {
-    // no-op until Codex
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(
+          content: Text('Hold longer to record'),
+          duration: Duration(milliseconds: 1500),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
   }
 
   /// Show transient feedback when a back-to-back press discarded the
@@ -365,7 +376,16 @@ class _TranslateScreenState extends State<TranslateScreen> {
   /// phrase id so the operator knows which row is now "discarded" in
   /// the CSV. Example copy: "Previous attempt (greeting-01) discarded".
   void _showDiscardBanner(E2eLatencyRecord discarded) {
-    // no-op until Codex
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text('Previous attempt (${discarded.phraseId}) discarded'),
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
   }
 
   void _onTextDelta(TextDelta delta) {
