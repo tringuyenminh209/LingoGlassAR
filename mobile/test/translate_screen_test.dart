@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lingoglass_mobile/data/s2_phrases.dart';
 import 'package:lingoglass_mobile/screens/translate_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -114,6 +115,21 @@ void main() {
         find.text('Previous attempt (greeting-01) discarded'),
         findsOneWidget,
       );
+    });
+  });
+
+  group('S2 Run 30', () {
+    testWidgets('shows the first phrase and ready log', (tester) async {
+      HttpOverrides.global = _SessionHttpOverrides();
+      await _pumpTranslateScreen(tester);
+
+      await tester.tap(find.text('S2 Run 30'));
+      await tester.pump();
+
+      expect(s2Phrases.first.id, 'ja-greet-01');
+      expect(find.text(s2Phrases.first.text), findsOneWidget);
+      expect(find.text('1/60'), findsOneWidget);
+      expect(find.textContaining('phrase ja-greet-01 ready'), findsOneWidget);
     });
   });
 }
