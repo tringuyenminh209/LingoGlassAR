@@ -82,12 +82,9 @@ triggering `e2eAbort('discarded')` on the prior trace. Three fixes:
 
 | Owner | Task | Verify | Status |
 |---|---|---|---|
-| **Claude (prep)** | Lock PTT state machine extensions in
-`mobile/lib/screens/translate_screen.dart`: (a) 500 ms post-finalize
-cooldown blocks re-press, (b) short-press warning if PTT release < 100 ms,
-(c) discard visual feedback (banner or toast on previous-trace discard). | stub commit. | pending |
-| **Codex** | Implement the three bodies + widget tests covering each
-state transition. | `flutter test` green, manual smoke on device. | pending |
+| **Claude (prep)** [DONE 2026-05-23] | Lock PTT UX surface in `mobile/lib/screens/translate_screen.dart`: file-level tunables `_kPostFinalizeCooldown` (500 ms) + `_kShortPressMin` (100 ms); state `_cooldownTimer` + `_pressDownTsMicros`; impl (a) cooldown (`_isInCooldown` + `_startPostFinalizeCooldown`) in full; stub `_isShortPress` + UI methods `_showShortPressWarning` / `_showDiscardBanner`. Change `LatencyLogger.e2eStart` return type to `E2eLatencyRecord?` for (c) wiring. 2 new logger tests. | `flutter analyze` 0 issues; `flutter test test/latency_logger_test.dart` green (11 tests). | DONE |
+| **Codex** | Per `docs/codex/PROMPTS.md` §2m: flip `_isShortPress` body, fill `_showShortPressWarning` + `_showDiscardBanner` SnackBars, add `mobile/test/translate_screen_test.dart` with 3 widget test groups. | `flutter test` green, manual smoke on device. | pending |
+| **Claude** | Code review + merge + device smoke. | n/a | pending |
 
 Commit subject: `feat(mobile): S2 Day 4 PTT cooldown + warnings`.
 

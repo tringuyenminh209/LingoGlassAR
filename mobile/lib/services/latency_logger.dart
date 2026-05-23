@@ -370,15 +370,22 @@ class LatencyLogger {
   /// Begin a new utterance trace. Discards any prior unfinalised trace
   /// by finalising it with `errorCode='discarded'` first so no data is
   /// lost; the operator sees the discard in the CSV.
-  void e2eStart(String phraseId) {
+  ///
+  /// Returns the discarded prior record if a back-to-back press
+  /// happened before the previous trace completed, so the UI can show
+  /// transient feedback (S2 Day 4). Returns `null` when no prior trace
+  /// was active.
+  E2eLatencyRecord? e2eStart(String phraseId) {
+    E2eLatencyRecord? discarded;
     if (_activeTrace != null) {
       _activeTrace!.errorCode = 'discarded';
-      e2eFinalize();
+      discarded = e2eFinalize();
     }
     _activeTrace = _E2eTrace(
       phraseId: phraseId,
       pressTsMicros: DateTime.now().microsecondsSinceEpoch,
     );
+    return discarded;
   }
 
   /// Record PTT release (audio.end semantically). Stores

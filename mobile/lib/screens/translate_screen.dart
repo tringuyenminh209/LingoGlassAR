@@ -29,6 +29,24 @@ import '../services/translator_ws.dart';
 
 enum _PttState { idle, starting, recording, ending, aborting }
 
+// S2 Day 4 — PTT UX tunables. Locked here (Claude prep) so Codex impl
+// and any future tune touch only one place.
+//
+// `_kPostFinalizeCooldown`: time after a trace ends (success OR abort)
+// during which a fresh PTT press is rejected. Prevents the S1 Day 9
+// double-press pattern where the second press hit between
+// `translation.final` and `e2eFinalize()`, discarding the prior trace
+// and inflating retry rate. 500 ms is the initial setting from the S2
+// open-questions lock; tune empirically in the Day 4 device run if
+// retry rate is still > 20 %.
+const Duration _kPostFinalizeCooldown = Duration(milliseconds: 500);
+
+// `_kShortPressMin`: a release that happens within this window of press
+// is treated as an accidental tap. The trace is aborted with
+// `short_press` and the user sees a transient warning instead of an
+// empty/garbled transcription row.
+const Duration _kShortPressMin = Duration(milliseconds: 100);
+
 class TranslateScreen extends StatefulWidget {
   const TranslateScreen({super.key});
 
@@ -68,6 +86,12 @@ class _TranslateScreenState extends State<TranslateScreen> {
   var _s1Running = false;
   var _s1Index = 0;
 
+  // S2 Day 4 — PTT UX state (Codex impl fills bodies). All three pieces
+  // share the same lifecycle: created on press, consulted on release,
+  // cleared on teardown.
+  Timer? _cooldownTimer;
+  int? _pressDownTsMicros;
+
   @override
   void initState() {
     super.initState();
@@ -105,6 +129,7 @@ class _TranslateScreenState extends State<TranslateScreen> {
     _audioSub?.cancel();
     _s1Timeout?.cancel();
     _s1Advance?.cancel();
+    _cooldownTimer?.cancel();
     unawaited(_recorder.stop());
     unawaited(_ws.disconnect());
     _sessionClient.close();
@@ -136,14 +161,27 @@ class _TranslateScreenState extends State<TranslateScreen> {
       _log('PTT busy (state=${_ptt.name}), press ignored');
       return;
     }
+    // S2 Day 4 (a) — cooldown gate. Stub returns false; Codex makes it
+    // honour `_cooldownTimer`.
+    if (_isInCooldown()) {
+      _log('PTT cooldown, press ignored');
+      return;
+    }
     if (_deviceId == null) {
       _log('Not ready (deviceId pending)');
       return;
     }
     _ptt = _PttState.starting;
+    _pressDownTsMicros = DateTime.now().microsecondsSinceEpoch;
     final phrase = _currentS1Phrase;
     if (phrase != null) {
-      _latency.e2eStart(phrase.id);
+      // S2 Day 4 (c) — discard banner. e2eStart now returns the
+      // discarded prior record (or null) — stub `_showDiscardBanner` is
+      // a no-op until Codex wires the UI.
+      final discarded = _latency.e2eStart(phrase.id);
+      if (discarded != null) {
+        _showDiscardBanner(discarded);
+      }
     }
     setState(() {
       _isHolding = true;
@@ -195,6 +233,22 @@ class _TranslateScreenState extends State<TranslateScreen> {
 
   Future<void> _onPressUp() async {
     if (_ptt == _PttState.idle) return;
+
+    // S2 Day 4 (b) — short-press detection. Must run BEFORE
+    // `e2eMarkPttRelease` so a discarded short press doesn't leak a
+    // bogus audio_ms into the CSV row. Stub `_isShortPress` is false
+    // until Codex wires the press-down timestamp comparison.
+    if (_isShortPress()) {
+      _showShortPressWarning();
+      _latency.e2eAbort('short_press');
+      _s1Timeout?.cancel();
+      _ptt = _PttState.aborting;
+      setState(() => _isHolding = false);
+      _log('Short press ignored (<${_kShortPressMin.inMilliseconds}ms)');
+      await _teardownPtt();
+      return;
+    }
+
     _latency.e2eMarkPttRelease();
     _s1Timeout?.cancel();
     setState(() => _isHolding = false);
@@ -239,6 +293,79 @@ class _TranslateScreenState extends State<TranslateScreen> {
     await _ws.disconnect();
     if (mounted) setState(() => _isWsConnected = false);
     _ptt = _PttState.idle;
+    _pressDownTsMicros = null;
+    // S2 Day 4 (a) — start cooldown after every terminal teardown so a
+    // fast re-press is rejected by `_isInCooldown()`. Stub is a no-op
+    // until Codex wires the timer.
+    _startPostFinalizeCooldown();
+  }
+
+  // ------------------------------------------------------------------
+  // S2 Day 4 — PTT UX (Claude prep + Codex impl split)
+  //
+  // (a) cooldown: state-machine only, no UI — fully implemented in
+  //     prep. A press during cooldown is silently rejected; the user
+  //     experiences "press did nothing", which is the intended
+  //     feedback because the trace just ended.
+  // (b) short-press: detection wired here returning `false` (stub);
+  //     Codex flips it + adds SnackBar UI in [_showShortPressWarning]
+  //     in the same PR so the user always sees feedback when the press
+  //     is rejected.
+  // (c) discard banner: detection already wired via the new
+  //     [LatencyLogger.e2eStart] return value; Codex fills
+  //     [_showDiscardBanner].
+  // ------------------------------------------------------------------
+
+  /// True iff a fresh PTT press should be rejected because a prior
+  /// trace just ended (cooldown is active).
+  bool _isInCooldown() => _cooldownTimer?.isActive ?? false;
+
+  /// Schedule the post-finalize cooldown. Called from [_teardownPtt]
+  /// at every terminal state (success + abort + error).
+  void _startPostFinalizeCooldown() {
+    _cooldownTimer?.cancel();
+    _cooldownTimer = Timer(_kPostFinalizeCooldown, () {
+      _cooldownTimer = null;
+    });
+  }
+
+  /// True iff the PTT release happened within [_kShortPressMin] of
+  /// press. Consulted by [_onPressUp] BEFORE any state mutation so a
+  /// discarded short press leaves no side-effects.
+  ///
+  /// Codex (Day 4 body): replace the stub return with the real
+  /// comparison:
+  ///
+  ///   final pressed = _pressDownTsMicros;
+  ///   if (pressed == null) return false;
+  ///   final held = DateTime.now().microsecondsSinceEpoch - pressed;
+  ///   return held < _kShortPressMin.inMicroseconds;
+  ///
+  /// Until Codex flips this, short-press detection is OFF and existing
+  /// S1 behaviour is preserved.
+  bool _isShortPress() {
+    if (_pressDownTsMicros == null) return false;
+    return false; // Codex Day 4: see docstring.
+  }
+
+  /// Show transient feedback when the user released too fast.
+  ///
+  /// Codex (Day 4 body): SnackBar (preferred — auto-dismisses) with a
+  /// message such as "Hold longer to record". Theme/copy is yours, but
+  /// keep the duration short (≤ 2 s) so it doesn't stack on a series
+  /// of accidental taps.
+  void _showShortPressWarning() {
+    // no-op until Codex
+  }
+
+  /// Show transient feedback when a back-to-back press discarded the
+  /// previous trace.
+  ///
+  /// Codex (Day 4 body): SnackBar (preferred) naming the discarded
+  /// phrase id so the operator knows which row is now "discarded" in
+  /// the CSV. Example copy: "Previous attempt (greeting-01) discarded".
+  void _showDiscardBanner(E2eLatencyRecord discarded) {
+    // no-op until Codex
   }
 
   void _onTextDelta(TextDelta delta) {

@@ -137,13 +137,24 @@ void main() {
     });
 
     test('e2e overlapping start discards prior trace', () {
-      final logger = LatencyLogger()
-        ..e2eStart('a')
-        ..e2eStart('b');
+      final logger = LatencyLogger();
+      logger.e2eStart('a');
+      final discarded = logger.e2eStart('b');
 
       expect(logger.e2eRecords, hasLength(1));
       expect(logger.e2eRecords.single.phraseId, 'a');
       expect(logger.e2eRecords.single.errorCode, 'discarded');
+      expect(logger.e2eInProgress, true);
+      expect(discarded, isNotNull);
+      expect(discarded!.phraseId, 'a');
+      expect(discarded.errorCode, 'discarded');
+    });
+
+    test('e2eStart returns null when no prior trace is active', () {
+      final logger = LatencyLogger();
+      final discarded = logger.e2eStart('greeting-01');
+
+      expect(discarded, isNull);
       expect(logger.e2eInProgress, true);
     });
 

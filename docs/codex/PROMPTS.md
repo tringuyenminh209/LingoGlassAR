@@ -2046,6 +2046,135 @@ After opening the PR, post the URL here and STOP. Do not start Day 3.
 
 ---
 
+## 2m. S2 Day 4 (Codex row) — PTT cooldown + warnings UX (ready to copy)
+
+**Tag**: implement bodies only. Do NOT change the locked tunables
+(`_kPostFinalizeCooldown`, `_kShortPressMin`), do NOT rename
+`_isInCooldown` / `_isShortPress` / `_showShortPressWarning` /
+`_showDiscardBanner` / `_startPostFinalizeCooldown`, do NOT touch
+`_PttState` enum, do NOT touch `LatencyLogger.e2eStart` signature.
+The state-machine wiring is already done by Claude prep — your job is
+the short-press time comparison + the two SnackBar bodies + widget
+tests.
+
+**Precondition**: Claude prep landed on `main` at commit
+`<paste from git log -1>`. That commit:
+
+- added `_kPostFinalizeCooldown` (500 ms) + `_kShortPressMin` (100 ms)
+  as file-level constants in `mobile/lib/screens/translate_screen.dart`,
+- added `_cooldownTimer` + `_pressDownTsMicros` state fields,
+- implemented `_isInCooldown()` and `_startPostFinalizeCooldown()`
+  in full (cooldown timer logic, no UI),
+- wired `_isShortPress()` into `_onPressUp` as the FIRST check before
+  any state mutation; the stub currently returns `false`,
+- wired `_showShortPressWarning()` and `_showDiscardBanner()` call
+  sites in `_onPressUp` and `_onPressDown`; both stubs are no-ops,
+- changed `LatencyLogger.e2eStart` to return `E2eLatencyRecord?` so
+  the discard banner has the discarded row to render,
+- added 2 unit tests in `mobile/test/latency_logger_test.dart`
+  covering the new return value (null on first call, non-null on
+  back-to-back).
+
+Background: S2 Day 9 retro of S1 showed retry rate ~50 % driven by the
+PTT double-press pattern. The three behaviours are spec'd in
+`docs/codex/S2_TASKS.md` Day 4 row.
+
+```
+Your task: S2 Day 4 — flip the short-press detection ON and fill the
+two SnackBar bodies. Single mobile PR.
+
+## Concrete deliverables
+
+1. mobile/lib/screens/translate_screen.dart — three method bodies ONLY:
+
+   a. `_isShortPress()` — replace the stub with:
+
+        final pressed = _pressDownTsMicros;
+        if (pressed == null) return false;
+        final heldMicros =
+            DateTime.now().microsecondsSinceEpoch - pressed;
+        return heldMicros < _kShortPressMin.inMicroseconds;
+
+      Do NOT change the signature or the early-null behaviour.
+
+   b. `_showShortPressWarning()` — fill the body. Show a SnackBar via
+      `ScaffoldMessenger.of(context)` with:
+
+        - content: Text('Hold longer to record')
+        - duration: Duration(milliseconds: 1500)
+        - behavior: SnackBarBehavior.floating
+
+      Guard on `mounted` before touching `ScaffoldMessenger`. Use
+      `hideCurrentSnackBar()` before `showSnackBar()` so a quick burst
+      of accidental taps does not pile up.
+
+   c. `_showDiscardBanner(E2eLatencyRecord discarded)` — fill the
+      body. Show a SnackBar with content
+      `Text('Previous attempt (${discarded.phraseId}) discarded')`,
+      duration 2 s, floating, same `mounted` + `hideCurrentSnackBar`
+      pattern. Use the standard MaterialBanner only if you have a
+      strong reason — SnackBar is preferred because it auto-dismisses.
+
+   Do NOT touch any other method body, any state field, the build
+   tree, the `_PttState` enum, or anything in `lib/ble/` /
+   `lib/services/` / `lib/audio/`.
+
+2. mobile/test/translate_screen_test.dart — NEW widget test file.
+   Three test groups (one per behaviour):
+
+   a. group 'cooldown blocks fast re-press' — pump the widget, fire a
+      complete press/release cycle that drives the trace through to
+      `_teardownPtt`, then fire a second press within 100 ms. Assert
+      that the second press's `e2eStart` was NOT called (use a fake
+      `LatencyLogger` or wrap with a key + tap counter on the press
+      area). Acceptance: log line includes 'PTT cooldown'.
+
+   b. group 'short press is rejected' — pump the widget, drive a
+      press-down then release after < 100 ms. Assert that the
+      `short_press` SnackBar text is in the tree, and `e2eAbort`
+      received `'short_press'`. The trace must NOT contain
+      `audioMs > 0`.
+
+   c. group 'back-to-back discard shows banner' — pump the widget,
+      seed `LatencyLogger` with an in-progress trace (call
+      `e2eStart('a')` directly), then drive a fresh press. Assert
+      the SnackBar text includes the discarded phraseId 'a'.
+
+   The existing `mobile/test/widget_test.dart` may need adjustment if
+   it tries to instantiate `TranslateScreen` directly — leave it
+   alone if it does not import the screen.
+
+3. Do NOT add new dependencies. Use `flutter_test` only.
+
+## Verification commands to paste raw output for
+
+- `cd mobile && flutter analyze --no-pub` — must show 0 issues.
+- `cd mobile && flutter test test/translate_screen_test.dart` —
+  must show all green.
+- `cd mobile && flutter test test/latency_logger_test.dart` —
+  must still show all green (regression check).
+
+## Branch / commit / PR
+
+Branch: `feat/s2-day-4-ptt-cooldown-ux`. Commit subject:
+`feat(mobile): S2 Day 4 PTT cooldown + warnings`. PR title same.
+Squash-merge.
+
+## What this PR explicitly does NOT do
+
+- It does NOT change the cooldown duration or short-press threshold
+  (those are tunables Claude owns).
+- It does NOT touch `LatencyLogger` or any service.
+- It does NOT add a `provider` / `riverpod` / state-management package.
+- It does NOT renumber the `_PttState` enum or add new states.
+- It does NOT introduce manual scoring UI, accuracy harness, or
+  Day 5+ features.
+
+After opening the PR, post the URL here and STOP. Do not start Day 5.
+```
+
+---
+
 ## 4. PR-ready check (paste when Codex says "done")
 
 ```
