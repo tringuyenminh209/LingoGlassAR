@@ -58,26 +58,32 @@ TranscriptionDelay = Literal["minimal", "low", "medium", "high", "xhigh"]
 class STTConfig:
     """Tunables for the speech-to-text leg of the Realtime session.
 
-    Defaults reflect the S2 Day 1 probe decision (see
-    ``docs/reports/S2_stt_probe.md``):
+    Defaults match the S1 baseline after S2 Day 3 retro reverted the
+    streaming-first model swap. See ``docs/reports/S2_stt_retro.md``.
 
-    - ``transcription_model = "gpt-realtime-whisper"`` replaces the S1
-      default ``"whisper-1"``. The newer model is streaming-first with
-      OpenAI-quoted partial latency 200-400 ms vs. whisper-1's
-      finished-audio orientation.
-    - ``transcription_delay = "minimal"`` is the S2 Day 3 follow-up
-      after ``delay="low"`` regressed STT median from 884 ms (S1
-      baseline, whisper-1) to 1044 ms (Day 3 device run on
-      ``gpt-realtime-whisper`` + ``delay="low"``, see
-      ``docs/reports/S2_latency_2026-05-23.md``). ``"minimal"`` is the
-      lowest-latency setting; accuracy regression risk is monitored at
-      the Day 6 translation-accuracy bench. Valid values: ``minimal`` /
-      ``low`` / ``medium`` / ``high`` / ``xhigh``. Only honoured when
-      ``transcription_model == "gpt-realtime-whisper"``.
+    - ``transcription_model = "whisper-1"`` is the S1-validated model.
+      Two Day 3 device benches (``s2_run11`` with ``delay="low"`` and
+      ``s2_run12`` with ``delay="minimal"``) showed
+      ``gpt-realtime-whisper`` regressing STT median by +126-160 ms.
+      Translate stage shaved ~50 ms in the same runs so
+      ``system_latency_ms`` p95 stayed flat (1478-1535 ms vs S1 1493 ms),
+      meaning the swap reshuffled latency between stages without a user-
+      visible improvement. Reverted to keep the simpler config and the
+      validated cost profile.
+    - ``transcription_delay = None`` skips emitting the ``delay`` field
+      from ``audio.input.transcription``; whisper-1 does not accept it.
+      The field is only honoured when ``transcription_model ==
+      "gpt-realtime-whisper"`` — if a future A/B reintroduces that model,
+      set this to one of ``minimal`` / ``low`` / ``medium`` / ``high`` /
+      ``xhigh``.
+
+    The surface (frozen dataclass with these two fields) is preserved
+    so future model A/B experiments can swap defaults without touching
+    ``Translator.__init__``.
     """
 
-    transcription_model: str = "gpt-realtime-whisper"
-    transcription_delay: TranscriptionDelay = "minimal"
+    transcription_model: str = "whisper-1"
+    transcription_delay: TranscriptionDelay | None = None
 
 
 DEFAULT_STT_CONFIG = STTConfig()
@@ -159,31 +165,23 @@ class Translator:
     ``audio.input.transcription`` must be enabled so we get the
     source-language text on :attr:`TextDelta.source_text`.
 
-    STT tuning (S2 Day 2)
-    ---------------------
+    STT tuning (S2 Day 3 retro)
+    ---------------------------
     ``stt_config`` (defaults to :data:`DEFAULT_STT_CONFIG`) controls the
     transcription model + delay sent inside ``audio.input.transcription``.
-    Default values are the S2 Day 1 probe target (``gpt-realtime-whisper``
-    + ``delay="low"``). Pass a non-default ``STTConfig`` only for A/B
-    benchmarking; production callers should accept the default so they
-    benefit from future probe updates without code changes.
+    Default values track the S1 baseline (``whisper-1`` + no delay knob)
+    after the Day 3 retro reverted the ``gpt-realtime-whisper`` swap.
+    Pass a non-default ``STTConfig`` only for A/B benchmarking.
 
-    S2 Day 2 body changes for Codex:
+    Two side-trims from PR #11 are kept (they are free wins):
 
-    1. In :meth:`connect`, set
-       ``audio.input.transcription = {"model":
-       stt_config.transcription_model, "delay":
-       stt_config.transcription_delay}``.
-    2. In :meth:`connect`, add ``"turn_detection": None`` INSIDE the
-       ``session.audio.input`` block (NOT at the top level of
-       ``session`` — GA rejects that as
+    1. ``turn_detection: None`` lives INSIDE ``session.audio.input``
+       (NOT at the top level of ``session`` — GA rejects that as
        ``Unknown parameter: 'session.turn_detection'``; live smoke
        2026-05-23). Disables server VAD; we manually
        ``input_audio_buffer.commit`` so VAD inference is dead work.
-    3. In :meth:`translate_stream`, drop the ``"instructions"`` field
-       from the ``response.create`` payload (PR #2 review follow-up —
-       already set in session.update, duplicating it costs
-       tokenisation).
+    2. The duplicate ``instructions`` field is no longer sent in
+       ``response.create`` (already set in ``session.update``).
     """
 
     def __init__(
@@ -232,6 +230,11 @@ class Translator:
                     "Authorization": f"Bearer {self._api_key}",
                 },
             )
+            transcription: dict[str, object] = {
+                "model": self._stt_config.transcription_model,
+            }
+            if self._stt_config.transcription_delay is not None:
+                transcription["delay"] = self._stt_config.transcription_delay
             await self._send_json(
                 {
                     "type": "session.update",
@@ -245,10 +248,7 @@ class Translator:
                                     "type": "audio/pcm",
                                     "rate": 24000,
                                 },
-                                "transcription": {
-                                    "model": self._stt_config.transcription_model,
-                                    "delay": self._stt_config.transcription_delay,
-                                },
+                                "transcription": transcription,
                                 "turn_detection": None,
                             },
                         },

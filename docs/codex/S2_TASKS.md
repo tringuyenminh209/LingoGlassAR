@@ -18,11 +18,15 @@ phone-microphone pipeline used in S1.
 
 ## Sprint exit criteria (Go to S3)
 
-1. **STT latency**: median `stt_ms` (post-PTT-release first partial)
-   drops from 884 ms to **<= 600 ms** without sacrificing translation
-   accuracy.
+1. ~~**STT latency**: median `stt_ms` drops from 884 ms to **<= 600 ms**.~~
+   **No-Go, criterion amended 2026-05-23.** Day 3 + 3b benches showed the
+   STT sub-stage is network-bound (Osaka phone -> Osaka backend -> US
+   OpenAI), not knob-tunable. Model swap reshuffled latency between
+   STT and translate stages without a user-visible win. Full retro in
+   `docs/reports/S2_stt_retro.md`. Replaced by criterion #2 alone.
 2. **End-to-end latency**: `p95(system_latency_ms)` stays **<= 2000 ms**
    on a fresh 20-phrase device run (tightened from 2500 ms S1 gate).
+   S1 1493 ms, Day 3 1478 ms, Day 3b 1535 ms — all already passing.
 3. **Retry rate**: drop from ~50 % (S1: 9 discards + 1 ws_error per 18
    attempts) to **<= 20 %** after UX fixes.
 4. **Translation accuracy**: manual-scored 4/5 or better on >= 80 %
@@ -64,10 +68,12 @@ Commit subject: `feat(backend): S2 Day 2 STT tuning gpt-realtime-whisper + delay
 | **Claude** [DONE 2026-05-23] | Render `tools/latency_report.py --s1` against the new CSV. Compare median STT vs S1 baseline (884 ms). | `docs/reports/S2_latency_2026-05-23.md` rendered. | DONE |
 | **Claude** [DONE 2026-05-23] | Decision: STT median 1044 ms > 800 ms → strict-revert per plan, but Option B chosen instead (flip `delay="low"` → `delay="minimal"` only — single-knob change, cheaper than full revert). Outcome logged in `docs/reports/S2_stt_probe.md` §8. | decision logged. | DONE |
 | **Claude (prep)** [DONE 2026-05-23] | Flip default `STTConfig.transcription_delay` from `"low"` to `"minimal"`. Update tests. Backend redeploy required by user before re-bench. | `pytest backend/tests/test_translator.py` green (6/6). | DONE |
-| **Claude** | Day 3b re-bench after redeploy. If STT median ≤ 600 ms: clear exit criterion #1. If 600-800 ms: accept, audit Day 6 accuracy. If > 800 ms: full revert (back to whisper-1). | second CSV at `docs/reports/s2_run12_<date>.csv`. | pending (needs user redeploy + run) |
+| **Claude** [DONE 2026-05-23] | Day 3b re-bench (`docs/reports/s2_run12_2026-05-23.csv`): STT median 1010 ms — knob not the bottleneck. Full revert chosen. | report rendered. | DONE |
+| **Claude (retro)** [DONE 2026-05-23] | Revert STTConfig defaults to whisper-1 + no delay knob. Keep `turn_detection: null` + instructions-dedup trims. Keep STTConfig surface. Amend criterion #1 -> system_latency_ms p95 ≤ 2000 ms. Retro doc `docs/reports/S2_stt_retro.md`. | pytest 6/6 green. | DONE |
 
 Commit subject (initial bench + flip): `docs(s2): Day 3 STT bench - delay=low regressed, flip to minimal`.
 Commit subject (re-bench): `docs(s2): Day 3b re-bench with delay=minimal`.
+Commit subject (revert + retro): `revert(backend): S2 Day 3 - revert STT model swap, criterion #1 No-Go`.
 
 ## Day 4 — Day 9 UX gap fixes
 

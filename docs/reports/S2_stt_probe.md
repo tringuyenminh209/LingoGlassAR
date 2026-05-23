@@ -227,6 +227,32 @@ Default updated in `backend/app/services/translator.py`:
 `STTConfig.transcription_delay = "minimal"`. Tests updated. Backend
 needs redeploy + S1-Run-10 replay.
 
+## 9. Day 3b result + full revert (2026-05-23, same-day)
+
+Day 3b CSV: `docs/reports/s2_run12_2026-05-23.csv`. Rendered:
+`docs/reports/S2_latency_2026-05-23_b.md`.
+
+| Config | STT p50 | STT p95 | Peak-to-peak | system_lat p95 |
+|---|---:|---:|---:|---:|
+| S1 (whisper-1) | 884 ms | 1169 ms | 533 ms | 1493 ms |
+| Day 3 (low) | 1044 ms | 1239 ms | 361 ms | 1478 ms |
+| Day 3b (minimal) | 1010 ms | 1371 ms | 608 ms | 1535 ms |
+
+`delay="minimal"` moved median only 34 ms vs Day 3 and worsened p95 by
+132 ms. The knob is not the bottleneck — the model swap is. Three
+configs, same network, same script: total `system_latency_ms` p95
+stays flat (1478-1535 ms). Latency reshuffled between STT and translate
+stages, no user-visible win.
+
+**Verdict**: full revert. STTConfig defaults restored to S1 baseline
+(`whisper-1`, no delay knob). The two free trims from PR #11
+(`turn_detection: null`, dropped duplicate `instructions`) kept.
+STTConfig surface preserved for future A/B.
+
+S2 exit criterion #1 (STT median ≤ 600 ms) declared No-Go and amended
+to `system_latency_ms p95 ≤ 2000 ms` for the S2 close report. Full
+retro in `docs/reports/S2_stt_retro.md`.
+
 ## Sources
 
 - [Voice activity detection (VAD) | OpenAI API](https://platform.openai.com/docs/guides/realtime-vad)
