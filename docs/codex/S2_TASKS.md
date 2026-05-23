@@ -83,8 +83,8 @@ triggering `e2eAbort('discarded')` on the prior trace. Three fixes:
 | Owner | Task | Verify | Status |
 |---|---|---|---|
 | **Claude (prep)** [DONE 2026-05-23] | Lock PTT UX surface in `mobile/lib/screens/translate_screen.dart`: file-level tunables `_kPostFinalizeCooldown` (500 ms) + `_kShortPressMin` (100 ms); state `_cooldownTimer` + `_pressDownTsMicros`; impl (a) cooldown (`_isInCooldown` + `_startPostFinalizeCooldown`) in full; stub `_isShortPress` + UI methods `_showShortPressWarning` / `_showDiscardBanner`. Change `LatencyLogger.e2eStart` return type to `E2eLatencyRecord?` for (c) wiring. 2 new logger tests. | `flutter analyze` 0 issues; `flutter test test/latency_logger_test.dart` green (11 tests). | DONE |
-| **Codex** | Per `docs/codex/PROMPTS.md` §2m: flip `_isShortPress` body, fill `_showShortPressWarning` + `_showDiscardBanner` SnackBars, add `mobile/test/translate_screen_test.dart` with 3 widget test groups. | `flutter test` green, manual smoke on device. | pending |
-| **Claude** | Code review + merge + device smoke. | n/a | pending |
+| **Codex** [DONE PR #12 `85ddd92`] | Per `docs/codex/PROMPTS.md` §2m: flip `_isShortPress` body, fill `_showShortPressWarning` + `_showDiscardBanner` SnackBars, add `mobile/test/translate_screen_test.dart` with 3 widget test groups (cooldown / short-press / discard-banner) + heavy fake HttpOverrides so `_sessionClient.createSession` hangs cleanly under tester. | `flutter test` 14/14 green (3 widget + 11 logger). | DONE |
+| **Claude** [DONE 2026-05-23] | Code review + merge. PR #12 was draft → marked ready → squash merge. Manual device smoke deferred — Day 9 final bench will cover it. | n/a | DONE |
 
 Commit subject: `feat(mobile): S2 Day 4 PTT cooldown + warnings`.
 
