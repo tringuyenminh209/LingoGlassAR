@@ -22,12 +22,39 @@ import 'package:permission_handler/permission_handler.dart';
 import '../audio/recorder.dart';
 import '../ble/ble_transport.dart';
 import '../data/s1_phrases.dart';
+import '../data/s2_phrases.dart';
 import '../services/device_id.dart';
 import '../services/latency_logger.dart';
 import '../services/session_client.dart';
 import '../services/translator_ws.dart';
 
 enum _PttState { idle, starting, recording, ending, aborting }
+
+/// One phrase queued in a benchmark run, flattened from either catalog so
+/// the run engine stays catalog-agnostic. S1 phrases are always JP->VN;
+/// S2 phrases carry their own direction (`sourceLang`/`targetLang`), which
+/// is what lets S2-Run-30 exercise both directions from one flat list.
+typedef RunPhrase = ({
+  String id,
+  String text,
+  String sourceLang,
+  String targetLang,
+});
+
+List<RunPhrase> _s1RunItems() => <RunPhrase>[
+      for (final p in s1Phrases)
+        (id: p.id, text: p.text, sourceLang: 'ja', targetLang: 'vi'),
+    ];
+
+List<RunPhrase> _s2RunItems() => <RunPhrase>[
+      for (final p in s2Phrases)
+        (
+          id: p.id,
+          text: p.text,
+          sourceLang: p.sourceLang,
+          targetLang: p.targetLang,
+        ),
+    ];
 
 // S2 Day 4 — PTT UX tunables. Locked here (Claude prep) so Codex impl
 // and any future tune touch only one place.
@@ -81,10 +108,15 @@ class _TranslateScreenState extends State<TranslateScreen> {
   StreamSubscription<AckEvent>? _bleAckSub;
   StreamSubscription<TextDelta>? _wsTextSub;
   StreamSubscription<Uint8List>? _audioSub;
-  Timer? _s1Timeout;
-  Timer? _s1Advance;
-  var _s1Running = false;
-  var _s1Index = 0;
+  // Generic benchmark-run engine, shared by S1-Run-10 and S2-Run-30. The
+  // active catalog is flattened into `_runItems` at start (see
+  // `_startRun`); the engine itself is catalog-agnostic.
+  Timer? _runTimeout;
+  Timer? _runAdvance;
+  List<RunPhrase> _runItems = const <RunPhrase>[];
+  String _runLabel = '';
+  var _runActive = false;
+  var _runIndex = 0;
 
   // S2 Day 4 — PTT UX state (Codex impl fills bodies). All three pieces
   // share the same lifecycle: created on press, consulted on release,
@@ -127,8 +159,8 @@ class _TranslateScreenState extends State<TranslateScreen> {
     _bleAckSub?.cancel();
     _wsTextSub?.cancel();
     _audioSub?.cancel();
-    _s1Timeout?.cancel();
-    _s1Advance?.cancel();
+    _runTimeout?.cancel();
+    _runAdvance?.cancel();
     _cooldownTimer?.cancel();
     unawaited(_recorder.stop());
     unawaited(_ws.disconnect());
@@ -173,7 +205,7 @@ class _TranslateScreenState extends State<TranslateScreen> {
     }
     _ptt = _PttState.starting;
     _pressDownTsMicros = DateTime.now().microsecondsSinceEpoch;
-    final phrase = _currentS1Phrase;
+    final phrase = _currentRunPhrase;
     if (phrase != null) {
       // S2 Day 4 (c) — discard banner. e2eStart now returns the
       // discarded prior record (or null) — stub `_showDiscardBanner` is
@@ -193,7 +225,12 @@ class _TranslateScreenState extends State<TranslateScreen> {
       if (_ptt != _PttState.starting) return; // aborted while creating session
       _log('Session ${_sessionId!.substring(0, 8)}...');
 
-      await _ws.connect(_sessionId!, deviceId: _deviceId!);
+      await _ws.connect(
+        _sessionId!,
+        deviceId: _deviceId!,
+        sourceLang: phrase?.sourceLang ?? 'ja',
+        targetLang: phrase?.targetLang ?? 'vi',
+      );
       _latency.e2eMarkSessionOpened(_sessionId!);
       if (_ptt != _PttState.starting) {
         // User released during connect; clean up the now-orphaned socket.
@@ -224,7 +261,7 @@ class _TranslateScreenState extends State<TranslateScreen> {
       _log('Recording...');
     } catch (e) {
       if (_latency.e2eAbort('start_error') != null) {
-        _scheduleS1Advance();
+        _scheduleRunAdvance();
       }
       _log('Start error: $e');
       await _teardownPtt();
@@ -241,7 +278,7 @@ class _TranslateScreenState extends State<TranslateScreen> {
     if (_isShortPress()) {
       _showShortPressWarning();
       _latency.e2eAbort('short_press');
-      _s1Timeout?.cancel();
+      _runTimeout?.cancel();
       _ptt = _PttState.aborting;
       setState(() => _isHolding = false);
       _log('Short press ignored (<${_kShortPressMin.inMilliseconds}ms)');
@@ -250,7 +287,7 @@ class _TranslateScreenState extends State<TranslateScreen> {
     }
 
     _latency.e2eMarkPttRelease();
-    _s1Timeout?.cancel();
+    _runTimeout?.cancel();
     setState(() => _isHolding = false);
 
     if (_ptt == _PttState.starting) {
@@ -400,7 +437,7 @@ class _TranslateScreenState extends State<TranslateScreen> {
         unawaited(_sendToBle(delta.text));
       } else {
         if (_latency.e2eAbort('ble_unavailable') != null) {
-          _scheduleS1Advance();
+          _scheduleRunAdvance();
         }
         _log('(BLE not connected, OLED skipped)');
       }
@@ -426,7 +463,7 @@ class _TranslateScreenState extends State<TranslateScreen> {
 
   void _onWsError(Object error) {
     if (_latency.e2eAbort('ws_error') != null) {
-      _scheduleS1Advance();
+      _scheduleRunAdvance();
     }
     _log('WS error: $error');
     setState(() => _isWsConnected = false);
@@ -437,56 +474,61 @@ class _TranslateScreenState extends State<TranslateScreen> {
     if (!ack.isOk || ack.sequenceId != _bleSeq) return;
     _latency.e2eMarkBleAck(ack.sequenceId);
     if (_latency.e2eFinalize() != null) {
-      _log('E2E row complete id=${_currentS1Phrase?.id ?? '-'}');
-      _scheduleS1Advance();
+      _log('E2E row complete id=${_currentRunPhrase?.id ?? '-'}');
+      _scheduleRunAdvance();
     }
   }
 
-  S1Phrase? get _currentS1Phrase {
-    if (!_s1Running || _s1Index >= s1Phrases.length) return null;
-    return s1Phrases[_s1Index];
+  RunPhrase? get _currentRunPhrase {
+    if (!_runActive || _runIndex >= _runItems.length) return null;
+    return _runItems[_runIndex];
   }
 
-  void _startS1Run() {
-    if (_s1Running) return;
+  /// Start a benchmark run over [items]. [label] is the on-screen name
+  /// ('S1 Run 10' / 'S2 Run 30') used for log lines. Clears prior e2e
+  /// records so the run's CSV is self-contained.
+  void _startRun(List<RunPhrase> items, String label) {
+    if (_runActive) return;
     _latency.clearE2e();
     setState(() {
-      _s1Running = true;
-      _s1Index = 0;
+      _runItems = items;
+      _runLabel = label;
+      _runActive = true;
+      _runIndex = 0;
     });
-    _log('S1 Run 10 started');
-    _armS1Phrase();
+    _log('$label started');
+    _armRunPhrase();
   }
 
-  void _armS1Phrase() {
-    final phrase = _currentS1Phrase;
-    _s1Timeout?.cancel();
+  void _armRunPhrase() {
+    final phrase = _currentRunPhrase;
+    _runTimeout?.cancel();
     if (phrase == null) {
-      setState(() => _s1Running = false);
-      _log('S1 Run 10 finished');
+      setState(() => _runActive = false);
+      _log('$_runLabel finished');
       return;
     }
-    _log('S1 phrase ${phrase.id} ready');
-    _s1Timeout = Timer(const Duration(seconds: 30), () {
+    _log('phrase ${phrase.id} ready');
+    _runTimeout = Timer(const Duration(seconds: 30), () {
       if (_latency.e2eAbort('timeout') != null) {
-        _log('S1 phrase ${phrase.id} timeout');
+        _log('phrase ${phrase.id} timeout');
       }
       if (_ptt != _PttState.idle) {
         unawaited(_teardownPtt());
       }
-      _scheduleS1Advance(delay: Duration.zero);
+      _scheduleRunAdvance(delay: Duration.zero);
     });
   }
 
-  void _scheduleS1Advance(
+  void _scheduleRunAdvance(
       {Duration delay = const Duration(milliseconds: 1500)}) {
-    if (!_s1Running) return;
-    _s1Timeout?.cancel();
-    _s1Advance?.cancel();
-    _s1Advance = Timer(delay, () {
+    if (!_runActive) return;
+    _runTimeout?.cancel();
+    _runAdvance?.cancel();
+    _runAdvance = Timer(delay, () {
       if (!mounted) return;
-      setState(() => _s1Index += 1);
-      _armS1Phrase();
+      setState(() => _runIndex += 1);
+      _armRunPhrase();
     });
   }
 
@@ -559,15 +601,15 @@ class _TranslateScreenState extends State<TranslateScreen> {
               ],
             ),
           ),
-          if (_currentS1Phrase != null)
+          if (_currentRunPhrase != null)
             MaterialBanner(
               content: Text(
-                _currentS1Phrase!.text,
+                _currentRunPhrase!.text,
                 style: theme.textTheme.headlineSmall,
               ),
               actions: [
                 Text(
-                  '${_s1Index + 1}/${s1Phrases.length}',
+                  '${_runIndex + 1}/${_runItems.length}',
                   style: theme.textTheme.labelLarge,
                 ),
               ],
@@ -587,9 +629,18 @@ class _TranslateScreenState extends State<TranslateScreen> {
             spacing: 8,
             children: [
               TextButton.icon(
-                onPressed: _s1Running ? null : _startS1Run,
+                onPressed: _runActive
+                    ? null
+                    : () => _startRun(_s1RunItems(), 'S1 Run 10'),
                 icon: const Icon(Icons.play_arrow),
                 label: const Text('S1 Run 10'),
+              ),
+              TextButton.icon(
+                onPressed: _runActive
+                    ? null
+                    : () => _startRun(_s2RunItems(), 'S2 Run 30'),
+                icon: const Icon(Icons.fact_check_outlined),
+                label: const Text('S2 Run 30'),
               ),
               TextButton.icon(
                 onPressed: _copyE2eCsv,

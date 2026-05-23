@@ -125,6 +125,7 @@ class E2eLatencyRecord {
     required this.sessionId,
     required this.bleSequenceId,
     required this.errorCode,
+    this.accuracyScore,
   });
 
   /// Identifier of the prompt that was spoken — the catalog key in
@@ -174,6 +175,15 @@ class E2eLatencyRecord {
   /// `ws_error`, `ble_disconnect`, `mic_denied`, `user_abort`, `timeout`.
   final String? errorCode;
 
+  /// Manual translation-accuracy grade (1-5), filled by the operator
+  /// AFTER the run — always `null` on device export. S2 Day 5 adds the
+  /// column so the S2-Run-30 CSV can be scored in a spreadsheet without
+  /// reshaping the schema; the pipeline never auto-populates it (and the
+  /// translated text it would grade is deliberately not in the CSV, per
+  /// the privacy rule — the operator scores by eye against the on-screen
+  /// `Last final`).
+  final int? accuracyScore;
+
   /// True iff every stage completed and `errorCode` is null.
   bool get isOk =>
       errorCode == null &&
@@ -186,12 +196,13 @@ class E2eLatencyRecord {
     String n(int? v) => v?.toString() ?? '';
     return '$phraseId,$audioMs,${n(backendAckMs)},${n(firstTextMs)},'
         '${n(fullTextMs)},${n(bleAckMs)},${n(totalMs)},'
-        '${sessionId ?? ''},${n(bleSequenceId)},${errorCode ?? ''}';
+        '${sessionId ?? ''},${n(bleSequenceId)},${errorCode ?? ''},'
+        '${n(accuracyScore)}';
   }
 
   static const String csvHeader =
       'phrase_id,audio_ms,backend_ack_ms,first_text_ms,full_text_ms,'
-      'ble_ack_ms,total_ms,session_id,ble_seq_id,error';
+      'ble_ack_ms,total_ms,session_id,ble_seq_id,error,accuracy_score';
 }
 
 /// p50/p90/p95/p99 of `total_ms` across OK e2e records.

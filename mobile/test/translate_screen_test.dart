@@ -84,10 +84,15 @@ void main() {
       await tester.tap(find.text('Copy E2E CSV'));
       await tester.pump();
 
-      final csv = clipboardText!;
-      final row = csv.trim().split('\n')[1].split(',');
-      expect(row[1], '0');
-      expect(row.last, 'short_press');
+      final lines = clipboardText!.trim().split('\n');
+      final header = lines[0].split(',');
+      final row = lines[1].split(',');
+      int col(String name) => header.indexOf(name);
+      expect(row[col('audio_ms')], '0');
+      expect(row[col('error')], 'short_press');
+      // S2 Day 5 added the manual-scoring column; it is always empty on
+      // device export (operator fills it in a spreadsheet afterwards).
+      expect(row[col('accuracy_score')], '');
     });
   });
 

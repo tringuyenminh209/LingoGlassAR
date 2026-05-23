@@ -2175,6 +2175,104 @@ After opening the PR, post the URL here and STOP. Do not start Day 5.
 
 ---
 
+## 2n. S2 Day 5 (Codex row) — translation accuracy harness tests (ready to copy)
+
+**Tag**: tests only. Do NOT touch any `lib/` file. The catalog, the
+generic run engine, the `S2 Run 30` button, and the `accuracy_score`
+CSV column are ALL already implemented and merged by Claude prep — the
+run works end-to-end on device. Your job is the missing test coverage.
+
+**Why prep did the impl** (so you don't "fix" it): the S1-Run-10 engine
+was live and used for benchmarks; turning it into a half-wired stub
+would have broken S1. Generalising it into one catalog-driven engine
+(`_startRun` / `_armRunPhrase` / `_scheduleRunAdvance` over a flat
+`RunPhrase` list) was a non-stubbable refactor + the global no-duplicate
+rule forbids a parallel S2 engine. Same decision axis as Day 4 cooldown.
+
+**Precondition**: Claude prep landed on `main` at commit
+`<paste from git log -1>`. That commit:
+
+- added `mobile/lib/data/s2_phrases.dart` — 60 `S2Phrase` (30 `ja` +
+  30 `vi`, 6 domains x 5 x 2 directions), with derived `targetLang`,
+- added `accuracyScore` (nullable, default null, never auto-set) to
+  `E2eLatencyRecord` + appended `accuracy_score` as the last CSV
+  column in `csvHeader` / `toCsvRow`,
+- replaced the S1-specific run fields/methods with a generic engine
+  (`_runItems` / `_runLabel` / `_runActive` / `_runIndex`,
+  `_currentRunPhrase`, `_startRun(items, label)`, `_armRunPhrase`,
+  `_scheduleRunAdvance`) plus `_s1RunItems()` / `_s2RunItems()`
+  builders and a `RunPhrase` typedef,
+- added the `S2 Run 30` button next to `S1 Run 10`; both call
+  `_startRun(...)` and are disabled while `_runActive`,
+- wired `_onPressDown` to pass each phrase's `sourceLang`/`targetLang`
+  into `_ws.connect` (manual PTT with no run still defaults ja->vi),
+- updated the Day 4 short-press widget test to index the CSV `error`
+  column by header (was `row.last`) now that `accuracy_score` is last.
+
+```
+Your task: S2 Day 5 — add test coverage for the accuracy harness.
+Two NEW test files, zero lib changes. Single mobile PR.
+
+## Concrete deliverables
+
+1. mobile/test/data/s2_phrases_test.dart — pure data invariants on the
+   exported `s2Phrases` const (no widgets, no async):
+
+   - exactly 60 phrases,
+   - exactly 30 with sourceLang == 'ja' and 30 with sourceLang == 'vi',
+   - every one of the 6 domains ('greetings','directions','food',
+     'transit','payment','emergencies') has exactly 5 ja + 5 vi,
+   - every `targetLang` is the opposite of its `sourceLang`
+     (ja->vi, vi->ja); sourceLang is only ever 'ja' or 'vi',
+   - all `id` values are unique,
+   - no `text` is empty / whitespace-only.
+
+2. mobile/test/translate_screen_test.dart — ADD one group to the
+   existing file (do not rewrite the Day 4 groups):
+
+   group 'S2 Run 30':
+     - pump the screen (reuse the existing `_pumpTranslateScreen`
+       helper + `_SessionHttpOverrides` so the session POST hangs and
+       no real WS/audio is needed),
+     - tap `find.text('S2 Run 30')`, pump,
+     - assert the phrase banner shows the first JP phrase
+       'おはようございます' and the counter '1/60' is in the tree,
+     - assert a log line 'phrase ja-greet-01 ready' appears.
+
+   Do NOT try to assert the sourceLang reaches `_ws.connect` — the
+   fake session hangs before WS connect, so that path is out of reach
+   in a widget test. Catalog-direction coverage lives in deliverable 1.
+
+3. Do NOT add dependencies. `flutter_test` only. Do NOT edit any file
+   under mobile/lib/. Do NOT change the CSV schema or the button.
+
+## Verification commands to paste raw output for
+
+- `cd mobile && flutter analyze --no-pub` — 0 issues (the 2 pre-existing
+  warnings in ble_transport.dart + widget_test.dart are allowed; do not
+  touch them).
+- `cd mobile && flutter test` — all green (currently 37 tests; you add
+  ~7 catalog asserts + 1 widget group).
+
+## Branch / commit / PR
+
+Branch: `test/s2-day-5-accuracy-harness`. Commit subject:
+`test(mobile): S2 Day 5 accuracy harness coverage`. PR title same.
+Squash-merge.
+
+## What this PR explicitly does NOT do
+
+- It does NOT modify any `lib/` file — tests only.
+- It does NOT add manual-scoring UI (scoring is a spreadsheet step in
+  Day 6, the CSV column is intentionally export-empty).
+- It does NOT touch the run engine, the button, or the CSV schema.
+- It does NOT start Day 6 (device run + scoring).
+
+After opening the PR, post the URL here and STOP.
+```
+
+---
+
 ## 4. PR-ready check (paste when Codex says "done")
 
 ```
