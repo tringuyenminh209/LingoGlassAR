@@ -65,19 +65,19 @@ class STTConfig:
       default ``"whisper-1"``. The newer model is streaming-first with
       OpenAI-quoted partial latency 200-400 ms vs. whisper-1's
       finished-audio orientation.
-    - ``transcription_delay = "low"`` favours latency over WER. Valid
-      values: ``minimal`` / ``low`` / ``medium`` / ``high`` / ``xhigh``.
-      Only honoured when ``transcription_model == "gpt-realtime-whisper"``.
-
-    Codex (Day 2 body impl): wire both fields into the
-    ``audio.input.transcription`` block of the ``session.update`` payload
-    in :meth:`Translator.connect`. Do NOT rename fields or add new ones
-    here; if a tuning knob needs to change, extend this dataclass and
-    re-prep on Day 3 with a fresh probe row.
+    - ``transcription_delay = "minimal"`` is the S2 Day 3 follow-up
+      after ``delay="low"`` regressed STT median from 884 ms (S1
+      baseline, whisper-1) to 1044 ms (Day 3 device run on
+      ``gpt-realtime-whisper`` + ``delay="low"``, see
+      ``docs/reports/S2_latency_2026-05-23.md``). ``"minimal"`` is the
+      lowest-latency setting; accuracy regression risk is monitored at
+      the Day 6 translation-accuracy bench. Valid values: ``minimal`` /
+      ``low`` / ``medium`` / ``high`` / ``xhigh``. Only honoured when
+      ``transcription_model == "gpt-realtime-whisper"``.
     """
 
     transcription_model: str = "gpt-realtime-whisper"
-    transcription_delay: TranscriptionDelay = "low"
+    transcription_delay: TranscriptionDelay = "minimal"
 
 
 DEFAULT_STT_CONFIG = STTConfig()

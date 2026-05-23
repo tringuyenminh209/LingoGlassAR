@@ -60,11 +60,14 @@ Commit subject: `feat(backend): S2 Day 2 STT tuning gpt-realtime-whisper + delay
 
 | Owner | Task | Verify | Status |
 |---|---|---|---|
-| **Claude** | Re-run the S1-Run-10 button against the new STT config. Capture CSV at `docs/reports/s2_run<N>_<date>.csv`. | CSV captured, >= 9/10 OK rows. | pending |
-| **Claude** | Render `tools/latency_report.py --s1` against the new CSV. Compare median STT vs S1 baseline (884 ms). | `docs/reports/S2_latency_<date>.md` rendered. | pending |
-| **Claude** | If STT median <= 600 ms: keep config, proceed. If 600-800 ms: try Day 1's #2 candidate. If > 800 ms: revert + retro. | decision logged. | pending |
+| **Claude** [DONE 2026-05-23] | Re-run the S1-Run-10 button against the new STT config (delay="low"). Capture CSV at `docs/reports/s2_run11_2026-05-23.csv`. | 10/10 OK rows. | DONE |
+| **Claude** [DONE 2026-05-23] | Render `tools/latency_report.py --s1` against the new CSV. Compare median STT vs S1 baseline (884 ms). | `docs/reports/S2_latency_2026-05-23.md` rendered. | DONE |
+| **Claude** [DONE 2026-05-23] | Decision: STT median 1044 ms > 800 ms → strict-revert per plan, but Option B chosen instead (flip `delay="low"` → `delay="minimal"` only — single-knob change, cheaper than full revert). Outcome logged in `docs/reports/S2_stt_probe.md` §8. | decision logged. | DONE |
+| **Claude (prep)** [DONE 2026-05-23] | Flip default `STTConfig.transcription_delay` from `"low"` to `"minimal"`. Update tests. Backend redeploy required by user before re-bench. | `pytest backend/tests/test_translator.py` green (6/6). | DONE |
+| **Claude** | Day 3b re-bench after redeploy. If STT median ≤ 600 ms: clear exit criterion #1. If 600-800 ms: accept, audit Day 6 accuracy. If > 800 ms: full revert (back to whisper-1). | second CSV at `docs/reports/s2_run12_<date>.csv`. | pending (needs user redeploy + run) |
 
-Commit subject: `docs(s2): Day 3 STT bench results post-tuning`.
+Commit subject (initial bench + flip): `docs(s2): Day 3 STT bench - delay=low regressed, flip to minimal`.
+Commit subject (re-bench): `docs(s2): Day 3b re-bench with delay=minimal`.
 
 ## Day 4 — Day 9 UX gap fixes
 

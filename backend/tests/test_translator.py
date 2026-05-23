@@ -88,7 +88,7 @@ async def test_session_update_uses_stt_config_defaults(monkeypatch) -> None:
     assert session_update["type"] == "session.update"
     assert audio_input["transcription"] == {
         "model": "gpt-realtime-whisper",
-        "delay": "low",
+        "delay": "minimal",
     }
     assert "turn_detection" in audio_input
     assert audio_input["turn_detection"] is None
@@ -106,14 +106,14 @@ async def test_session_update_honours_custom_stt_config(monkeypatch) -> None:
 
     async with Translator(
         api_key="x",
-        stt_config=STTConfig(transcription_delay="minimal"),
+        stt_config=STTConfig(transcription_delay="high"),
     ):
         pass
 
     session_update = fake_ws.sent[0]
     transcription = session_update["session"]["audio"]["input"]["transcription"]
 
-    assert transcription["delay"] == "minimal"
+    assert transcription["delay"] == "high"
 
 
 @pytest.mark.asyncio

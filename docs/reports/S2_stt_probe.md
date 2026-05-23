@@ -188,6 +188,45 @@ before opening the PR. Findings:
   follow-up is a separate Claude-prep task (likely Day 3 if Day 3
   bench shows a cost delta), NOT bundled in the Day 2 Codex PR.
 
+## 8. Day 3 device bench result (2026-05-23, same-day)
+
+Backend with Candidate A live on EC2 Osaka (`gpt-realtime-whisper` +
+`delay="low"`, `turn_detection: null` nested, instructions deduped).
+S1-Run-10 button replayed against the new config.
+
+CSV: `docs/reports/s2_run11_2026-05-23.csv` (10/10 OK rows).
+Rendered: `docs/reports/S2_latency_2026-05-23.md`.
+
+Observed (post-tuning):
+
+| Metric | S1 baseline | S2 Day 3 (delay=low) | Δ |
+|---|---:|---:|---:|
+| STT median | 884 ms | **1044 ms** | **+160 ms regression** |
+| STT p90 | 1078 ms | 1122 ms | +44 ms |
+| STT p95 | 1169 ms | 1239 ms | +70 ms |
+| STT peak-to-peak | 533 ms | 361 ms | **−172 ms (more consistent)** |
+| system_latency p95 | 1493 ms | 1478 ms | −15 ms (flat) |
+| Retry rate | ~50 % (S1 Day 9) | **0/10** | −50 pts (Day 9 UX bug self-resolved) |
+
+**Verdict**: Day 3 plan said `> 800 ms median → revert + retro`. Strict
+read = revert. But Candidate A is composed of multiple sub-changes
+(model swap + delay knob + VAD off + dedup); the only one that can
+plausibly explain a +160 ms STT regression is the `delay` knob itself
+(higher accuracy bias). Distribution tightened (smaller peak-to-peak),
+which is the streaming-first model behaving as advertised, but the
+floor moved up.
+
+**Day 3 follow-up (Option B, single re-test):** flip
+`transcription_delay` from `"low"` to `"minimal"` (the cheapest possible
+follow-up — keeps the streaming-first model, only reduces the
+end-of-phoneme buffering). If the next bench still shows median > 800 ms,
+full revert + retro. If 600-800 ms, accept and audit Day 6 accuracy. If
+≤ 600 ms, exit-criterion #1 cleared.
+
+Default updated in `backend/app/services/translator.py`:
+`STTConfig.transcription_delay = "minimal"`. Tests updated. Backend
+needs redeploy + S1-Run-10 replay.
+
 ## Sources
 
 - [Voice activity detection (VAD) | OpenAI API](https://platform.openai.com/docs/guides/realtime-vad)
