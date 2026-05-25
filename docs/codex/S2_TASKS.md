@@ -29,8 +29,13 @@ phone-microphone pipeline used in S1.
    S1 1493 ms, Day 3 1478 ms, Day 3b 1535 ms — all already passing.
 3. **Retry rate**: drop from ~50 % (S1: 9 discards + 1 ws_error per 18
    attempts) to **<= 20 %** after UX fixes.
-4. **Translation accuracy**: manual-scored 4/5 or better on >= 80 %
-   of a curated 30-phrase JP<->VN bench set.
+4. ~~**Translation accuracy**: manual-scored 4/5 or better on >= 80 %
+   of a curated 30-phrase JP<->VN bench set.~~ **Deferred to S3
+   (2026-05-25).** Day 6 device run produced 60 latency rows but bilingual
+   solo self-scoring was judged unreliable, and privacy forbids storing the
+   translated text for later scoring. Accuracy gate moves to the S3 pilot
+   with a paid native-VN reviewer (open question #1). Harness + `--s2`
+   scorer are built and ready. See `docs/reports/S2_accuracy_2026-05-25.md`.
 5. **TLS**: production traffic on Cloudflare Full(Strict) with valid
    origin certificate; no 521s in a 24 h smoke window.
 
@@ -104,12 +109,11 @@ Commit subject (Codex): `test(mobile): S2 Day 5 accuracy harness coverage`.
 
 | Owner | Task | Verify | Status |
 |---|---|---|---|
-| **Claude** | Run S2-Run-30 on device. Score each translation 1-5
-(1 = wrong, 3 = understandable, 5 = native). Bilingual (JP + VN)
-self-scoring acceptable for MVP. | CSV at `docs/reports/s2_accuracy_<date>.csv`. | pending |
-| **Claude** | Compute `% phrases with score >= 4` per direction. Target: >= 80 % both directions. | `docs/reports/S2_accuracy_<date>.md`. | pending |
+| **Claude** [DONE 2026-05-25] | Run S2-Run-30 on device (Galaxy S10 + BLE, whisper-1 backend). CSV captured `docs/reports/s2_accuracy_2026-05-25.csv` (60 rows, 54/60 unique + 6 retries). | CSV exists. | DONE |
+| **Claude** [DONE 2026-05-25] | Build `--s2` scorer (added to `tools/latency_report.py`, shared `_system_latency_ms` helper, 5 new tests / 9 total green, `37dd796`). Render report. | `docs/reports/S2_accuracy_2026-05-25.md`. | DONE |
+| **Claude** [DEFERRED -> S3] | Manual 1-5 accuracy scoring + `% >= 4` per direction. Deferred to S3 pilot with paid native-VN reviewer (criterion #4 amended; privacy forbids storing text for later scoring). Latency criterion #2 confirmed PASS on this run (p95 1449 ms). | deferred. | DEFERRED |
 
-Commit subject: `docs(s2): Day 6 translation accuracy results`.
+Commit subject: `docs(s2): Day 6 latency confirmed, accuracy deferred to S3`.
 
 ## Day 7 — Cloudflare Full(Strict) prep
 
@@ -151,8 +155,11 @@ Commit subject: `docs(s2): close S2 with Go/No-Go verdict`.
 
 ## Open questions (locked 2026-05-23)
 
-1. **Translation accuracy scoring**: self-score for S2 MVP. Paid native
-   VN speaker review deferred to S3 pilot.
+1. **Translation accuracy scoring**: ~~self-score for S2 MVP. Paid native
+   VN speaker review deferred to S3 pilot.~~ **Updated 2026-05-25**: the
+   whole accuracy gate (not just native review) is deferred to S3 — Day 6
+   showed bilingual solo self-scoring is unreliable. S3 pilot runs the full
+   catalog with a paid native-VN reviewer using the ready `--s2` scorer.
 2. **Cooldown duration**: 500 ms initial. Tune empirically in Day 4
    device test if retry rate still > 20 %.
 3. **Cloudflare cert**: Let's Encrypt (90 d auto-renew, valid for any

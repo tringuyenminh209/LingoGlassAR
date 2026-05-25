@@ -38,6 +38,10 @@ android/key.properties
 ios/Pods/
 ios/.symlinks/
 
+# Python (tools/)
+__pycache__/
+*.pyc
+
 # Logs
 *.log
 
