@@ -1,4 +1,4 @@
-from tools.latency_report import render_s1_markdown
+from tools.latency_report import render_s1_markdown, render_s2_markdown
 
 
 def _row(
@@ -11,6 +11,7 @@ def _row(
     ble: str,
     total: str,
     error: str = "",
+    accuracy: str = "",
 ) -> dict[str, str]:
     return {
         "phrase_id": phrase_id,
@@ -23,7 +24,23 @@ def _row(
         "session_id": "",
         "ble_seq_id": "",
         "error": error,
+        "accuracy_score": accuracy,
     }
+
+
+def _s2_row(phrase_id: str, *, audio: str, ble: str, accuracy: str = "") -> dict[str, str]:
+    # Latency-relevant cells only; intermediate stages are not exercised by
+    # the S2 report (it consumes system_latency = ble - audio + accuracy).
+    return _row(
+        phrase_id,
+        audio=audio,
+        backend="0",
+        first="0",
+        final="0",
+        ble=ble,
+        total=ble,
+        accuracy=accuracy,
+    )
 
 
 def test_s1_render_happy_path() -> None:
@@ -106,3 +123,73 @@ def test_s1_render_clock_skew_footer() -> None:
     )
 
     assert "Clock skew: 1 rows had negative post-release stage deltas." in report
+
+
+def test_s2_pending_when_unscored() -> None:
+    # No accuracy_score filled yet: latency is reported, accuracy is PENDING.
+    report = render_s2_markdown(
+        [
+            _s2_row("ja-greet-01", audio="3000", ble="4200"),
+            _s2_row("vi-greet-01", audio="3000", ble="4100"),
+        ]
+    )
+    assert "Result: **PENDING — accuracy not scored**" in report
+    assert "Latency: p95" in report and "**PASS**" in report
+
+
+def test_s2_go_when_both_directions_pass() -> None:
+    # 4/5 good in each direction -> 80% -> meets the 80% gate; latency low.
+    rows = []
+    for i in range(5):
+        rows.append(
+            _s2_row("ja-greet-0%d" % i, audio="3000", ble="4000",
+                    accuracy="5" if i < 4 else "2")
+        )
+        rows.append(
+            _s2_row("vi-greet-0%d" % i, audio="3000", ble="4000",
+                    accuracy="4" if i < 4 else "1")
+        )
+    report = render_s2_markdown(rows)
+    assert "| ja->vi | 5 | 80% |" in report
+    assert "| vi->ja | 5 | 80% |" in report
+    assert "Result: **GO**" in report
+
+
+def test_s2_no_go_when_one_direction_below_gate() -> None:
+    # ja->vi all good, vi->ja only 2/5 good (40%) -> overall NO-GO.
+    rows = [
+        _s2_row("ja-greet-01", audio="3000", ble="4000", accuracy="5"),
+        _s2_row("ja-greet-02", audio="3000", ble="4000", accuracy="4"),
+        _s2_row("vi-greet-01", audio="3000", ble="4000", accuracy="5"),
+        _s2_row("vi-greet-02", audio="3000", ble="4000", accuracy="4"),
+        _s2_row("vi-greet-03", audio="3000", ble="4000", accuracy="2"),
+        _s2_row("vi-greet-04", audio="3000", ble="4000", accuracy="1"),
+        _s2_row("vi-greet-05", audio="3000", ble="4000", accuracy="3"),
+    ]
+    report = render_s2_markdown(rows)
+    assert "Accuracy ja->vi: **PASS**" in report
+    assert "Accuracy vi->ja: **FAIL**" in report
+    assert "Result: **NO-GO**" in report
+
+
+def test_s2_latency_fail_blocks_go() -> None:
+    # Accuracy perfect both directions, but latency p95 > 2000ms -> NO-GO.
+    rows = [
+        _s2_row("ja-greet-01", audio="3000", ble="6000", accuracy="5"),
+        _s2_row("vi-greet-01", audio="3000", ble="6000", accuracy="5"),
+    ]
+    report = render_s2_markdown(rows)
+    assert "Latency: p95 3000 ms vs 2000 ms -> **FAIL**" in report
+    assert "Result: **NO-GO**" in report
+
+
+def test_s2_counts_retries() -> None:
+    rows = [
+        _s2_row("ja-greet-01", audio="3000", ble="4000"),
+        _s2_row("ja-greet-01", audio="3100", ble="4100"),
+        _s2_row("vi-greet-01", audio="3000", ble="4000"),
+    ]
+    report = render_s2_markdown(rows)
+    assert "| retries (extra rows) | 1 |" in report
+    assert "| unique phrases | 2 |" in report
+    assert "| ja-greet-01 | 2 |" in report

@@ -15,11 +15,20 @@ Two modes, selected by the input CSV's column shape (or by the explicit
   stacked-bar markdown table with overall p50/p90/p95/p99 of
   `total_ms`. Target: `p95(total_ms) <= 2500 ms`.
 
+* **S2 (--s2)**: S2 Day 6 translation-accuracy report from the same
+  `E2eLatencyRecord` CSV (now with the trailing `accuracy_score` column).
+  Reports accuracy `% >= 4` by direction (ja->vi / vi->ja) and domain plus
+  system latency by direction. Gates: accuracy >= 80% both directions AND
+  `p95(system_latency_ms) <= 2000 ms`. Accuracy stays PENDING until the
+  operator fills the score column.
+
 Usage:
     python tools/latency_report.py path/to/latency.csv         # Phase F
     python tools/latency_report.py - < latency.csv             # stdin
     python tools/latency_report.py --s1 path/to/s1_run.csv     # Day 9
     python tools/latency_report.py --s1 - < s1_run.csv         # stdin
+    python tools/latency_report.py --s2 path/to/s2_run.csv     # Day 6
+    python tools/latency_report.py --s2 - < s2_run.csv         # stdin
 
 Output is markdown on stdout - paste into the matching report doc or
 pipe to a file. No external dependencies; standard library only.
@@ -53,6 +62,15 @@ S1_STAGES: list[tuple[str, str, str]] = [
     ("translate", "first_text_ms",  "full_text_ms"),
     ("ble",       "full_text_ms",   "ble_ack_ms"),
 ]
+
+# S2 Day 6 — translation accuracy run. The system-latency gate is tightened
+# to 2000 ms (from S1's 2500 ms; see S1 GO decision). The accuracy gate is
+# manual: operator scores each rendered translation 1-5 by eye and fills the
+# `accuracy_score` column afterwards. PASS iff >= 80% of scored rows are >= 4
+# in BOTH directions (ja->vi from `ja-*` phrases, vi->ja from `vi-*`).
+S2_TARGET_SYSTEM_MS = 2000.0
+S2_ACCURACY_MIN_PCT = 80.0
+S2_ACCURACY_GOOD = 4  # a translation is "good" if scored >= 4 out of 5
 
 
 def percentile(sorted_values: list[float], p: float) -> float:
@@ -229,9 +247,8 @@ def render_s1_markdown(rows: list[dict[str, str]]) -> str:
             stage_values[label].append(stage_ms)
 
         audio = _float_cell(row, "audio_ms")
-        ble = _float_cell(row, "ble_ack_ms")
-        if audio is not None and ble is not None:
-            sys_lat = ble - audio
+        sys_lat = _system_latency_ms(row)
+        if sys_lat is not None:
             if sys_lat < 0:
                 row_had_skew = True
                 sys_lat = 0.0
@@ -375,6 +392,248 @@ def render_s1_markdown(rows: list[dict[str, str]]) -> str:
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------------
+# S2 Day 6 — translation accuracy report
+# ---------------------------------------------------------------------------
+#
+# Same E2eLatencyRecord CSV as --s1, plus the trailing `accuracy_score`
+# column (added S2 Day 5). The operator runs S2-Run-30 (60 phrases: 30
+# ja->vi + 30 vi->ja), scores each rendered translation 1-5 by eye against
+# the on-screen "Last final", and fills `accuracy_score` in a spreadsheet
+# afterwards (never on device — privacy: no translated text leaves the run).
+#
+# Direction and domain are derived from the phrase_id prefix, e.g.
+# `ja-greet-01` -> direction "ja->vi", domain "greet";
+# `vi-emerg-05` -> direction "vi->ja", domain "emerg".
+#
+# Retries: a discarded-and-redone phrase appears on more than one row. The
+# operator scores only the kept attempt, so accuracy is computed over rows
+# that actually carry a score; retries are reported separately as a count.
+
+
+def _direction(phrase_id: str) -> str:
+    if phrase_id.startswith("ja-"):
+        return "ja->vi"
+    if phrase_id.startswith("vi-"):
+        return "vi->ja"
+    return "?"
+
+
+def _domain(phrase_id: str) -> str:
+    parts = phrase_id.split("-")
+    return parts[1] if len(parts) >= 3 else "?"
+
+
+def _accuracy_cell(row: dict[str, str]) -> int | None:
+    """Parsed 1-5 accuracy score, or None if the operator left it blank."""
+    raw = row.get("accuracy_score", "").strip()
+    if not raw:
+        return None
+    try:
+        return int(float(raw))
+    except ValueError:
+        return None
+
+
+def _pct_good(scores: list[int]) -> float:
+    if not scores:
+        return float("nan")
+    good = sum(1 for s in scores if s >= S2_ACCURACY_GOOD)
+    return 100.0 * good / len(scores)
+
+
+def render_s2_markdown(rows: list[dict[str, str]]) -> str:
+    """Build the S2 Day 6 translation-accuracy report.
+
+    Sections: run summary (coverage + retries), accuracy by direction,
+    accuracy by domain x direction, system-latency by direction, verdict
+    (accuracy gate per direction AND latency gate), and failures.
+
+    Accuracy is PENDING until the operator fills `accuracy_score`; latency
+    is always computed so the run's timing can be reviewed immediately.
+    """
+    clean_rows = [r for r in rows if not r.get("error", "").strip()]
+    failures: dict[str, int] = defaultdict(int)
+    for row in rows:
+        error = row.get("error", "").strip()
+        if error:
+            failures[error] += 1
+
+    # Coverage / retries (counted over clean rows only).
+    seen: dict[str, int] = defaultdict(int)
+    for row in clean_rows:
+        seen[row.get("phrase_id", "").strip() or "<missing>"] += 1
+    unique_phrases = len(seen)
+    retry_phrases = {pid: n for pid, n in seen.items() if n > 1}
+    retry_rows = sum(n - 1 for n in retry_phrases.values())
+
+    scores_by_dir: dict[str, list[int]] = defaultdict(list)
+    scores_by_dir_domain: dict[tuple[str, str], list[int]] = defaultdict(list)
+    lat_by_dir: dict[str, list[float]] = defaultdict(list)
+    for row in clean_rows:
+        pid = row.get("phrase_id", "").strip()
+        direction = _direction(pid)
+        score = _accuracy_cell(row)
+        if score is not None:
+            scores_by_dir[direction].append(score)
+            scores_by_dir_domain[(direction, _domain(pid))].append(score)
+        sys_lat = _system_latency_ms(row)
+        if sys_lat is not None and sys_lat >= 0:
+            lat_by_dir[direction].append(sys_lat)
+
+    directions = ["ja->vi", "vi->ja"]
+    total_scored = sum(len(s) for s in scores_by_dir.values())
+
+    lines: list[str] = [
+        "# S2 Day 6 Translation Accuracy Report",
+        "",
+        (
+            f"Gates: accuracy `>= {S2_ACCURACY_MIN_PCT:.0f}% of scored rows "
+            f">= {S2_ACCURACY_GOOD}/5` in BOTH directions, AND latency "
+            f"`p95(system_latency_ms) <= {S2_TARGET_SYSTEM_MS:.0f} ms`."
+        ),
+        "",
+        "`accuracy_score` is filled manually after the run (1-5 by eye). "
+        "Translated text is never stored — privacy rule.",
+        "",
+        "## Run summary",
+        "",
+        "| metric | value |",
+        "|--------|------:|",
+        f"| total rows | {len(rows)} |",
+        f"| clean rows | {len(clean_rows)} |",
+        f"| unique phrases | {unique_phrases} |",
+        f"| retries (extra rows) | {retry_rows} |",
+        f"| scored rows | {total_scored} |",
+    ]
+
+    # Accuracy by direction.
+    lines.extend(
+        [
+            "",
+            "## Accuracy by direction",
+            "",
+            "| direction | n_scored | % >= 4 | mean | gate |",
+            "|-----------|---------:|-------:|-----:|------|",
+        ]
+    )
+    accuracy_pass: dict[str, bool | None] = {}
+    for direction in directions:
+        scores = scores_by_dir.get(direction, [])
+        if not scores:
+            accuracy_pass[direction] = None
+            lines.append(f"| {direction} | 0 | - | - | PENDING |")
+            continue
+        pct = _pct_good(scores)
+        mean = statistics.fmean(scores)
+        passed = pct >= S2_ACCURACY_MIN_PCT
+        accuracy_pass[direction] = passed
+        gate = "PASS" if passed else "FAIL"
+        lines.append(
+            f"| {direction} | {len(scores)} | {pct:.0f}% | {mean:.2f} | {gate} |"
+        )
+
+    # Accuracy by domain x direction (only when something is scored).
+    if total_scored:
+        lines.extend(
+            [
+                "",
+                "## Accuracy by domain",
+                "",
+                "| domain | direction | n_scored | % >= 4 |",
+                "|--------|-----------|---------:|-------:|",
+            ]
+        )
+        for (direction, domain) in sorted(scores_by_dir_domain.keys()):
+            scores = scores_by_dir_domain[(direction, domain)]
+            lines.append(
+                f"| {domain} | {direction} | {len(scores)} | "
+                f"{_pct_good(scores):.0f}% |"
+            )
+
+    # System latency by direction + overall.
+    lines.extend(
+        [
+            "",
+            "## System latency by direction (ms)",
+            "",
+            "| direction | n | p50 | p90 | p95 | max |",
+            "|-----------|--:|----:|----:|----:|----:|",
+        ]
+    )
+    all_lat: list[float] = []
+    for direction in directions:
+        values = sorted(lat_by_dir.get(direction, []))
+        all_lat.extend(values)
+        if values:
+            lines.append(
+                f"| {direction} | {len(values)} | "
+                f"{percentile(values, 0.50):.0f} | "
+                f"{percentile(values, 0.90):.0f} | "
+                f"{percentile(values, 0.95):.0f} | {values[-1]:.0f} |"
+            )
+        else:
+            lines.append(f"| {direction} | 0 | - | - | - | - |")
+    all_lat.sort()
+    if all_lat:
+        lines.append(
+            f"| **overall** | {len(all_lat)} | "
+            f"{percentile(all_lat, 0.50):.0f} | "
+            f"{percentile(all_lat, 0.90):.0f} | "
+            f"{percentile(all_lat, 0.95):.0f} | {all_lat[-1]:.0f} |"
+        )
+
+    # Verdict.
+    lines.extend(["", "## Verdict", ""])
+    if all_lat:
+        lat_p95 = percentile(all_lat, 0.95)
+        lat_pass = lat_p95 <= S2_TARGET_SYSTEM_MS
+        lines.append(
+            f"- Latency: p95 {lat_p95:.0f} ms vs {S2_TARGET_SYSTEM_MS:.0f} ms "
+            f"-> **{'PASS' if lat_pass else 'FAIL'}**"
+        )
+    else:
+        lat_pass = False
+        lines.append("- Latency: **NO DATA**")
+
+    if total_scored == 0:
+        lines.append("- Accuracy: **PENDING** (fill `accuracy_score` and rerun)")
+        lines.append("- Result: **PENDING — accuracy not scored**")
+    else:
+        acc_pass = all(accuracy_pass.get(d) for d in directions)
+        for direction in directions:
+            state = accuracy_pass.get(direction)
+            label = "PASS" if state else ("PENDING" if state is None else "FAIL")
+            lines.append(f"- Accuracy {direction}: **{label}**")
+        decision = "GO" if (acc_pass and lat_pass) else "NO-GO"
+        lines.append(f"- Result: **{decision}**")
+
+    # Retries + failures detail.
+    if retry_phrases:
+        lines.extend(["", "## Retries", "", "| phrase | attempts |", "|--------|---------:|"])
+        for pid in sorted(retry_phrases):
+            lines.append(f"| {pid} | {retry_phrases[pid]} |")
+
+    if failures:
+        lines.extend(["", "## Failures", "", "| error | rows |", "|-------|-----:|"])
+        for error, count in sorted(failures.items()):
+            lines.append(f"| {error} | {count} |")
+
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _system_latency_ms(row: dict[str, str]) -> float | None:
+    """Post-PTT-release latency: ble_ack_ms - audio_ms. None if either cell
+    is missing. Negative results are real clock skew / reordering and are
+    left for the caller to clamp."""
+    audio = _float_cell(row, "audio_ms")
+    ble = _float_cell(row, "ble_ack_ms")
+    if audio is None or ble is None:
+        return None
+    return ble - audio
+
+
 def _float_cell(row: dict[str, str], column: str) -> float | None:
     value = row.get(column, "").strip()
     if not value:
@@ -391,12 +650,13 @@ def _s1_median_cell(values: Iterable[float]) -> str:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) == 3 and argv[1] == "--s1":
+    if len(argv) == 3 and argv[1] in ("--s1", "--s2"):
         rows = load_rows(argv[2])
         if not rows:
             print("no rows in input CSV", file=sys.stderr)
             return 1
-        print(render_s1_markdown(rows))
+        renderer = render_s1_markdown if argv[1] == "--s1" else render_s2_markdown
+        print(renderer(rows))
         return 0
     if len(argv) != 2:
         print(__doc__, file=sys.stderr)
