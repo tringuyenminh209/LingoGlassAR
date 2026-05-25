@@ -97,36 +97,101 @@ CF_DNS_CREDENTIALS_FILE="${CF_DNS_CREDENTIALS_FILE:-/home/deploy/.secrets/cf-dns
 # (127.0.0.1:8000) instead of the public :80 once the proxy owns 80/443 —
 # that compose/.env change is part of the Day 8 migration, see runbook.
 BACKEND_UPSTREAM="${BACKEND_UPSTREAM:-127.0.0.1:8000}"
+# Registration/expiry notices for the public Let's Encrypt certificate.
+CERTBOT_EMAIL="${CERTBOT_EMAIL:-tringuyenminh209@gmail.com}"
 
-# TODO(codex, S2 Day 7): install nginx + certbot + the dns-cloudflare plugin.
+# Install the origin-facing TLS terminator and DNS-01 certificate tooling.
 install_tls_proxy() {
-  : # apt-get install -y nginx certbot python3-certbot-dns-cloudflare
+  local policy_path="/usr/sbin/policy-rc.d"
+  local policy_backup=""
+  local suppress_nginx_autostart=0
+
+  # On first install, keep nginx from claiming :80 while S1 Flexible traffic
+  # may still be served by Docker. It starts after the TLS-only site is valid.
+  if ! dpkg-query -W -f='${Status}' nginx 2>/dev/null \
+    | grep -qx "install ok installed"; then
+    if [[ -e "${policy_path}" ]]; then
+      policy_backup="$(mktemp)"
+      mv "${policy_path}" "${policy_backup}"
+    fi
+    printf '#!/bin/sh\nexit 101\n' > "${policy_path}"
+    chmod 0755 "${policy_path}"
+    suppress_nginx_autostart=1
+  fi
+
+  if ! apt-get install -y nginx certbot python3-certbot-dns-cloudflare; then
+    if [[ "${suppress_nginx_autostart}" == "1" ]]; then
+      if [[ -n "${policy_backup}" ]]; then
+        mv "${policy_backup}" "${policy_path}"
+      else
+        rm -f "${policy_path}"
+      fi
+    fi
+    return 1
+  fi
+
+  if [[ "${suppress_nginx_autostart}" == "1" ]]; then
+    if [[ -n "${policy_backup}" ]]; then
+      mv "${policy_backup}" "${policy_path}"
+    else
+      rm -f "${policy_path}"
+    fi
+  fi
 }
 
-# TODO(codex, S2 Day 7): issue the origin cert via DNS-01 and confirm the
-# auto-renew timer. certbot installs/enables certbot.timer itself; verify it
-# with `systemctl is-enabled certbot.timer`. Use --non-interactive and a
-# real --email; chmod 600 the credentials file before calling certbot.
+# Issue/renew the public origin certificate using the operator-supplied token.
 issue_origin_cert() {
-  : # certbot certonly --dns-cloudflare \
-    #   --dns-cloudflare-credentials "${CF_DNS_CREDENTIALS_FILE}" \
-    #   -d "${ORIGIN_HOSTNAME}" --non-interactive --agree-tos -m <email>
+  if [[ ! -f "${CF_DNS_CREDENTIALS_FILE}" ]]; then
+    echo "Cloudflare DNS credentials not found at ${CF_DNS_CREDENTIALS_FILE}" >&2
+    exit 1
+  fi
+  chmod 600 "${CF_DNS_CREDENTIALS_FILE}"
+  certbot certonly \
+    --dns-cloudflare \
+    --dns-cloudflare-credentials "${CF_DNS_CREDENTIALS_FILE}" \
+    --keep-until-expiring \
+    -d "${ORIGIN_HOSTNAME}" \
+    --non-interactive \
+    --agree-tos \
+    -m "${CERTBOT_EMAIL}"
+  systemctl enable --now certbot.timer
+  systemctl is-enabled certbot.timer
 }
 
-# TODO(codex, S2 Day 7): write /etc/nginx/sites-available/lingoglass:
-#   server { listen 443 ssl http2; server_name ${ORIGIN_HOSTNAME};
-#     ssl_certificate     /etc/letsencrypt/live/${ORIGIN_HOSTNAME}/fullchain.pem;
-#     ssl_certificate_key /etc/letsencrypt/live/${ORIGIN_HOSTNAME}/privkey.pem;
-#     location / { proxy_pass http://${BACKEND_UPSTREAM};
-#       # WS upgrade is required — the mobile app streams audio over wss.
-#       proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade;
-#       proxy_set_header Connection "upgrade"; proxy_set_header Host $host;
-#       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-#       proxy_set_header X-Forwarded-Proto $scheme; } }
-# Optional :80 server block returning 301 to https (Cloudflare hits :443).
-# Then: enable the site, `nginx -t`, `systemctl reload nginx`.
+# Terminate TLS at nginx and keep the WebSocket audio bridge upgrade-capable.
 configure_nginx_reverse_proxy() {
-  : # see TODO above
+  local site_path="/etc/nginx/sites-available/lingoglass"
+  local site_enabled="/etc/nginx/sites-enabled/lingoglass"
+  local pending_site
+  pending_site="$(mktemp)"
+  cat > "${pending_site}" <<EOF
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name ${ORIGIN_HOSTNAME};
+
+    ssl_certificate /etc/letsencrypt/live/${ORIGIN_HOSTNAME}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${ORIGIN_HOSTNAME}/privkey.pem;
+
+    location / {
+        proxy_pass http://${BACKEND_UPSTREAM};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+EOF
+  if [[ ! -f "${site_path}" ]] || ! cmp -s "${pending_site}" "${site_path}"; then
+    install -m 0644 "${pending_site}" "${site_path}"
+  fi
+  rm -f "${pending_site}"
+  ln -sfn "${site_path}" "${site_enabled}"
+  nginx -t
+  systemctl enable --now nginx.service
+  systemctl reload nginx.service
 }
 
 if [[ "${TLS_PROXY_ENABLED}" == "1" ]]; then
