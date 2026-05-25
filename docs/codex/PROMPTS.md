@@ -47,6 +47,7 @@ a specific Day-N task.
 | 4 | #4 | MERGED 2026-05-21 (clean) | runbook `6345efa`, CFN+drawio `37d31ef`, scripts `2b2e2bb` |
 | 5 | #5 | MERGED 2026-05-22 (clean, 1 minor deviation) | audit `a6ba46d`, impl `c5de0ff` |
 | 6 | #6 | MERGED 2026-05-22 (clean) | design `297b53e`, impl `10c768a` |
+| 7 | #7 | MERGED 2026-05-21 (OLED density + paging) | `1b40387` |
 | 7a | (Claude PTT screen on main, manual device test pending) | wire-up `94ba294` | - |
 | 7-codex | MERGED 2026-05-25 (clean, APPROVE) | Server-status widget | `fb8b9eb` (#14) |
 
@@ -1026,6 +1027,13 @@ After opening the PR, post the URL and STOP.
 ---
 
 ## 2h. Day 7 (Codex row) — OLED text density + paging for long subtitles
+
+> **DONE — already merged as PR #7 (`1b40387`, 2026-05-21).** Do NOT
+> re-assign or re-implement. Verified on main 2026-05-25: `compute_pages()`,
+> `g_page_starts`/`g_page_index`, `u8g2_font_b12_t_japanese2`,
+> `oled_view::tick(uint32_t)` wired in `main.cpp`, and
+> `test/test_oled_wrap/test_oled_wrap.cpp` are all present. Prompt kept for
+> history only. (Codex correctly declined to open a duplicate PR.)
 
 **Precondition**: `69245ba` is merged on main. `lib/oled_view/oled_view.cpp`
 ships dual unifont (JP/VN) at 16 px with layout y=0, y=24, two-line.
