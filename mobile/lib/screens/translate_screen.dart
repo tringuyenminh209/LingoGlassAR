@@ -27,6 +27,7 @@ import '../services/device_id.dart';
 import '../services/latency_logger.dart';
 import '../services/session_client.dart';
 import '../services/translator_ws.dart';
+import '../widgets/server_status_chip.dart';
 
 enum _PttState { idle, starting, recording, ending, aborting }
 
@@ -549,6 +550,7 @@ class _TranslateScreenState extends State<TranslateScreen> {
       appBar: AppBar(
         title: const Text('LingoGlass Translate'),
         actions: [
+          const ServerStatusChip(),
           _chip('BACKEND', _isWsConnected, theme),
           _chip('BLE', _isBleConnected, theme),
           const SizedBox(width: 8),
