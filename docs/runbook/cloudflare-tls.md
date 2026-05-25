@@ -66,11 +66,16 @@ port needs to be reachable for issuance.
 
 ## 3. Run the TLS bootstrap extension
 
-> The bootstrap functions `install_tls_proxy` / `issue_origin_cert` /
-> `configure_nginx_reverse_proxy` are stubbed in `infra/ec2/bootstrap.sh`
-> (Claude prep, S2 Day 7). **Codex fills the bodies + the exact commands in
-> the placeholders below** (S2 Day 7 Codex row). Until then this section is a
-> skeleton.
+The TLS extension is default-off. It runs only when
+`LINGOGLASS_TLS_PROXY=1` is supplied explicitly; running the ordinary S1
+bootstrap path without that variable does not install nginx or request a
+certificate. nginx listens on **443 only**: the optional origin-side HTTP
+redirect is intentionally omitted because the existing Flexible deployment
+may still have the backend bound to host port 80 during this migration.
+Cloudflare's "Always Use HTTPS" remains responsible for edge redirects.
+On first installation, `bootstrap.sh` also suppresses nginx package
+auto-start until the TLS-only site is configured, avoiding a transient
+port-80 collision with the running backend.
 
 ```bash
 scp -i ~/.ssh/lingoglass-osaka.pem infra/ec2/bootstrap.sh ubuntu@<EIP>:/tmp/
@@ -78,10 +83,20 @@ ssh -i ~/.ssh/lingoglass-osaka.pem ubuntu@<EIP> \
   "sudo LINGOGLASS_TLS_PROXY=1 \
         ORIGIN_HOSTNAME=api.lingoglass.online \
         CF_DNS_CREDENTIALS_FILE=/home/deploy/.secrets/cf-dns.ini \
+        CERTBOT_EMAIL=<letsencrypt-contact-email> \
+        BACKEND_UPSTREAM=127.0.0.1:8000 \
         bash /tmp/bootstrap.sh"
 ```
 
-Expected (Codex to confirm exact output in the PR):
+Verify immediately on the EC2 instance:
+
+```bash
+sudo nginx -t
+sudo certbot certificates
+sudo systemctl is-enabled certbot.timer
+```
+
+Expected:
 - `nginx -t` reports syntax OK and reload succeeds.
 - `/etc/letsencrypt/live/api.lingoglass.online/fullchain.pem` exists.
 - `systemctl is-enabled certbot.timer` -> `enabled` (auto-renew armed).
@@ -91,16 +106,26 @@ Expected (Codex to confirm exact output in the PR):
 
 ## 4. Point the backend at the proxy (compose/.env change)
 
-Once nginx owns :443 (and :80), the backend container must stop binding the
-public :80 and bind loopback instead, so only nginx is internet-facing.
+Once nginx owns :443, the backend container must bind loopback
+instead of all interfaces, so only nginx is internet-facing. Compose keeps its
+local-development default (`API_BIND_ADDRESS` defaults to `0.0.0.0`); the
+origin opts into loopback in its uncommitted `.env`.
 
-- In `backend/.env` on the origin, change `API_HOST_PORT=80` so the published
-  port maps to `127.0.0.1:8000` rather than `0.0.0.0:80`.
-  > Codex: confirm whether this needs a compose edit (the current mapping is
-  > `${API_HOST_PORT:-8000}:8000`, which binds all interfaces). If so, propose
-  > the minimal `127.0.0.1:8000:8000` binding in the PR — do not change the
-  > default behaviour for local dev.
-- Redeploy: `bash infra/ec2/deploy.sh`.
+```bash
+cd /home/deploy/lingoglass/backend
+set_env() {
+  if grep -q "^${1}=" .env; then
+    sed -i "s|^${1}=.*|${1}=${2}|" .env
+  else
+    printf '%s=%s\n' "${1}" "${2}" >> .env
+  fi
+}
+set_env API_BIND_ADDRESS 127.0.0.1
+set_env API_HOST_PORT 8000
+cd /home/deploy/lingoglass
+bash infra/ec2/deploy.sh
+curl -fsS http://127.0.0.1:8000/healthz
+```
 
 ---
 
@@ -141,9 +166,20 @@ Failure modes (see also aws-osaka-deploy.md §7):
 
 ## 7. Rollback
 
-Flip Cloudflare SSL/TLS mode back to **Flexible**. The origin still answers
-HTTP on the backend port, so traffic is restored immediately while the proxy
-is debugged. (The nginx :443 listener can stay up; Flexible simply ignores it.)
+Restore an origin HTTP listener before flipping Cloudflare back to
+**Flexible**:
+
+```bash
+cd /home/deploy/lingoglass/backend
+sed -i 's/^API_BIND_ADDRESS=.*/API_BIND_ADDRESS=0.0.0.0/' .env
+sed -i 's/^API_HOST_PORT=.*/API_HOST_PORT=80/' .env
+cd /home/deploy/lingoglass
+bash infra/ec2/deploy.sh
+curl -fsS http://127.0.0.1/healthz
+```
+
+Then flip Cloudflare SSL/TLS mode to **Flexible**. The nginx :443 listener can
+stay up; Flexible ignores it.
 
 ---
 
