@@ -2273,6 +2273,90 @@ After opening the PR, post the URL here and STOP.
 
 ---
 
+## 2o. S2 Day 7 (Codex row) — origin TLS reverse-proxy (ready to copy)
+
+**Tag**: implement bodies only. Claude prep locked the structure in
+`infra/ec2/bootstrap.sh` (three stub functions + the env vars + the
+default-OFF `LINGOGLASS_TLS_PROXY` guard) and authored the decision +
+skeleton runbook `docs/runbook/cloudflare-tls.md`. Your job is to fill the
+function bodies and the runbook command placeholders. Do NOT change the
+public hostname, the default-OFF behaviour, or the cert decision.
+
+**Locked decisions you must honour (do not re-litigate):**
+- Cert = **Let's Encrypt via DNS-01** (`python3-certbot-dns-cloudflare`).
+  HTTP-01 is rejected because the `api` record is orange-clouded; a
+  Cloudflare Origin Cert is rejected because it breaks direct-to-origin
+  debugging. The runbook §1 explains the full trade-off.
+- nginx is the TLS terminator; it `proxy_pass`es to the backend on
+  `${BACKEND_UPSTREAM}` (default `127.0.0.1:8000`) and MUST forward the
+  WebSocket upgrade headers (the mobile app streams audio over wss).
+- The whole TLS path stays behind `LINGOGLASS_TLS_PROXY=1`. With the var
+  unset/0 the script must behave exactly as before (S1 Flexible).
+
+**Precondition**: Claude prep landed on `main` at commit
+`<paste from git log -1>` (bootstrap stub + runbook).
+
+```
+Your task: S2 Day 7 — implement the origin TLS reverse-proxy.
+
+## Concrete deliverables
+
+1. infra/ec2/bootstrap.sh — fill the three stubbed function bodies:
+   - install_tls_proxy: apt-get install -y nginx certbot
+     python3-certbot-dns-cloudflare (idempotent; safe to re-run).
+   - issue_origin_cert: certbot certonly --dns-cloudflare with the
+     credentials file, -d "${ORIGIN_HOSTNAME}", --non-interactive
+     --agree-tos and a real -m email (make the email an env var with a
+     sane default, document it). chmod 600 the credentials file first.
+     Verify+enable certbot.timer. Must be a no-op if a live cert already
+     exists (use --keep-until-expiring or guard on the live path).
+   - configure_nginx_reverse_proxy: write the 443 ssl server block
+     (+ optional 80->443 redirect) proxying to ${BACKEND_UPSTREAM} with
+     the WS upgrade headers from the comment, enable the site, run
+     `nginx -t`, reload. Idempotent: re-running overwrites the same file
+     and reloads cleanly.
+   Keep `set -euo pipefail` clean. Keep every step idempotent — the whole
+   script is re-run on redeploys.
+
+2. docs/runbook/cloudflare-tls.md — replace the §3/§4 command placeholders
+   with the exact commands you implemented, and confirm whether §4 needs a
+   compose edit for the loopback binding (if yes, make the minimal change
+   and document it; do not break local-dev default).
+
+## Hard constraints (always apply)
+- Default OFF: LINGOGLASS_TLS_PROXY unset => zero behaviour change. Prove
+  it (see verification).
+- No secrets in the repo. The CF token lives only in the operator's
+  credentials file; never echo it, never write it to logs.
+- No Co-Authored-By trailers. Feature branch, never push to main.
+- Do not touch backend/ app code, mobile/, or firmware/.
+
+## Verification (paste raw output into PR)
+- `bash -n infra/ec2/bootstrap.sh` — syntax OK.
+- `shellcheck infra/ec2/bootstrap.sh` if available — no new errors.
+- Show that with LINGOGLASS_TLS_PROXY unset the TLS branch is skipped
+  (run the script's guard locally with the apt/systemctl lines mocked, or
+  paste the relevant `if` block + a dry-run log line proving the skip).
+- If you provisioned on a staging box: `nginx -t`, `certbot certificates`,
+  `systemctl is-enabled certbot.timer`, and a direct
+  `curl --resolve ...:443:<ip> https://api.lingoglass.online/healthz`.
+  If no staging box is available, say so explicitly in the PR.
+
+## Branch / commit / PR
+Branch: `feat/s2-day-7-origin-tls`. Commit subject:
+`feat(infra): S2 Day 7 origin TLS reverse-proxy`. Squash-merge.
+
+## What this PR explicitly does NOT do
+- It does NOT flip Cloudflare to Full(Strict) (that is the operator's
+  Day 8 dashboard step).
+- It does NOT change the cert decision or the default-OFF guard.
+- It does NOT touch app/mobile/firmware code.
+
+After opening the PR, post the URL here and STOP.
+```
+
+---
+
 ## 4. PR-ready check (paste when Codex says "done")
 
 ```

@@ -72,6 +72,72 @@ log "enable and start Docker service"
 systemctl enable docker.service
 systemctl start docker.service
 
+# --- S2 Day 7: origin TLS reverse-proxy for Cloudflare Full(Strict) ---
+#
+# Default OFF: an unset/0 LINGOGLASS_TLS_PROXY leaves the S1 Flexible setup
+# (Cloudflare -> origin HTTP on :80) completely unchanged, so re-running
+# this script on the existing box is still idempotent and non-destructive.
+#
+# Set LINGOGLASS_TLS_PROXY=1 (plus the CF_* vars below) to provision nginx
+# as a TLS-terminating reverse proxy in front of the backend container and
+# obtain a Let's Encrypt origin certificate. The cert is issued via the
+# DNS-01 challenge, NOT HTTP-01: the `api` record is orange-clouded
+# (proxied), so an HTTP-01 challenge would be answered by Cloudflare's edge
+# instead of this origin and would fail. DNS-01 proves control via a
+# Cloudflare API token and is unaffected by the proxy. See
+# docs/runbook/cloudflare-tls.md for the cert-path trade-off and the manual
+# step list.
+TLS_PROXY_ENABLED="${LINGOGLASS_TLS_PROXY:-0}"
+# Public hostname the origin cert is issued for.
+ORIGIN_HOSTNAME="${ORIGIN_HOSTNAME:-api.lingoglass.online}"
+# certbot dns-cloudflare credentials file (ini with a scoped API token).
+# Must be created out-of-band by the operator; never committed.
+CF_DNS_CREDENTIALS_FILE="${CF_DNS_CREDENTIALS_FILE:-/home/deploy/.secrets/cf-dns.ini}"
+# Where nginx forwards decrypted traffic. The backend must bind here
+# (127.0.0.1:8000) instead of the public :80 once the proxy owns 80/443 —
+# that compose/.env change is part of the Day 8 migration, see runbook.
+BACKEND_UPSTREAM="${BACKEND_UPSTREAM:-127.0.0.1:8000}"
+
+# TODO(codex, S2 Day 7): install nginx + certbot + the dns-cloudflare plugin.
+install_tls_proxy() {
+  : # apt-get install -y nginx certbot python3-certbot-dns-cloudflare
+}
+
+# TODO(codex, S2 Day 7): issue the origin cert via DNS-01 and confirm the
+# auto-renew timer. certbot installs/enables certbot.timer itself; verify it
+# with `systemctl is-enabled certbot.timer`. Use --non-interactive and a
+# real --email; chmod 600 the credentials file before calling certbot.
+issue_origin_cert() {
+  : # certbot certonly --dns-cloudflare \
+    #   --dns-cloudflare-credentials "${CF_DNS_CREDENTIALS_FILE}" \
+    #   -d "${ORIGIN_HOSTNAME}" --non-interactive --agree-tos -m <email>
+}
+
+# TODO(codex, S2 Day 7): write /etc/nginx/sites-available/lingoglass:
+#   server { listen 443 ssl http2; server_name ${ORIGIN_HOSTNAME};
+#     ssl_certificate     /etc/letsencrypt/live/${ORIGIN_HOSTNAME}/fullchain.pem;
+#     ssl_certificate_key /etc/letsencrypt/live/${ORIGIN_HOSTNAME}/privkey.pem;
+#     location / { proxy_pass http://${BACKEND_UPSTREAM};
+#       # WS upgrade is required — the mobile app streams audio over wss.
+#       proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade;
+#       proxy_set_header Connection "upgrade"; proxy_set_header Host $host;
+#       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+#       proxy_set_header X-Forwarded-Proto $scheme; } }
+# Optional :80 server block returning 301 to https (Cloudflare hits :443).
+# Then: enable the site, `nginx -t`, `systemctl reload nginx`.
+configure_nginx_reverse_proxy() {
+  : # see TODO above
+}
+
+if [[ "${TLS_PROXY_ENABLED}" == "1" ]]; then
+  log "provision origin TLS reverse-proxy (Cloudflare Full(Strict)) for ${ORIGIN_HOSTNAME}"
+  install_tls_proxy
+  issue_origin_cert
+  configure_nginx_reverse_proxy
+else
+  log "skip origin TLS proxy (LINGOGLASS_TLS_PROXY != 1); origin stays HTTP-only on :80"
+fi
+
 # Print the facts operators need to confirm the machine is ready.
 log "verification summary"
 docker --version

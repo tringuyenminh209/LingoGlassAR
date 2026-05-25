@@ -119,9 +119,9 @@ Commit subject: `docs(s2): Day 6 latency confirmed, accuracy deferred to S3`.
 
 | Owner | Task | Verify | Status |
 |---|---|---|---|
-| **Claude** | Decide origin cert path: Cloudflare Origin Cert (15 yr, free, only valid for CF-fronted traffic) vs Let's Encrypt (90 d auto-renew, valid for any client). Document trade-off in `docs/runbook/cloudflare-tls.md`. | runbook section "cert choice". | pending |
-| **Claude (prep)** | Lock `infra/ec2/bootstrap.sh` extension stub for nginx (or Caddy) reverse-proxy in front of the backend container, terminating TLS on the EC2. Don't implement bodies. | stub commit. | pending |
-| **Codex** | Implement the bootstrap extension + `docs/runbook/cloudflare-tls.md` step list. | dry-run on a staging EC2 if possible. | pending |
+| **Claude** [DONE 2026-05-25] | Decide origin cert path. **Locked: Let's Encrypt via DNS-01** (orange-cloud blocks HTTP-01; Origin Cert breaks direct-to-origin debugging). Full trade-off table in `docs/runbook/cloudflare-tls.md` §1. | runbook §1 "cert path decision". | DONE |
+| **Claude (prep)** [DONE 2026-05-25] | Lock `infra/ec2/bootstrap.sh` nginx reverse-proxy stub: 3 functions (`install_tls_proxy` / `issue_origin_cert` / `configure_nginx_reverse_proxy`) + env vars + default-OFF `LINGOGLASS_TLS_PROXY` guard (no behaviour change when unset). Bodies = `:` no-ops for Codex. `bash -n` clean. | stub commit, syntax OK. | DONE |
+| **Codex** | Implement the bootstrap bodies + runbook command placeholders per `docs/codex/PROMPTS.md` §2o (tag: implement bodies only). | dry-run / `bash -n`; staging EC2 if available. | pending |
 
 Commit subject: `feat(infra): S2 Day 7 origin TLS reverse-proxy`.
 
