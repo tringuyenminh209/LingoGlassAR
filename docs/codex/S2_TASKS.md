@@ -121,7 +121,8 @@ Commit subject: `docs(s2): Day 6 latency confirmed, accuracy deferred to S3`.
 |---|---|---|---|
 | **Claude** [DONE 2026-05-25] | Decide origin cert path. **Locked: Let's Encrypt via DNS-01** (orange-cloud blocks HTTP-01; Origin Cert breaks direct-to-origin debugging). Full trade-off table in `docs/runbook/cloudflare-tls.md` §1. | runbook §1 "cert path decision". | DONE |
 | **Claude (prep)** [DONE 2026-05-25] | Lock `infra/ec2/bootstrap.sh` nginx reverse-proxy stub: 3 functions (`install_tls_proxy` / `issue_origin_cert` / `configure_nginx_reverse_proxy`) + env vars + default-OFF `LINGOGLASS_TLS_PROXY` guard (no behaviour change when unset). Bodies = `:` no-ops for Codex. `bash -n` clean. | stub commit, syntax OK. | DONE |
-| **Codex** | Implement the bootstrap bodies + runbook command placeholders per `docs/codex/PROMPTS.md` §2o (tag: implement bodies only). | dry-run / `bash -n`; staging EC2 if available. | pending |
+| **Codex** [DONE PR #15 `6d27233`] | Implement the bootstrap bodies + runbook command placeholders per `docs/codex/PROMPTS.md` §2o. Filled all 3 functions (DNS-01 certbot, idempotent nginx site + WS upgrade, certbot.timer), added `CERTBOT_EMAIL`, and made the compose binding loopback-capable via `API_BIND_ADDRESS` (default `0.0.0.0`, backward-compatible). `bash -n` clean, default-OFF guard intact. | dry-run / `bash -n`; staging EC2 if available. | DONE |
+| **Claude** [DONE 2026-05-25] | Review + merge PR #15. Verified default-OFF, compose backward-compat, idempotency, locked decisions honoured. Squash-merge + delete branch. Day 7 prep complete; the live Full(Strict) flip is the Day 8 operator step. | n/a | DONE |
 
 Commit subject: `feat(infra): S2 Day 7 origin TLS reverse-proxy`.
 
