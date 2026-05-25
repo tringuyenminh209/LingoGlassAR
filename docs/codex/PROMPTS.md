@@ -48,7 +48,7 @@ a specific Day-N task.
 | 5 | #5 | MERGED 2026-05-22 (clean, 1 minor deviation) | audit `a6ba46d`, impl `c5de0ff` |
 | 6 | #6 | MERGED 2026-05-22 (clean) | design `297b53e`, impl `10c768a` |
 | 7a | (Claude PTT screen on main, manual device test pending) | wire-up `94ba294` | - |
-| 7-codex | (Claude prompt ready, awaiting Codex PR) | Server-status widget | - |
+| 7-codex | MERGED 2026-05-25 (clean, APPROVE) | Server-status widget | `fb8b9eb` (#14) |
 
 ## 2. Day-N task prompt — Day 1 (ready to copy)
 
