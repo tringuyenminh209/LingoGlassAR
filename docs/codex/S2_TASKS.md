@@ -130,10 +130,18 @@ Commit subject: `feat(infra): S2 Day 7 origin TLS reverse-proxy`.
 
 | Owner | Task | Verify | Status |
 |---|---|---|---|
-| **Claude** | Provision origin cert (per Day 7 decision), deploy nginx with TLS, switch Cloudflare SSL mode to Full(Strict). | `curl https://api.lingoglass.online/healthz` returns 200, no 521. | pending |
-| **Claude** | Update `MEMORY.md` Cloudflare SSL memory: Flexible -> Full(Strict). | memory updated. | pending |
+| **User (operator)** [DONE 2026-05-26] | Provision origin cert (DNS-01), run `bootstrap.sh` with `LINGOGLASS_TLS_PROXY=1`, bind backend to `127.0.0.1:8000`, switch CF SSL mode to Full(Strict) + Always Use HTTPS. Cert `api.lingoglass.online` valid to 2026-08-24, `certbot.timer` enabled. | smoke PASS: CF 200, direct-origin 200 (trusted cert), http->https 301, no 521/526. | DONE (immediate smoke; 24 h window open) |
+| **Claude** [DONE 2026-05-26] | Update Cloudflare SSL memory: Flexible -> Full(Strict) + nginx/cert/loopback facts + token-rotation follow-up + Day 8 bootstrap gotchas (CRLF, nginx default-site :80 conflict). | memory updated. | DONE |
+| **User (operator)** | **Security:** rotate the CF DNS API token exposed in chat (same minimal scope), update `/home/deploy/.secrets/cf-dns.ini`, revoke old token. | new token works for renewal; old revoked. | pending |
+| **User (operator)** | Confirm 24 h monitoring (no 521/526, API available) -> final GO on criterion #5. | 24 h clean. | pending |
 
-Commit subject: `feat(infra): S2 Day 8 Cloudflare Full(Strict) live`.
+Commit subject: `docs(s2): S2 Day 8 Cloudflare Full(Strict) live`.
+
+**Day 8 incidents (operator-resolved, see nippo 2026-05-26):** Windows SSH PEM
+ACL too broad (used restricted working copy); `bootstrap.sh` CRLF (normalized to
+LF on EC2); nginx default site `:80` clashed with pre-migration Docker `:80`
+(disabled default site, nginx HTTPS-only); `.env` newline-escape inserted
+`127.0.0.1n` (corrected + redeploy). Runbook improvement candidates logged.
 
 ## Day 9 — S2 final device benchmark
 
