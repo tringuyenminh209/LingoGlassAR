@@ -1,6 +1,6 @@
 # S3 Sprint Task Division — Claude (lead) + Codex (assist)
 
-**Sprint window**: 2026-05-27 to ~2026-06-09 (~10 working days).
+**Sprint window**: 2026-05-26 to ~2026-06-06 (~10 working days).
 **Sprint goal**: add **phone-camera OCR** as a second input path — tap to
 capture a still image, recognise Japanese text **on-device** (Google ML Kit,
 no image leaves the phone), translate JP->VN through the existing backend, and
@@ -54,11 +54,13 @@ If any criterion fails, log a No-Go reason and trim S4 scope.
 
 | Owner | Task | Verify | Status |
 |---|---|---|---|
-| **Claude** | Probe `google_mlkit_text_recognition` (Flutter): Japanese script model, on-device confirmation (no network), model/app-size cost, `camera` vs `image_picker` capture, Android/iOS min versions. Doc `docs/reports/S3_ocr_probe.md`. | doc lists package, JP model, on-device proof, capture pipeline, size. | pending |
-| **Claude** | Lock criterion #1 metric (char accuracy vs key-info line accuracy) + #2 latency gate + the `ocr_system_latency_ms` definition. Pick the curated image-set size + sources (signage/menu, ASCII-safe ids). | doc section "metrics locked". | pending |
-| **Claude (prep)** | Extend the privacy section of root `CLAUDE.md` to name **image bytes + OCR'd text** in the never-store/never-send list; note on-device OCR keeps images local. | CLAUDE.md privacy invariant updated. | pending |
+| **Claude** [DONE 2026-05-26] | Probe `google_mlkit_text_recognition` (Flutter): Japanese script model, on-device confirmation (no network), model/app-size cost, `camera` vs `image_picker` capture, Android/iOS min versions. Doc `docs/reports/S3_ocr_probe.md`. | doc lists package, JP model, on-device proof, capture pipeline, size. | DONE |
+| **Claude** [DONE 2026-05-26] | Lock criterion #1 metric + #2 latency gate + the `ocr_system_latency_ms` definition. Pick the curated image-set size + sources. | **#1 = key-line accuracy >= 80% (by eye); #2 = `ocr_system_latency_ms = ble_ack_ms - capture_ms`, p95 <= 1500 ms provisional, device-confirm; set = 20 imgs, 4 domains x 5.** | DONE |
+| **Claude (prep)** [DONE 2026-05-26] | Extend the privacy section of root `CLAUDE.md` to name **image bytes + OCR'd text** in the never-store/never-send list; note on-device OCR keeps images local. | CLAUDE.md invariant #4 updated. | DONE |
 
 Doc-only commit: `docs(s3): Day 1 OCR probe + metric lock`.
+
+**Day 1 notes:** Android unbundled JP model (`play-services-mlkit-text-recognition-japanese`, ~260 KB app impact, one-time download). iOS pod ships models. arm64-only (Galaxy S10 OK). `ocr_system_latency_ms` p95 gate stays provisional until the on-device OCR step is measured on the first device build (Day 3/5).
 
 ## Day 2 — translate-only WS/contract path (Claude prep + Codex impl)
 

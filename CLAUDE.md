@@ -92,9 +92,14 @@ Files that own each leg: phone audio + WS = `mobile/lib/audio/recorder.dart`,
    `mobile/lib/services/latency_logger.dart`; keep them in sync. S2 gate: p95 ≤ 2000 ms.
 
 4. **Privacy boundary (every component)**: never log, store, or export audio
-   bytes, transcripts, translated text, or OpenAI tokens/keys — not in code,
-   logs, CSVs, or nippo. Counts, durations, and error codes only. This is why
-   translation accuracy is scored live by eye and never from stored text.
+   bytes, **camera image bytes, OCR'd text**, transcripts, translated text, or
+   OpenAI tokens/keys — not in code, logs, CSVs, or nippo. Counts, durations,
+   and error codes only. This is why translation accuracy is scored live by eye
+   and never from stored text. **OCR (S3) is on-device (ML Kit): the captured
+   image never leaves the phone and the temp capture file is deleted right
+   after recognition; only the recognised text crosses the WS.** OCR
+   recognition quality is likewise scored live by eye (key-line pass/fail), not
+   from stored text.
 
 ## Repo workflow
 
