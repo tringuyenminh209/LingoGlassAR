@@ -160,9 +160,9 @@ Commit subject (report): `docs(s2): Day 9 final benchmark - latency 1639ms + ret
 
 | Owner | Task | Verify | Status |
 |---|---|---|---|
-| **Claude** | Write S2 close report against the 5 exit criteria above. | `docs/reports/S2_close.md`. | pending |
-| **Claude** | Tag release `v0.3.0-s2`. | `git tag` listed. | pending |
-| **Claude** | Update `MEMORY.md` with S2 decision memory. | memory file written. | pending |
+| **Claude** [DONE 2026-05-26] | Write S2 close report against the 5 exit criteria above. **Verdict: GO to S3** (#2 latency + #3 retry PASS; #1 STT No-Go; #4 accuracy + coverage to S3; #5 TLS smoke PASS, 24 h watch). | `docs/reports/S2_close.md`. | DONE |
+| **Claude** [DONE 2026-05-26] | Tag release `v0.3.0-s2`. | `git tag` lists `v0.3.0-s2`. | DONE |
+| **Claude** [DONE 2026-05-26] | Update memory with S2 decision. | `s2-go-decision.md` + MEMORY.md index. | DONE |
 
 Commit subject: `docs(s2): close S2 with Go/No-Go verdict`.
 
