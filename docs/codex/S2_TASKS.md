@@ -147,10 +147,12 @@ LF on EC2); nginx default site `:80` clashed with pre-migration Docker `:80`
 
 | Owner | Task | Verify | Status |
 |---|---|---|---|
-| **Claude** | Re-run S2-Run-30 on production (Full Strict) + record CSV. | CSV captured. | pending |
-| **Claude** | Render combined `tools/latency_report.py --s2` output (latency + accuracy + retry rate combined). | `docs/reports/S2_final_<date>.md`. | pending |
+| **Claude (prep)** [DONE 2026-05-26] | Add the **retry-rate gate (criterion #3, <= 20%)** to `tools/latency_report.py --s2`: `retry_rate = aborted attempts (rows with non-empty `error`) / total` (matches S1 baseline 10/18). Relabel the old "retries (extra rows)" -> "duplicate clean rows" (a coverage artifact, not a gate). Retry + latency are hard data gates in the verdict; a fail is NO-GO even while accuracy is PENDING. 2 new tests / 11 total. | `py tools/test_latency_report.py` 11/11 green; renders clean on Day 6 CSV (retry 0% PASS). | DONE |
+| **User (operator)** | Re-run S2-Run-30 on production (Full Strict) + record CSV. | CSV captured. | pending |
+| **Claude** | Render combined `tools/latency_report.py --s2` output (latency + retry rate; accuracy deferred to S3). | `docs/reports/S2_final_<date>.md`. | pending |
 
-Commit subject: `docs(s2): Day 9 final benchmark`.
+Commit subject (prep): `feat(tools): S2 Day 9 retry-rate gate (criterion #3)`.
+Commit subject (report): `docs(s2): Day 9 final benchmark`.
 
 ## Day 10 — S2 report + Go/No-Go for S3
 

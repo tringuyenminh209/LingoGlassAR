@@ -28,9 +28,12 @@ def _row(
     }
 
 
-def _s2_row(phrase_id: str, *, audio: str, ble: str, accuracy: str = "") -> dict[str, str]:
+def _s2_row(
+    phrase_id: str, *, audio: str, ble: str, accuracy: str = "", error: str = ""
+) -> dict[str, str]:
     # Latency-relevant cells only; intermediate stages are not exercised by
     # the S2 report (it consumes system_latency = ble - audio + accuracy).
+    # An `error` makes the row an aborted attempt (feeds the retry-rate gate).
     return _row(
         phrase_id,
         audio=audio,
@@ -40,6 +43,7 @@ def _s2_row(phrase_id: str, *, audio: str, ble: str, accuracy: str = "") -> dict
         ble=ble,
         total=ble,
         accuracy=accuracy,
+        error=error,
     )
 
 
@@ -183,13 +187,42 @@ def test_s2_latency_fail_blocks_go() -> None:
     assert "Result: **NO-GO**" in report
 
 
-def test_s2_counts_retries() -> None:
+def test_s2_counts_duplicate_clean_rows() -> None:
     rows = [
         _s2_row("ja-greet-01", audio="3000", ble="4000"),
         _s2_row("ja-greet-01", audio="3100", ble="4100"),
         _s2_row("vi-greet-01", audio="3000", ble="4000"),
     ]
     report = render_s2_markdown(rows)
-    assert "| retries (extra rows) | 1 |" in report
+    assert "| duplicate clean rows | 1 |" in report
     assert "| unique phrases | 2 |" in report
     assert "| ja-greet-01 | 2 |" in report
+
+
+def test_s2_retry_rate_pass_at_gate() -> None:
+    # 1 aborted of 5 attempts = 20% == gate -> PASS; unscored stays PENDING.
+    rows = [
+        _s2_row("ja-greet-01", audio="3000", ble="4000"),
+        _s2_row("ja-greet-02", audio="3000", ble="4000"),
+        _s2_row("vi-greet-01", audio="3000", ble="4000"),
+        _s2_row("vi-greet-02", audio="3000", ble="4000"),
+        _s2_row("ja-greet-03", audio="3000", ble="", error="discarded"),
+    ]
+    report = render_s2_markdown(rows)
+    assert "| retry rate | 20% |" in report
+    assert "Retry rate: 1/5 = 20% vs <= 20% -> **PASS**" in report
+    assert "Result: **PENDING — accuracy not scored**" in report
+
+
+def test_s2_retry_rate_fail_blocks_go() -> None:
+    # 2 aborted of 4 = 50% -> FAIL, NO-GO even though latency is fine and
+    # accuracy is unscored (hard data gate).
+    rows = [
+        _s2_row("ja-greet-01", audio="3000", ble="4000"),
+        _s2_row("vi-greet-01", audio="3000", ble="4000"),
+        _s2_row("ja-greet-02", audio="3000", ble="", error="discarded"),
+        _s2_row("vi-greet-02", audio="3000", ble="", error="ws_error"),
+    ]
+    report = render_s2_markdown(rows)
+    assert "Retry rate: 2/4 = 50% vs <= 20% -> **FAIL**" in report
+    assert "Result: **NO-GO** (latency/retry gate failed)" in report

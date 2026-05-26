@@ -15,12 +15,15 @@ Two modes, selected by the input CSV's column shape (or by the explicit
   stacked-bar markdown table with overall p50/p90/p95/p99 of
   `total_ms`. Target: `p95(total_ms) <= 2500 ms`.
 
-* **S2 (--s2)**: S2 Day 6 translation-accuracy report from the same
-  `E2eLatencyRecord` CSV (now with the trailing `accuracy_score` column).
-  Reports accuracy `% >= 4` by direction (ja->vi / vi->ja) and domain plus
-  system latency by direction. Gates: accuracy >= 80% both directions AND
-  `p95(system_latency_ms) <= 2000 ms`. Accuracy stays PENDING until the
-  operator fills the score column.
+* **S2 (--s2)**: S2 Day 6/9 translation-accuracy + retry report from the
+  same `E2eLatencyRecord` CSV (now with the trailing `accuracy_score`
+  column). Reports accuracy `% >= 4` by direction (ja->vi / vi->ja) and
+  domain, system latency by direction, and retry rate (aborted attempts /
+  total). Gates: accuracy >= 80% both directions AND
+  `p95(system_latency_ms) <= 2000 ms` AND retry rate <= 20%. Accuracy
+  stays PENDING until the operator fills the score column; latency and
+  retry rate are always computed (the Day 9 live gates while accuracy is
+  deferred to S3).
 
 Usage:
     python tools/latency_report.py path/to/latency.csv         # Phase F
@@ -71,6 +74,11 @@ S1_STAGES: list[tuple[str, str, str]] = [
 S2_TARGET_SYSTEM_MS = 2000.0
 S2_ACCURACY_MIN_PCT = 80.0
 S2_ACCURACY_GOOD = 4  # a translation is "good" if scored >= 4 out of 5
+# Criterion #3: retry rate = aborted attempts (rows with a non-empty `error`,
+# e.g. 'discarded' from a double-press, or 'ws_error') / total attempts. S1
+# baseline was ~50% (9 discards + 1 ws_error per 18). Target after the Day 4
+# PTT cooldown fix: <= 20%.
+S2_RETRY_RATE_MAX_PCT = 20.0
 
 
 def percentile(sorted_values: list[float], p: float) -> float:
@@ -406,9 +414,14 @@ def render_s1_markdown(rows: list[dict[str, str]]) -> str:
 # `ja-greet-01` -> direction "ja->vi", domain "greet";
 # `vi-emerg-05` -> direction "vi->ja", domain "emerg".
 #
-# Retries: a discarded-and-redone phrase appears on more than one row. The
-# operator scores only the kept attempt, so accuracy is computed over rows
-# that actually carry a score; retries are reported separately as a count.
+# Two distinct row-count signals, do not conflate them:
+#   * "duplicate clean rows" = the same phrase ran twice and BOTH attempts
+#     completed cleanly (no `error`). A coverage/dedup artifact; the operator
+#     scores only one. Reported as a count, NOT a gate.
+#   * "aborted attempts" = rows with a non-empty `error` ('discarded',
+#     'ws_error', ...). These feed the retry-rate gate (criterion #3,
+#     <= 20%). An aborted row carries no usable latency and is excluded from
+#     the latency/accuracy/coverage tallies but still counts as an attempt.
 
 
 def _direction(phrase_id: str) -> str:
@@ -465,7 +478,11 @@ def render_s2_markdown(rows: list[dict[str, str]]) -> str:
         seen[row.get("phrase_id", "").strip() or "<missing>"] += 1
     unique_phrases = len(seen)
     retry_phrases = {pid: n for pid, n in seen.items() if n > 1}
-    retry_rows = sum(n - 1 for n in retry_phrases.values())
+    duplicate_rows = sum(n - 1 for n in retry_phrases.values())
+
+    # Retry-rate gate (criterion #3): aborted attempts / total attempts.
+    aborted_rows = sum(failures.values())
+    retry_rate_pct = (100.0 * aborted_rows / len(rows)) if rows else float("nan")
 
     scores_by_dir: dict[str, list[int]] = defaultdict(list)
     scores_by_dir_domain: dict[tuple[str, str], list[int]] = defaultdict(list)
@@ -489,8 +506,9 @@ def render_s2_markdown(rows: list[dict[str, str]]) -> str:
         "",
         (
             f"Gates: accuracy `>= {S2_ACCURACY_MIN_PCT:.0f}% of scored rows "
-            f">= {S2_ACCURACY_GOOD}/5` in BOTH directions, AND latency "
-            f"`p95(system_latency_ms) <= {S2_TARGET_SYSTEM_MS:.0f} ms`."
+            f">= {S2_ACCURACY_GOOD}/5` in BOTH directions, latency "
+            f"`p95(system_latency_ms) <= {S2_TARGET_SYSTEM_MS:.0f} ms`, AND "
+            f"retry rate `<= {S2_RETRY_RATE_MAX_PCT:.0f}%`."
         ),
         "",
         "`accuracy_score` is filled manually after the run (1-5 by eye). "
@@ -503,7 +521,9 @@ def render_s2_markdown(rows: list[dict[str, str]]) -> str:
         f"| total rows | {len(rows)} |",
         f"| clean rows | {len(clean_rows)} |",
         f"| unique phrases | {unique_phrases} |",
-        f"| retries (extra rows) | {retry_rows} |",
+        f"| duplicate clean rows | {duplicate_rows} |",
+        f"| aborted attempts | {aborted_rows} |",
+        f"| retry rate | {retry_rate_pct:.0f}% |",
         f"| scored rows | {total_scored} |",
     ]
 
@@ -596,21 +616,40 @@ def render_s2_markdown(rows: list[dict[str, str]]) -> str:
         lat_pass = False
         lines.append("- Latency: **NO DATA**")
 
+    if rows:
+        retry_pass = retry_rate_pct <= S2_RETRY_RATE_MAX_PCT
+        lines.append(
+            f"- Retry rate: {aborted_rows}/{len(rows)} = {retry_rate_pct:.0f}% "
+            f"vs <= {S2_RETRY_RATE_MAX_PCT:.0f}% -> "
+            f"**{'PASS' if retry_pass else 'FAIL'}**"
+        )
+    else:
+        retry_pass = False
+        lines.append("- Retry rate: **NO DATA**")
+
+    # Latency + retry are hard data gates; a failure there is NO-GO even
+    # while accuracy is unscored (Day 9 reads these two while #4 is in S3).
+    hard_fail = (not lat_pass) or (not retry_pass)
     if total_scored == 0:
         lines.append("- Accuracy: **PENDING** (fill `accuracy_score` and rerun)")
-        lines.append("- Result: **PENDING — accuracy not scored**")
+        if hard_fail:
+            lines.append("- Result: **NO-GO** (latency/retry gate failed)")
+        else:
+            lines.append("- Result: **PENDING — accuracy not scored**")
     else:
         acc_pass = all(accuracy_pass.get(d) for d in directions)
         for direction in directions:
             state = accuracy_pass.get(direction)
             label = "PASS" if state else ("PENDING" if state is None else "FAIL")
             lines.append(f"- Accuracy {direction}: **{label}**")
-        decision = "GO" if (acc_pass and lat_pass) else "NO-GO"
+        decision = "GO" if (acc_pass and lat_pass and retry_pass) else "NO-GO"
         lines.append(f"- Result: **{decision}**")
 
-    # Retries + failures detail.
+    # Duplicate-phrase + failures detail.
     if retry_phrases:
-        lines.extend(["", "## Retries", "", "| phrase | attempts |", "|--------|---------:|"])
+        lines.extend(
+            ["", "## Duplicate clean rows", "", "| phrase | attempts |", "|--------|---------:|"]
+        )
         for pid in sorted(retry_phrases):
             lines.append(f"| {pid} | {retry_phrases[pid]} |")
 
