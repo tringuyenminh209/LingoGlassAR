@@ -18,8 +18,9 @@ Two modes, selected by the input CSV's column shape (or by the explicit
 * **S2 (--s2)**: S2 Day 6/9 translation-accuracy + retry report from the
   same `E2eLatencyRecord` CSV (now with the trailing `accuracy_score`
   column). Reports accuracy `% >= 4` by direction (ja->vi / vi->ja) and
-  domain, system latency by direction, and retry rate (aborted attempts /
-  total). Gates: accuracy >= 80% both directions AND
+  domain, system latency by direction, and retry rate (redo attempts /
+  total, where a redo is a clean re-run or an aborted attempt). Gates:
+  accuracy >= 80% both directions AND
   `p95(system_latency_ms) <= 2000 ms` AND retry rate <= 20%. Accuracy
   stays PENDING until the operator fills the score column; latency and
   retry rate are always computed (the Day 9 live gates while accuracy is
@@ -74,10 +75,14 @@ S1_STAGES: list[tuple[str, str, str]] = [
 S2_TARGET_SYSTEM_MS = 2000.0
 S2_ACCURACY_MIN_PCT = 80.0
 S2_ACCURACY_GOOD = 4  # a translation is "good" if scored >= 4 out of 5
-# Criterion #3: retry rate = aborted attempts (rows with a non-empty `error`,
-# e.g. 'discarded' from a double-press, or 'ws_error') / total attempts. S1
-# baseline was ~50% (9 discards + 1 ws_error per 18). Target after the Day 4
-# PTT cooldown fix: <= 20%.
+# Criterion #3: retry rate = redo attempts / total attempts. A redo is either
+# an aborted attempt (row with a non-empty `error`, e.g. 'discarded' from a
+# double-press, or 'ws_error') OR a clean re-run of a phrase that already had a
+# clean row (a "duplicate clean row"). After the Day 4 PTT cooldown, redos
+# shifted from auto-discards to deliberate clean re-runs, so BOTH forms are
+# counted to stay comparable to the S1 baseline (~50%: 9 discards + 1 ws_error
+# per 18 attempts). Target: <= 20%. (Definition locked 2026-05-26 against the
+# Day 9 trace, which had 0 aborts but 10 clean re-runs.)
 S2_RETRY_RATE_MAX_PCT = 20.0
 
 
@@ -414,14 +419,17 @@ def render_s1_markdown(rows: list[dict[str, str]]) -> str:
 # `ja-greet-01` -> direction "ja->vi", domain "greet";
 # `vi-emerg-05` -> direction "vi->ja", domain "emerg".
 #
-# Two distinct row-count signals, do not conflate them:
+# Two row-count signals, both feed the retry-rate gate (criterion #3):
 #   * "duplicate clean rows" = the same phrase ran twice and BOTH attempts
-#     completed cleanly (no `error`). A coverage/dedup artifact; the operator
-#     scores only one. Reported as a count, NOT a gate.
+#     completed cleanly (no `error`) — a deliberate re-run. The operator scores
+#     only one for accuracy, but each extra clean attempt counts as a redo.
 #   * "aborted attempts" = rows with a non-empty `error` ('discarded',
-#     'ws_error', ...). These feed the retry-rate gate (criterion #3,
-#     <= 20%). An aborted row carries no usable latency and is excluded from
-#     the latency/accuracy/coverage tallies but still counts as an attempt.
+#     'ws_error', ...). An aborted row carries no usable latency and is
+#     excluded from the latency/accuracy/coverage tallies but still counts as
+#     an attempt (and a redo).
+# redo attempts = duplicate clean rows + aborted attempts; retry_rate =
+# redo / total. The two are disjoint (clean dups live in clean_rows, aborts do
+# not), so summing them never double-counts a row.
 
 
 def _direction(phrase_id: str) -> str:
@@ -480,9 +488,11 @@ def render_s2_markdown(rows: list[dict[str, str]]) -> str:
     retry_phrases = {pid: n for pid, n in seen.items() if n > 1}
     duplicate_rows = sum(n - 1 for n in retry_phrases.values())
 
-    # Retry-rate gate (criterion #3): aborted attempts / total attempts.
+    # Retry-rate gate (criterion #3): redo attempts / total attempts, where a
+    # redo is a duplicate clean re-run OR an aborted attempt (disjoint sets).
     aborted_rows = sum(failures.values())
-    retry_rate_pct = (100.0 * aborted_rows / len(rows)) if rows else float("nan")
+    redo_attempts = duplicate_rows + aborted_rows
+    retry_rate_pct = (100.0 * redo_attempts / len(rows)) if rows else float("nan")
 
     scores_by_dir: dict[str, list[int]] = defaultdict(list)
     scores_by_dir_domain: dict[tuple[str, str], list[int]] = defaultdict(list)
@@ -502,7 +512,7 @@ def render_s2_markdown(rows: list[dict[str, str]]) -> str:
     total_scored = sum(len(s) for s in scores_by_dir.values())
 
     lines: list[str] = [
-        "# S2 Day 6 Translation Accuracy Report",
+        "# S2 Translation Accuracy + Retry Report",
         "",
         (
             f"Gates: accuracy `>= {S2_ACCURACY_MIN_PCT:.0f}% of scored rows "
@@ -523,6 +533,7 @@ def render_s2_markdown(rows: list[dict[str, str]]) -> str:
         f"| unique phrases | {unique_phrases} |",
         f"| duplicate clean rows | {duplicate_rows} |",
         f"| aborted attempts | {aborted_rows} |",
+        f"| redo attempts | {redo_attempts} |",
         f"| retry rate | {retry_rate_pct:.0f}% |",
         f"| scored rows | {total_scored} |",
     ]
@@ -619,7 +630,7 @@ def render_s2_markdown(rows: list[dict[str, str]]) -> str:
     if rows:
         retry_pass = retry_rate_pct <= S2_RETRY_RATE_MAX_PCT
         lines.append(
-            f"- Retry rate: {aborted_rows}/{len(rows)} = {retry_rate_pct:.0f}% "
+            f"- Retry rate: {redo_attempts}/{len(rows)} = {retry_rate_pct:.0f}% "
             f"vs <= {S2_RETRY_RATE_MAX_PCT:.0f}% -> "
             f"**{'PASS' if retry_pass else 'FAIL'}**"
         )

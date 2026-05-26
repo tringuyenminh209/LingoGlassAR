@@ -187,7 +187,8 @@ def test_s2_latency_fail_blocks_go() -> None:
     assert "Result: **NO-GO**" in report
 
 
-def test_s2_counts_duplicate_clean_rows() -> None:
+def test_s2_duplicate_clean_rows_count_as_retries() -> None:
+    # A clean re-run is a redo: 1 duplicate / 3 attempts = 33% -> FAIL.
     rows = [
         _s2_row("ja-greet-01", audio="3000", ble="4000"),
         _s2_row("ja-greet-01", audio="3100", ble="4100"),
@@ -197,6 +198,23 @@ def test_s2_counts_duplicate_clean_rows() -> None:
     assert "| duplicate clean rows | 1 |" in report
     assert "| unique phrases | 2 |" in report
     assert "| ja-greet-01 | 2 |" in report
+    assert "Retry rate: 1/3 = 33% vs <= 20% -> **FAIL**" in report
+
+
+def test_s2_retry_rate_mixes_dups_and_aborts() -> None:
+    # 1 clean re-run + 1 abort = 2 redos / 5 attempts = 40% -> FAIL.
+    rows = [
+        _s2_row("ja-greet-01", audio="3000", ble="4000"),
+        _s2_row("ja-greet-01", audio="3100", ble="4100"),
+        _s2_row("vi-greet-01", audio="3000", ble="4000"),
+        _s2_row("vi-greet-02", audio="3000", ble="4000"),
+        _s2_row("ja-greet-02", audio="3000", ble="", error="discarded"),
+    ]
+    report = render_s2_markdown(rows)
+    assert "| duplicate clean rows | 1 |" in report
+    assert "| aborted attempts | 1 |" in report
+    assert "| redo attempts | 2 |" in report
+    assert "Retry rate: 2/5 = 40% vs <= 20% -> **FAIL**" in report
 
 
 def test_s2_retry_rate_pass_at_gate() -> None:

@@ -28,7 +28,9 @@ phone-microphone pipeline used in S1.
    on a fresh 20-phrase device run (tightened from 2500 ms S1 gate).
    S1 1493 ms, Day 3 1478 ms, Day 3b 1535 ms — all already passing.
 3. **Retry rate**: drop from ~50 % (S1: 9 discards + 1 ws_error per 18
-   attempts) to **<= 20 %** after UX fixes.
+   attempts) to **<= 20 %** after UX fixes. **PASS (2026-05-26 Day 9):
+   17 %** (10 redo / 60). Definition locked to count clean re-runs +
+   aborts (post-cooldown, redos shifted from discards to clean re-runs).
 4. ~~**Translation accuracy**: manual-scored 4/5 or better on >= 80 %
    of a curated 30-phrase JP<->VN bench set.~~ **Deferred to S3
    (2026-05-25).** Day 6 device run produced 60 latency rows but bilingual
@@ -148,11 +150,11 @@ LF on EC2); nginx default site `:80` clashed with pre-migration Docker `:80`
 | Owner | Task | Verify | Status |
 |---|---|---|---|
 | **Claude (prep)** [DONE 2026-05-26] | Add the **retry-rate gate (criterion #3, <= 20%)** to `tools/latency_report.py --s2`: `retry_rate = aborted attempts (rows with non-empty `error`) / total` (matches S1 baseline 10/18). Relabel the old "retries (extra rows)" -> "duplicate clean rows" (a coverage artifact, not a gate). Retry + latency are hard data gates in the verdict; a fail is NO-GO even while accuracy is PENDING. 2 new tests / 11 total. | `py tools/test_latency_report.py` 11/11 green; renders clean on Day 6 CSV (retry 0% PASS). | DONE |
-| **User (operator)** | Re-run S2-Run-30 on production (Full Strict) + record CSV. | CSV captured. | pending |
-| **Claude** | Render combined `tools/latency_report.py --s2` output (latency + retry rate; accuracy deferred to S3). | `docs/reports/S2_final_<date>.md`. | pending |
+| **User (operator)** [DONE 2026-05-26] | Re-run S2-Run-30 on production (Full Strict) + record CSV. | `docs/reports/s2_final_2026-05-26.csv` (60 rows). | DONE |
+| **Claude** [DONE 2026-05-26] | Render `--s2` output (latency + retry rate; accuracy deferred to S3). Locked retry-rate definition against the trace (count clean re-runs + aborts) per user call. | `docs/reports/S2_final_2026-05-26.md`: latency p95 **1639 ms PASS**, retry rate **17% PASS** (10 redo / 60), accuracy PENDING. | DONE |
 
 Commit subject (prep): `feat(tools): S2 Day 9 retry-rate gate (criterion #3)`.
-Commit subject (report): `docs(s2): Day 9 final benchmark`.
+Commit subject (report): `docs(s2): Day 9 final benchmark - latency 1639ms + retry 17% PASS`.
 
 ## Day 10 — S2 report + Go/No-Go for S3
 
