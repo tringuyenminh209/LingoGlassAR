@@ -60,6 +60,42 @@ paths:
           description: Switching Protocols (WebSocket)
         "404":
           $ref: "#/components/responses/BadRequest"
+  /v1/translate:
+    post:
+      summary: Translate a block of text (S3 on-device OCR path)
+      description: |
+        One-shot text->text translation for the OCR flow. The phone recognises
+        the source text on-device (ML Kit); only the recognised **text** is
+        sent here — never image bytes. Reuses the OpenAI Realtime translator via
+        `translate_text()`. Backend: `backend/app/api/translate.py` (S3 Day 2).
+        On daily-spend-cap breach the response is 429 `daily_cap_exceeded`; an
+        upstream translator failure is 502 `translator_error`. The request text
+        and the translated text are never logged or persisted (privacy).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TranslateRequest"
+      responses:
+        "200":
+          description: Translation succeeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranslateResponse"
+        "429":
+          description: Daily spend cap exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiFail"
+        "502":
+          description: Upstream translator error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiFail"
   /healthz:
     get:
       summary: Liveness probe
@@ -76,7 +112,15 @@ paths:
                 $ref: "#/components/schemas/HealthResponse"
   /api/v1/ocr:
     post:
-      summary: OCR and translate an image from the mobile app
+      summary: "[SUPERSEDED] OCR and translate an uploaded image"
+      deprecated: true
+      description: |
+        Superseded in S3 (2026-05-27) by on-device OCR. The S3 locked design
+        runs ML Kit on the phone and uploads only the recognised text via
+        `POST /v1/translate` — image bytes never leave the device. This
+        image-upload variant is kept for historical reference only and must
+        NOT be implemented: it would breach the privacy boundary (no image
+        bytes cross the wire). See docs/codex/S3_TASKS.md.
       parameters:
         - in: header
           name: X-Device-Id
@@ -242,6 +286,41 @@ components:
         redis:
           type: string
           enum: [up, down]
+    TranslateRequest:
+      type: object
+      required: [sourceLang, targetLang, text]
+      properties:
+        deviceId:
+          type: string
+          format: uuid
+        sourceLang:
+          type: string
+          enum: [ja, vi]
+        targetLang:
+          type: string
+          enum: [ja, vi]
+        text:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: Recognised source text (OCR'd on-device). Never logged.
+    TranslateResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          const: true
+        data:
+          type: object
+          required: [translatedText, durationMs]
+          properties:
+            translatedText:
+              type: string
+              description: The translation. Never logged or persisted.
+            durationMs:
+              type: integer
+              minimum: 0
+              description: Server-side translate leg duration (sub-metric of ocr_system_latency_ms).
     OcrResponse:
       type: object
       required: [success, data]

@@ -68,13 +68,28 @@ The speech path does STT then translate. OCR already has text, so it needs a
 **translate-only** request. Decide REST POST vs a new WS input message type;
 reuse the OpenAI Realtime translation prompt either way.
 
+**Decision (locked 2026-05-27): REST `POST /v1/translate`, not a new WS message
+type.** OCR holds the full text up front, so a one-shot request/response fits
+and keeps OCR fully isolated from the latency-gated speech WS state machine
+(zero regression risk; `ws-events.schema.json` is untouched). It reuses the
+Realtime `Translator` via a new `translate_text(text) -> TextResult` method
+(same model, same JP<->VN prompt, same usage parsing — single source). Latency
+headroom is large: STT (~880 ms) + audio upload (~300 ms) are gone, leaving
+connect (~300) + translate (~400) + BLE (~150) ~= 850 ms vs the 1500 ms gate.
+The old `/api/v1/ocr` image-upload draft is **superseded** (marked deprecated in
+openapi.yaml) — implementing it would breach the privacy boundary (image bytes).
+
+This is a **live OpenAI path**, so per the prep/impl split axis a stub is unsafe
+(passes tests, fails on device). Claude implemented the bodies; Codex writes
+tests only.
+
 | Owner | Task | Verify | Status |
 |---|---|---|---|
-| **Claude (prep)** | Decide + lock the translate-only contract in `docs/api-contract/` (openapi.yaml + ws-events.schema.json) and the backend signature in `backend/app/services/translator.py` / `backend/app/api/sessions.py`. Bodies left for Codex if a stub is safe. | contract diff + locked stub. | pending |
-| **Codex** | Implement the backend translate-only path + tests per a new `docs/codex/PROMPTS.md` S3 section. | `pytest backend` green. | pending |
+| **Claude (prep+impl)** [DONE 2026-05-27] | Lock contract (`openapi.yaml`: `/v1/translate` + `TranslateRequest`/`TranslateResponse`, deprecate `/api/v1/ocr`). Implement `translate_text()`+`TextResult` in `translator.py`, `POST /v1/translate` in new `app/api/translate.py`, register in `main.py`. Generalised `SYSTEM_INSTRUCTIONS` for text+audio. | `py_compile` OK; contract diff in. | DONE |
+| **Codex** | Tests only per `docs/codex/PROMPTS.md` "S3 Day 2" section (translate_text cases + endpoint tests + privacy assertion). Do NOT touch impl. | `pytest backend` + `ruff` green. | pending |
 | **Claude** | Review + merge. | n/a | pending |
 
-Commit subject: `feat(backend): S3 translate-only path for OCR`.
+Commit subject (this prep): `feat(backend): S3 translate-only path for OCR`.
 
 ## Day 3 — mobile OCR capture + recognition (Claude prep + Codex impl)
 
@@ -151,8 +166,9 @@ Commit subject: `docs(s3): close S3 with Go/No-Go verdict`.
 2. **OCR latency gate**: 1500 ms is provisional. Measure the on-device OCR step
    on the target phone (Galaxy S10) first; the gate must be achievable with
    margin like the speech path (~550 ms cushion at S2 close).
-3. **Translate-only transport**: REST POST vs new WS message type. WS reuses the
-   warm session + streaming; REST is simpler for a one-shot translate. Decide
-   Day 2 by which the existing backend supports with the least contract churn.
+3. **Translate-only transport**: ~~REST POST vs new WS message type.~~
+   **RESOLVED Day 2 (2026-05-27): REST `POST /v1/translate`.** Least churn
+   (no speech WS surgery, WS schema untouched), reuses the Realtime translator
+   for a single-sourced prompt, ample latency headroom. See Day 2 section.
 4. **Reviewer logistics for #3**: paid native-VN reviewer availability + cost
    cap; same privacy rule (scores by eye, no stored text).

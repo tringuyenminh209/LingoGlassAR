@@ -2431,3 +2431,74 @@ PR for S1 Day <N> merged at <commit>. Update:
 - One thing to copy forward: paste the FULL verification output, not a
   summary. The PR body for #1 included every container start line and
   it made review unambiguous.
+
+---
+
+## S3 Day 2 — translate-only REST path (TESTS ONLY)
+
+> **Tag: tests only.** The implementation is already on `main` (Claude wrote
+> the live OpenAI path; a stub would pass tests but hide integration bugs until
+> device smoke). Do **not** edit `backend/app/api/translate.py`,
+> `backend/app/services/translator.py`, `backend/app/main.py`, or the contract.
+> Write tests only.
+
+### Context
+
+S3 adds a phone-camera OCR input path. OCR is recognised **on-device** (ML Kit);
+only the recognised text is sent to the backend. The new endpoint
+`POST /v1/translate` does a one-shot text->text translation, reusing the Realtime
+`Translator` via the new `translate_text(text) -> TextResult` method. Read:
+- `backend/app/api/translate.py` (the endpoint)
+- `backend/app/services/translator.py` (`translate_text`, `TextResult`)
+- `backend/tests/test_translator.py` + `backend/tests/test_sessions.py` (existing
+  patterns: the fake OpenAI WS in `tests/fakes.py`, ASGITransport client, how
+  `Translator` is patched, how the daily-cap path is exercised)
+
+### Concrete deliverables (your rows)
+
+1. **`tests/test_translator.py`** — add cases for `translate_text`:
+   - happy path: feed a fake OpenAI WS that emits `response.output_text.delta`
+     frames then `response.done` with a usage block; assert `TextResult`
+     joins the deltas and parses `usage` (reuse the same fake as the audio test).
+   - stream ends without `response.done`: returns joined text, `usage is None`.
+   - an `error` event raises `TranslatorError`.
+   - calling before `connect()` raises `RuntimeError`; calling while a stream is
+     active raises `RuntimeError`.
+2. **`tests/test_translate.py`** (new) — endpoint tests via ASGITransport,
+   patching `Translator` like `test_sessions.py` does:
+   - 200: returns `{success, data:{translatedText, durationMs}}`; `durationMs`
+     is a non-negative int; cost logger `record` called when usage present.
+   - 429 `daily_cap_exceeded` when the daily cap is already breached (reuse the
+     existing cap-breach fixture/pattern).
+   - 502 `translator_error` when the patched translator raises `TranslatorError`
+     (and the translator is still closed afterwards - no leak).
+   - 422 on invalid body (missing `text`, empty `text`, `text` over 2000 chars,
+     bad `sourceLang`).
+   - **privacy assertion**: capture logs at INFO and assert neither the request
+     `text` nor the translated text appears in any log record (only counts).
+
+### Hard constraints (always apply)
+
+- Do not add dependencies. Use the existing `pytest` + `pytest-asyncio` +
+  ASGITransport + `tests/fakes.py` machinery.
+- Never assert on real network. The OpenAI WS must be faked, same as the audio
+  tests.
+- Do not touch implementation files, the contract, mobile, firmware, or
+  `.claude/`. Tests only.
+- Branch + PR only; never push to `main`. No `Co-Authored-By` trailers.
+
+### Verification (paste RAW output into PR)
+
+```
+cd backend
+pytest -q
+ruff check . ; ruff format --check .
+```
+
+### PR description template
+
+## Summary
+## Files added / modified
+## Verification output  (raw, full)
+## Open questions for review
+## Time spent
