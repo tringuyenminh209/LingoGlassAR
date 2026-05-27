@@ -354,7 +354,9 @@ def _validate_ws_event(event: Any) -> None:
 
 def _load_ws_schema() -> dict[str, Any]:
     schema_path = (
-        Path(__file__).resolve().parents[3] / "docs" / "api-contract"
+        Path(__file__).resolve().parents[3]
+        / "docs"
+        / "api-contract"
         / "ws-events.schema.json"
     )
     if schema_path.exists():

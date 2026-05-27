@@ -53,9 +53,9 @@ def usage(
 
 
 def test_compute_usd_all_non_cached_input() -> None:
-    assert compute_usd(usage(audio_input=100, text_input=50), **rates()) == pytest.approx(
-        (100 * 32.0 + 50 * 4.0) / 1_000_000
-    )
+    assert compute_usd(
+        usage(audio_input=100, text_input=50), **rates()
+    ) == pytest.approx((100 * 32.0 + 50 * 4.0) / 1_000_000)
 
 
 def test_compute_usd_all_cached_input() -> None:
@@ -123,7 +123,9 @@ async def test_record_updates_session_and_daily_hashes_once_per_session() -> Non
 
 @pytest.mark.asyncio
 async def test_daily_returns_zero_stats_for_missing_bucket() -> None:
-    stats = await make_logger(FakeRedis()).daily(datetime(2026, 5, 22, tzinfo=UTC).date())
+    stats = await make_logger(FakeRedis()).daily(
+        datetime(2026, 5, 22, tzinfo=UTC).date()
+    )
 
     assert stats.usd == 0.0
     assert stats.audio_input_tokens == 0

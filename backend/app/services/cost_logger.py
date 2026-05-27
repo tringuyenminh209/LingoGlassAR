@@ -16,6 +16,7 @@ Cached input fields are subsets of input counts. Non-cached input uses
 the full price; cached input uses the cached price. This module only
 stores counts and derived USD values.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -213,9 +214,7 @@ class CostLogger:
             usd=_hash_float(fields, "usd"),
             audio_input_tokens=_hash_int(fields, "audio_input_tokens"),
             text_input_tokens=_hash_int(fields, "text_input_tokens"),
-            cached_audio_input_tokens=_hash_int(
-                fields, "cached_audio_input_tokens"
-            ),
+            cached_audio_input_tokens=_hash_int(fields, "cached_audio_input_tokens"),
             cached_text_input_tokens=_hash_int(fields, "cached_text_input_tokens"),
             text_output_tokens=_hash_int(fields, "text_output_tokens"),
             audio_output_tokens=_hash_int(fields, "audio_output_tokens"),

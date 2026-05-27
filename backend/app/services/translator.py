@@ -20,6 +20,7 @@ rename or rewrite the public surface):
 Codex: implementation details (which SDK call, framing strategy,
 reconnect behaviour) are yours. Only the public API below is locked.
 """
+
 from __future__ import annotations
 
 import base64

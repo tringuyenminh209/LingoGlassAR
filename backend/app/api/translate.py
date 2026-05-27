@@ -14,6 +14,7 @@ Design (locked S3 Day 2, see docs/codex/S3_TASKS.md + docs/reports/S3_ocr_probe.
 - Privacy: the request `text` (OCR'd source) and the response `translatedText`
   are NEVER logged or persisted. Counts/durations only, same as the audio path.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
