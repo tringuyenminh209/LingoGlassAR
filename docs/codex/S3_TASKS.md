@@ -151,10 +151,15 @@ pure-Dart units (`TranslateClient` with a fake `http.Client`, OCR latency record
 | Owner | Task | Verify | Status |
 |---|---|---|---|
 | **Claude (prep+impl)** [DONE 2026-05-28] | OCR latency record family in `latency_logger.dart`. New `lib/services/translate_client.dart`. Wire `ocr_screen.dart`: capture -> `OcrScanner.recognise` -> `TranslateClient.translate` -> `BleTransport.sendSubtitle` + latency marks + on-screen translation + BLE connect/CSV actions. Route `/ocr` in `main.dart` + drawer entry in `translate_screen.dart`. | `flutter analyze` clean; `flutter test` green. | DONE |
-| **Codex** | Tests only per PROMPTS.md "S3 Day 4": `test/services/translate_client_test.dart` (200/429/502/non-200/malformed + no-text-leak assertion via fake `http.Client`) + OCR latency record cases in `test/latency_logger_test.dart` (finalize OK, `ocrSystemLatencyMs == bleAckMs`, CSV header/row, discard-on-restart, abort codes, no-op without start). Do NOT touch impl. | `flutter test` green. | pending |
-| **Claude** | Review + merge. | n/a | pending |
+| **Codex** [DONE 2026-05-28, PR #18] | Tests only per PROMPTS.md "S3 Day 4": `test/services/translate_client_test.dart` (200/429/502/non-200/malformed + no-text-leak assertion via fake `http.Client`) + OCR latency record cases in `test/latency_logger_test.dart` (finalize OK, `ocrSystemLatencyMs == bleAckMs`, CSV header/row, discard-on-restart, abort codes, no-op without start). Do NOT touch impl. | `flutter test` green. | DONE |
+| **Claude** [DONE 2026-05-28] | Review + merge. | n/a | DONE |
 
 Commit subject (this prep): `feat(mobile): S3 OCR -> translate -> BLE pipeline`.
+
+Day 4 closed on `main` (prep `df6119d`; merge `233f616`, PR #18). 13 new tests
+(7 OCR latency record + 6 TranslateClient incl. the no-leak assertion); local
+verify on the branch: 61 `flutter test` pass, `flutter analyze` 2 pre-existing
+warnings only. Scope clean (2 test files, 0 impl change).
 
 ## Day 5 — OCR device smoke
 
