@@ -187,5 +187,131 @@ void main() {
       expect(logger.e2eRecords, isEmpty);
       expect(logger.e2eInProgress, false);
     });
+
+    group('OCR latency record', () {
+      test('happy path finalises a complete OCR record', () {
+        final logger = LatencyLogger();
+
+        expect(logger.ocrStart('ocr-001'), isNull);
+        logger.ocrMarkRecognised(12);
+        logger.ocrMarkTranslated();
+        logger.ocrMarkBleAck(7);
+        final record = logger.ocrFinalize();
+
+        expect(record, isNotNull);
+        expect(record!.captureId, 'ocr-001');
+        expect(record.isOk, true);
+        expect(record.recognisedChars, 12);
+        expect(record.bleSequenceId, 7);
+        expect(record.bleAckMs, isNotNull);
+        expect(record.ocrSystemLatencyMs, record.bleAckMs);
+        expect(logger.ocrRecords, contains(record));
+      });
+
+      test('mark and finalize without start are no-ops', () {
+        final logger = LatencyLogger();
+
+        logger.ocrMarkRecognised(12);
+        logger.ocrMarkTranslated();
+        logger.ocrMarkBleAck(7);
+
+        expect(logger.ocrFinalize(), isNull);
+        expect(logger.ocrRecords, isEmpty);
+        expect(logger.ocrInProgress, false);
+      });
+
+      test('start while active discards prior trace', () {
+        final logger = LatencyLogger();
+        logger.ocrStart('ocr-a');
+
+        final discarded = logger.ocrStart('ocr-b');
+
+        expect(discarded, isNotNull);
+        expect(discarded!.captureId, 'ocr-a');
+        expect(discarded.errorCode, 'discarded');
+        expect(logger.ocrRecords, contains(discarded));
+        expect(logger.ocrInProgress, true);
+      });
+
+      test('abort stores the translate error row', () {
+        final logger = LatencyLogger()..ocrStart('ocr-001');
+
+        final record = logger.ocrAbort('translate_error');
+
+        expect(record, isNotNull);
+        expect(record!.errorCode, 'translate_error');
+        expect(record.isOk, false);
+        expect(record.bleAckMs, isNull);
+        expect(logger.ocrRecords, contains(record));
+      });
+
+      test('OCR CSV header and row column order are stable', () {
+        final logger = LatencyLogger();
+        logger.ocrStart('ocr-001');
+        logger.ocrMarkRecognised(12);
+        logger.ocrMarkTranslated();
+        logger.ocrMarkBleAck(7);
+        logger.ocrFinalize();
+
+        final lines = logger.toOcrCsv().trim().split('\n');
+        expect(lines.first, OcrLatencyRecord.csvHeader);
+        expect(lines.first,
+            'capture_id,recognise_ms,translate_ms,ble_ack_ms,ocr_system_latency_ms,recognised_chars,ble_seq_id,error');
+        expect(lines.length, 2);
+
+        final header = lines.first.split(',');
+        final row = lines[1].split(',');
+        expect(row, hasLength(header.length));
+        expect(row[0], 'ocr-001');
+        expect(row[5], '12');
+        expect(row[6], '7');
+        expect(row[7], '');
+      });
+
+      test('summariseOcr ignores failed rows and counts OK rows', () {
+        final logger = LatencyLogger();
+        expect(logger.summariseOcr(), isNull);
+
+        logger.ocrStart('ocr-failed');
+        logger.ocrAbort('translate_error');
+        expect(logger.summariseOcr(), isNull);
+
+        for (final captureId in <String>['ocr-ok-1', 'ocr-ok-2']) {
+          logger.ocrStart(captureId);
+          logger.ocrMarkRecognised(8);
+          logger.ocrMarkTranslated();
+          logger.ocrMarkBleAck(3);
+          logger.ocrFinalize();
+        }
+
+        final stats = logger.summariseOcr();
+        expect(stats, isNotNull);
+        expect(stats!.count, 2);
+      });
+
+      test('clearOcr leaves Phase F and e2e records intact', () {
+        final logger = LatencyLogger();
+        logger.markSendStart(
+            sequenceId: 5, mtu: 247, payloadBytes: 5, fragments: 1);
+        logger.recordAck(AckEvent(
+          sequenceId: 5,
+          status: 0x01,
+          receivedAtMicros: DateTime.now().microsecondsSinceEpoch,
+          tRecvMs: 0,
+          tRenderMs: 0,
+        ));
+        logger.e2eStart('time-09');
+        logger.e2eAbort('timeout');
+        logger.ocrStart('ocr-001');
+        logger.ocrAbort('translate_error');
+
+        logger.clearOcr();
+
+        expect(logger.records, hasLength(1));
+        expect(logger.e2eRecords, hasLength(1));
+        expect(logger.ocrRecords, isEmpty);
+        expect(logger.ocrInProgress, false);
+      });
+    });
   });
 }
