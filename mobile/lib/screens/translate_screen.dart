@@ -570,6 +570,14 @@ class _TranslateScreenState extends State<TranslateScreen> {
               },
             ),
             ListTile(
+              leading: const Icon(Icons.document_scanner_outlined),
+              title: const Text('Scan text (OCR)'),
+              onTap: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).pushNamed('/ocr');
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.science),
               title: const Text('S0 Spike screen'),
               onTap: () {

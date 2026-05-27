@@ -2581,3 +2581,100 @@ flutter analyze   # only the 2 known pre-existing warnings are allowed
 ## Verification output  (raw, full)
 ## Open questions for review
 ## Time spent
+
+---
+
+## S3 Day 4 — OCR -> translate -> BLE pipeline tests (TESTS ONLY)
+
+> **Tag: tests only.** The whole pipeline is already on `main`: the OCR latency
+> record family in `mobile/lib/services/latency_logger.dart`, the
+> `mobile/lib/services/translate_client.dart` HTTP client, and the wired
+> `mobile/lib/screens/ocr_screen.dart`. These are live HTTP / camera / BLE
+> paths Claude implemented — do **not** edit any of them. Write the two
+> pure-Dart unit-test files only.
+
+### Context
+
+S3 Day 4 wires the OCR path end-to-end: capture -> on-device recognise ->
+`POST /v1/translate` -> BLE subtitle. The locked OCR metric is
+`ocr_system_latency_ms = ble_ack_ms - capture_ms`, so the latency record is
+**anchored at capture** (not a PTT press) and `ocrSystemLatencyMs` equals
+`bleAckMs`. Privacy boundary (root CLAUDE.md): never log/store the OCR'd source
+text or the translated text — the record stores `recognisedChars` (a count) and
+durations only, and `TranslateClient` keeps text out of every error message.
+Read first:
+- `mobile/lib/services/latency_logger.dart` — the OCR record family
+  (`ocrStart`/`ocrMarkRecognised`/`ocrMarkTranslated`/`ocrMarkBleAck`/
+  `ocrAbort`/`ocrFinalize`/`toOcrCsv`/`summariseOcr`/`clearOcr`,
+  `OcrLatencyRecord`).
+- `mobile/test/latency_logger_test.dart` — the existing e2e-trace tests are the
+  exact pattern to mirror for the OCR record.
+- `mobile/lib/services/translate_client.dart` + `mobile/lib/services/session_client.dart`
+  (the sibling client) — the fake-`http.Client` test pattern.
+
+### Concrete deliverables (your rows)
+
+1. **OCR latency record cases in `mobile/test/latency_logger_test.dart`**
+   (add a `group('OCR latency record', ...)`; do not disturb existing tests):
+   - happy path: `ocrStart('ocr-001')` -> `ocrMarkRecognised(12)` ->
+     `ocrMarkTranslated()` -> `ocrMarkBleAck(7)` -> `ocrFinalize()` returns a
+     record with `isOk == true`, `recognisedChars == 12`, `bleSequenceId == 7`,
+     and `ocrSystemLatencyMs == bleAckMs` (both non-null).
+   - any `ocrMark*` / `ocrFinalize` without a prior `ocrStart` is a no-op
+     returning null (and leaves `ocrRecords` empty).
+   - `ocrStart` while a trace is active discards the prior one: it returns the
+     discarded record with `errorCode == 'discarded'`, and that record is in
+     `ocrRecords`.
+   - `ocrAbort('translate_error')` finalises with that `errorCode`, `isOk ==
+     false`, and `bleAckMs == null`.
+   - `toOcrCsv()` first line equals `OcrLatencyRecord.csvHeader`; a finalised
+     row has the right column count/order. Assert the header string is stable.
+   - `summariseOcr()` returns null with no OK rows; with a couple of OK rows it
+     returns an `E2eLatencyStats` whose `count` matches the OK rows.
+   - `clearOcr()` empties `ocrRecords` without touching Phase F / e2e records.
+2. **`mobile/test/services/translate_client_test.dart`** (new) — drive
+   `TranslateClient` with a fake `http.Client` (use `package:http`'s
+   `MockClient` from `package:http/testing.dart`, already transitively
+   available; if not, a tiny hand-rolled `BaseClient` is fine):
+   - 200 `{success:true, data:{translatedText, durationMs}}` -> returns a
+     `TranslateResult` with those fields; assert the request body JSON carries
+     `deviceId`/`sourceLang`/`targetLang`/`text` and hits `/v1/translate`.
+   - 429 -> throws `TranslateClientError(code: 'daily_cap_exceeded')`.
+   - 502 -> throws `TranslateClientError(code: 'translator_error', retryable:
+     true)`.
+   - other non-200 (e.g. 500) -> throws `TranslateClientError(code:
+     'upstream_unavailable')`.
+   - 200 with `success:false` -> throws `internal_error`.
+   - **no-leak assertion**: when the server returns a non-200, the thrown
+     error's `toString()` does NOT contain the response body text (translated
+     text must never leak into logs). Use a recognisable body string and assert
+     it is absent.
+
+### Hard constraints (always apply)
+
+- No new dependencies. `package:http` (incl. `testing.dart` MockClient) is
+  already present transitively via `session_client.dart`.
+- Do not touch `latency_logger.dart`, `translate_client.dart`,
+  `ocr_screen.dart`, `main.dart`, or any other impl/contract/backend/firmware
+  file. Tests only (you may add the new test file + extend the existing test
+  file).
+- Never assert on real network — the `http.Client` must be faked. Never put
+  real OCR/translated text into a persisted/logged place in a test helper.
+- Branch + PR only; never push to `main`. No `Co-Authored-By` trailers.
+
+### Verification (paste RAW output into PR)
+
+```
+cd mobile
+flutter pub get
+flutter test
+flutter analyze   # only the 2 known pre-existing warnings are allowed
+```
+
+### PR description template
+
+## Summary
+## Files added / modified
+## Verification output  (raw, full)
+## Open questions for review
+## Time spent

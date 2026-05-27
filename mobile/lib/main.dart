@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'screens/ocr_screen.dart';
 import 'screens/spike_screen.dart';
 import 'screens/translate_screen.dart';
 
@@ -18,6 +19,7 @@ class LingoGlassApp extends StatelessWidget {
       home: const TranslateScreen(),
       routes: {
         '/spike': (_) => const SpikeScreen(),
+        '/ocr': (_) => const OcrScreen(),
       },
     );
   }

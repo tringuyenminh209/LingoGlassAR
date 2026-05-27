@@ -250,6 +250,88 @@ class E2eLatencyStats {
       'p99=${p99.toStringAsFixed(0)}ms';
 }
 
+/// One end-to-end record per OCR capture (S3 Day 4).
+///
+/// Anchored at **capture** (the still-image grab), NOT at a PTT press: the
+/// locked S3 metric is `ocr_system_latency_ms = ble_ack_ms - capture_ms`, so
+/// every `*Ms` field is milliseconds **relative to capture** and [bleAckMs]
+/// is itself the gate value (there is no audio-hold duration to subtract the
+/// way the speech path subtracts `audio_ms`). The OCR path has no STT and no
+/// audio upload, so its stages are: on-device recognise -> translate
+/// round-trip -> BLE render.
+///
+/// [ocrSystemLatencyMs] is the same value as [bleAckMs] when populated; it is
+/// kept as its own column (like [E2eLatencyRecord.totalMs]) so a CSV row reads
+/// top-to-bottom as a stacked timeline without re-deriving the gate value.
+///
+/// [recognisedChars] is a **count only** — never the recognised text — so the
+/// bench can correlate the BLE leg with subtitle length without breaching the
+/// privacy rule (counts/durations only).
+class OcrLatencyRecord {
+  const OcrLatencyRecord({
+    required this.captureId,
+    required this.captureTsMicros,
+    required this.recogniseMs,
+    required this.translateMs,
+    required this.bleAckMs,
+    required this.ocrSystemLatencyMs,
+    required this.recognisedChars,
+    required this.bleSequenceId,
+    required this.errorCode,
+  });
+
+  /// Capture label for the row (e.g. `ocr-001`), assigned by the screen so
+  /// the operator can pair a CSV row with the curated image set (Day 6).
+  final String captureId;
+
+  /// Phone-clock microsecondsSinceEpoch at capture. The stage fields below
+  /// are deltas off this anchor, not absolute times.
+  final int captureTsMicros;
+
+  /// On-device ML Kit recognise complete, relative to capture.
+  final int? recogniseMs;
+
+  /// `POST /v1/translate` response received, relative to capture.
+  final int? translateMs;
+
+  /// BLE ACK (status=0x01) for the subtitle send, relative to capture.
+  final int? bleAckMs;
+
+  /// Same value as [bleAckMs] when populated. The OCR Go/No-Go gate is
+  /// `p95(ocrSystemLatencyMs) <= 1500 ms` (provisional, device-confirm).
+  final int? ocrSystemLatencyMs;
+
+  /// Character count of the recognised text — count only, never the text.
+  final int? recognisedChars;
+
+  /// BLE sequence id used for the subtitle send; pairs the OCR row with the
+  /// Phase F [LatencyRecord] for the same send.
+  final int? bleSequenceId;
+
+  /// Short tag when the capture did not complete cleanly. Examples:
+  /// `ocr_error`, `translate_error`, `ble_unavailable`, `ble_error`,
+  /// `discarded`.
+  final String? errorCode;
+
+  /// True iff every stage completed and [errorCode] is null.
+  bool get isOk =>
+      errorCode == null &&
+      recogniseMs != null &&
+      translateMs != null &&
+      bleAckMs != null;
+
+  String toCsvRow() {
+    String n(int? v) => v?.toString() ?? '';
+    return '$captureId,${n(recogniseMs)},${n(translateMs)},${n(bleAckMs)},'
+        '${n(ocrSystemLatencyMs)},${n(recognisedChars)},${n(bleSequenceId)},'
+        '${errorCode ?? ''}';
+  }
+
+  static const String csvHeader =
+      'capture_id,recognise_ms,translate_ms,ble_ack_ms,'
+      'ocr_system_latency_ms,recognised_chars,ble_seq_id,error';
+}
+
 /// Mutable per-utterance trace. Implementation detail of [LatencyLogger];
 /// not exposed.
 class _E2eTrace {
@@ -267,6 +349,21 @@ class _E2eTrace {
   String? errorCode;
 }
 
+/// Mutable per-capture OCR trace. Implementation detail of [LatencyLogger];
+/// not exposed.
+class _OcrTrace {
+  _OcrTrace({required this.captureId, required this.captureTsMicros});
+
+  final String captureId;
+  final int captureTsMicros;
+  int? recognisedTsMicros;
+  int? translatedTsMicros;
+  int? bleAckTsMicros;
+  int? recognisedChars;
+  int? bleSequenceId;
+  String? errorCode;
+}
+
 class LatencyLogger {
   LatencyLogger();
 
@@ -275,6 +372,9 @@ class LatencyLogger {
 
   final List<E2eLatencyRecord> _e2eRecords = <E2eLatencyRecord>[];
   _E2eTrace? _activeTrace;
+
+  final List<OcrLatencyRecord> _ocrRecords = <OcrLatencyRecord>[];
+  _OcrTrace? _activeOcrTrace;
 
   /// Read-only view of all records collected so far.
   List<LatencyRecord> get records => List.unmodifiable(_records);
@@ -523,5 +623,152 @@ class LatencyLogger {
   void clearE2e() {
     _e2eRecords.clear();
     _activeTrace = null;
+  }
+
+  // ------------------------------------------------------------------
+  // S3 Day 4 — OCR capture trace
+  // ------------------------------------------------------------------
+  //
+  // Lifecycle (mirrors the e2e trace; capture is the anchor):
+  //
+  //   logger.ocrStart('ocr-001')             // right before takePicture
+  //   logger.ocrMarkRecognised(charCount)    // on-device OCR text ready
+  //   logger.ocrMarkTranslated()             // POST /v1/translate returned
+  //   logger.ocrMarkBleAck(sequenceId)       // BLE ack 0x01
+  //   final record = logger.ocrFinalize();   // commits
+  //
+  // Any ocrMark*/finalize call without a matching ocrStart is a no-op
+  // returning null. ocrAbort('error_code') closes the active trace with
+  // errorCode set, no ocrMark* required.
+
+  /// Read-only view of committed OCR records.
+  List<OcrLatencyRecord> get ocrRecords => List.unmodifiable(_ocrRecords);
+
+  /// True while a capture is being traced (between [ocrStart] and
+  /// [ocrFinalize]/[ocrAbort]).
+  bool get ocrInProgress => _activeOcrTrace != null;
+
+  /// Begin a new capture trace, anchored at now (the capture instant).
+  /// Discards any prior unfinalised trace by finalising it with
+  /// `errorCode='discarded'` first so no data is lost; returns the discarded
+  /// prior record (or null when no prior trace was active) so the UI can show
+  /// transient feedback.
+  OcrLatencyRecord? ocrStart(String captureId) {
+    OcrLatencyRecord? discarded;
+    if (_activeOcrTrace != null) {
+      _activeOcrTrace!.errorCode = 'discarded';
+      discarded = ocrFinalize();
+    }
+    _activeOcrTrace = _OcrTrace(
+      captureId: captureId,
+      captureTsMicros: DateTime.now().microsecondsSinceEpoch,
+    );
+    return discarded;
+  }
+
+  /// Record the on-device OCR completion. [charCount] is the length of the
+  /// recognised text — a count only, never the text itself.
+  void ocrMarkRecognised(int charCount) {
+    final trace = _activeOcrTrace;
+    if (trace == null) return;
+    trace.recognisedTsMicros = DateTime.now().microsecondsSinceEpoch;
+    trace.recognisedChars = charCount;
+  }
+
+  /// Record the `POST /v1/translate` response.
+  void ocrMarkTranslated() {
+    final trace = _activeOcrTrace;
+    if (trace == null) return;
+    trace.translatedTsMicros = DateTime.now().microsecondsSinceEpoch;
+  }
+
+  /// Record the BLE ACK (status=0x01) for the subtitle send.
+  void ocrMarkBleAck(int sequenceId) {
+    final trace = _activeOcrTrace;
+    if (trace == null) return;
+    trace.bleAckTsMicros = DateTime.now().microsecondsSinceEpoch;
+    trace.bleSequenceId = sequenceId;
+  }
+
+  /// Close the active capture trace with an error code (no completion
+  /// required). Subsequent ocrMark* calls are no-ops until [ocrStart] runs.
+  OcrLatencyRecord? ocrAbort(String errorCode) {
+    final trace = _activeOcrTrace;
+    if (trace == null) return null;
+    trace.errorCode = errorCode;
+    return ocrFinalize();
+  }
+
+  /// Snapshot the active capture trace into an immutable [OcrLatencyRecord],
+  /// append it to [ocrRecords], and clear the active trace. Returns the
+  /// record (or null if nothing was active). `ocrSystemLatencyMs` is set to
+  /// `bleAckMs` (or null if BLE never acked).
+  OcrLatencyRecord? ocrFinalize() {
+    final trace = _activeOcrTrace;
+    if (trace == null) return null;
+
+    int? delta(int? ts) {
+      if (ts == null) return null;
+      return ((ts - trace.captureTsMicros) / 1000).round();
+    }
+
+    final bleAckMs = delta(trace.bleAckTsMicros);
+    final record = OcrLatencyRecord(
+      captureId: trace.captureId,
+      captureTsMicros: trace.captureTsMicros,
+      recogniseMs: delta(trace.recognisedTsMicros),
+      translateMs: delta(trace.translatedTsMicros),
+      bleAckMs: bleAckMs,
+      ocrSystemLatencyMs: bleAckMs,
+      recognisedChars: trace.recognisedChars,
+      bleSequenceId: trace.bleSequenceId,
+      errorCode: trace.errorCode,
+    );
+    _ocrRecords.add(record);
+    _activeOcrTrace = null;
+    return record;
+  }
+
+  /// CSV body including [OcrLatencyRecord.csvHeader] and one row per record.
+  String toOcrCsv() {
+    final sb = StringBuffer()..writeln(OcrLatencyRecord.csvHeader);
+    for (final record in _ocrRecords) {
+      sb.writeln(record.toCsvRow());
+    }
+    return sb.toString();
+  }
+
+  /// p50/p90/p95/p99 of `ocr_system_latency_ms` across OK OCR records.
+  /// Returns null when no OK samples exist. Reuses [E2eLatencyStats] as a
+  /// generic percentile container; the OCR-specific breakdown is the report
+  /// tool's job (`tools/latency_report.py --s3`, Day 6).
+  E2eLatencyStats? summariseOcr() {
+    final latencies = _ocrRecords
+        .where((record) => record.isOk)
+        .map((record) => record.ocrSystemLatencyMs!.toDouble())
+        .toList()
+      ..sort();
+    if (latencies.isEmpty) return null;
+
+    double pct(double p) {
+      final idx = ((latencies.length - 1) * p).round();
+      return latencies[idx];
+    }
+
+    return E2eLatencyStats(
+      count: latencies.length,
+      p50: pct(0.50),
+      p90: pct(0.90),
+      p95: pct(0.95),
+      p99: pct(0.99),
+      min: latencies.first,
+      max: latencies.last,
+    );
+  }
+
+  /// Clear OCR state without touching Phase F or e2e records.
+  void clearOcr() {
+    _ocrRecords.clear();
+    _activeOcrTrace = null;
   }
 }

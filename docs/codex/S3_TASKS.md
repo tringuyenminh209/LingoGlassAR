@@ -132,13 +132,29 @@ Commit subject: `feat(mobile): S3 on-device OCR capture`.
 
 ## Day 4 — wire OCR text -> translate -> BLE (mobile end-to-end)
 
+**Surface decision (locked 2026-05-28):** the OCR latency record is anchored at
+**capture**, not a PTT press: `ocr_system_latency_ms = ble_ack_ms - capture_ms`
+(locked Day 1), so `bleAckMs` IS the gate value (no audio-hold to subtract). The
+record family in `latency_logger.dart` mirrors the e2e trace lifecycle
+(`ocrStart` -> `ocrMarkRecognised(charCount)` -> `ocrMarkTranslated` ->
+`ocrMarkBleAck` -> `ocrFinalize`; `ocrAbort(code)` for failures). `recognisedChars`
+is a **count only** (never the text) so the bench can correlate the BLE leg with
+subtitle length without breaching privacy. `summariseOcr()` reuses
+`E2eLatencyStats` (generic percentile container — no duplicate stats logic).
+
+Translate transport is the one-shot `TranslateClient` (new
+`lib/services/translate_client.dart`, mirrors `session_client.dart`) hitting
+`POST /v1/translate` (Day 2 contract). Per the prep/impl split axis, the live
+legs (HTTP translate, camera, BLE) are Claude-implemented; Codex tests the two
+pure-Dart units (`TranslateClient` with a fake `http.Client`, OCR latency record).
+
 | Owner | Task | Verify | Status |
 |---|---|---|---|
-| **Claude (prep)** | Wire OCR text into the translate-only path and on into the existing `BleTransport.sendSubtitle`. Add an OCR latency record (`capture_ms .. ble_ack_ms`) to `latency_logger.dart`, mirroring the speech record. | analyze clean; logger test. | pending |
-| **Codex** | Tests for the OCR latency record + the wiring per PROMPTS.md S3. | `flutter test` green. | pending |
+| **Claude (prep+impl)** [DONE 2026-05-28] | OCR latency record family in `latency_logger.dart`. New `lib/services/translate_client.dart`. Wire `ocr_screen.dart`: capture -> `OcrScanner.recognise` -> `TranslateClient.translate` -> `BleTransport.sendSubtitle` + latency marks + on-screen translation + BLE connect/CSV actions. Route `/ocr` in `main.dart` + drawer entry in `translate_screen.dart`. | `flutter analyze` clean; `flutter test` green. | DONE |
+| **Codex** | Tests only per PROMPTS.md "S3 Day 4": `test/services/translate_client_test.dart` (200/429/502/non-200/malformed + no-text-leak assertion via fake `http.Client`) + OCR latency record cases in `test/latency_logger_test.dart` (finalize OK, `ocrSystemLatencyMs == bleAckMs`, CSV header/row, discard-on-restart, abort codes, no-op without start). Do NOT touch impl. | `flutter test` green. | pending |
 | **Claude** | Review + merge. | n/a | pending |
 
-Commit subject: `feat(mobile): S3 OCR -> translate -> BLE pipeline`.
+Commit subject (this prep): `feat(mobile): S3 OCR -> translate -> BLE pipeline`.
 
 ## Day 5 — OCR device smoke
 
