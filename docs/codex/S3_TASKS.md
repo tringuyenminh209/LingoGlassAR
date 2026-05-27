@@ -91,12 +91,35 @@ tests only.
 
 Commit subject (this prep): `feat(backend): S3 translate-only path for OCR`.
 
+Day 2 closed on `main` (merge `2e3c5be`, PR #16): tests green (35 passed),
+ruff clean. `style(backend)` commit `731d425` cleared a repo-wide ruff 0.15
+format drift so `ruff format --check .` is green again.
+
 ## Day 3 — mobile OCR capture + recognition (Claude prep + Codex impl)
+
+**Surface decision (locked 2026-05-27):** `lib/ocr/ocr_scanner.dart` owns
+**recognition + privacy cleanup** (`OcrScanner.recognise(imagePath)` runs
+on-device ML Kit then deletes the image in a `finally` — even on failure).
+It mirrors `lib/audio/recorder.dart`: thin orchestrator + injectable
+`OcrDriver` interface so the always-delete logic is unit-testable with a fake
+(the ML Kit / file calls are not). The **camera preview + capture** lives in
+the capture UI (it owns the `CameraController`) and hands `OcrScanner` the
+captured file path — that part is UI + device, so it is Codex's row and is
+validated at Day 5 smoke, not by unit tests.
+
+`recognise()` is a **live ML Kit path** (a stub passes tests but fails on
+device), so per the prep/impl split axis Claude implemented the body and
+`_MlKitOcrDriver`; this overrides the original "Codex implements recognise"
+plan. Codex builds the capture UI + the `OcrScanner` tests.
+
+Resolved versions (after `flutter pub get`): `camera 0.11.2+1`,
+`google_mlkit_text_recognition 0.13.1` (`google_mlkit_commons 0.8.1`).
+Android unbundled JP model is still a [device-confirm] APK-size item (probe).
 
 | Owner | Task | Verify | Status |
 |---|---|---|---|
-| **Claude (prep)** | Add `camera` + `google_mlkit_text_recognition` to `mobile/pubspec.yaml`; lock `lib/ocr/` surface (capture controller + recognise() returning text, no image retained). Wire camera permission (Android manifest + iOS Info.plist). Stub recognise body if safe. | `flutter pub get` ok; analyze clean. | pending |
-| **Codex** | Implement OCR recognise + capture UI bodies + tests per PROMPTS.md S3. | `flutter test` green. | pending |
+| **Claude (prep+impl)** [DONE 2026-05-27] | Add `camera` + `google_mlkit_text_recognition` to pubspec. Implement `lib/ocr/ocr_scanner.dart` (`OcrScanner.recognise` + `OcrDriver` + `_MlKitOcrDriver` + `OcrError`). Camera permission: Android `CAMERA` + `uses-feature`, iOS `NSCameraUsageDescription`. | `flutter pub get` ok; `flutter analyze` clean (2 pre-existing warnings only). | DONE |
+| **Codex** | Build the capture UI screen (CameraPreview + tap-to-capture button -> `OcrScanner.recognise(path)`) + `test/ocr/ocr_scanner_test.dart` per PROMPTS.md "S3 Day 3". Do NOT touch `ocr_scanner.dart` impl. | `flutter test` + `flutter analyze` clean. | pending |
 | **Claude** | Review + merge. | n/a | pending |
 
 Commit subject: `feat(mobile): S3 on-device OCR capture`.

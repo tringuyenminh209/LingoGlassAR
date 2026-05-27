@@ -14,6 +14,8 @@ dependencies:
   flutter_sound: ^9.30.0  # 9.30+ required for AGP 8 (namespace). API: toStream uses StreamSink<Uint8List>.
   http: ^1.2.0
   permission_handler: ^11.3.1
+  camera: ^0.11.0  # S3: tap-to-capture still image for OCR. arm64 only (Galaxy S10 OK).
+  google_mlkit_text_recognition: ^0.13.0  # S3: on-device JP OCR. Image never leaves the device.
   shared_preferences: ^2.3.0
   uuid: ^4.5.0
   web_socket_channel: ^3.0.1

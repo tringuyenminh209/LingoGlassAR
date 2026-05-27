@@ -2502,3 +2502,82 @@ ruff check . ; ruff format --check .
 ## Verification output  (raw, full)
 ## Open questions for review
 ## Time spent
+
+---
+
+## S3 Day 3 — mobile OCR capture UI + scanner tests (UI + TESTS)
+
+> **Tag: capture UI + tests only.** The OCR recognition core is already on
+> `main`: `mobile/lib/ocr/ocr_scanner.dart` (`OcrScanner.recognise(imagePath)`,
+> the `OcrDriver` interface, `_MlKitOcrDriver`, `OcrError`). It is a live ML Kit
+> path Claude implemented — do **not** edit it, the pubspec, or the
+> manifest/Info.plist. Build the capture UI + the scanner unit tests.
+
+### Context
+
+S3 adds phone-camera OCR. Recognition runs **on-device** (ML Kit Japanese
+script); the captured image is deleted right after recognition and never leaves
+the device — only the recognised text goes onward (privacy boundary, root
+CLAUDE.md). Read first:
+- `mobile/lib/ocr/ocr_scanner.dart` (the surface you build against)
+- `mobile/lib/audio/recorder.dart` + `mobile/test/audio_recorder_test.dart`
+  (the exact pattern: injectable driver + fake-driver unit test)
+- `mobile/lib/screens/translate_screen.dart` (screen + widget conventions;
+  `setState`, no state-mgmt lib)
+- `mobile/CLAUDE.md` (lib layout: one screen per file under `lib/screens/`)
+
+### Concrete deliverables (your rows)
+
+1. **`mobile/lib/screens/ocr_screen.dart`** (new) — a tap-to-capture screen:
+   - Uses the `camera` package: `availableCameras()` -> back-camera
+     `CameraController` (e.g. `ResolutionPreset.high`), `initialize()`, show
+     `CameraPreview` while initialised.
+   - Request camera permission via `permission_handler` (`Permission.camera`)
+     before initialising; show a clear denied state, no crash.
+   - A capture button: on tap, `controller.takePicture()` -> `XFile.path` ->
+     `OcrScanner.recognise(path)` -> show the returned text on screen. Disable
+     the button while a capture/recognition is in flight.
+   - Dispose the `CameraController` **and** call `OcrScanner.dispose()` in the
+     State's `dispose()`.
+   - **Never** render or persist the image bytes; never log the recognised
+     text. Display it in the widget only.
+   - Wiring OCR text onward to translate/BLE is **Day 4 — out of scope.** Stop
+     at showing recognised text.
+2. **`mobile/test/ocr/ocr_scanner_test.dart`** (new) — unit tests for
+   `OcrScanner` via `OcrScanner.withDriver(fakeDriver)` (mirror
+   `audio_recorder_test.dart`). A `FakeOcrDriver` records calls:
+   - happy path: `recognise(path)` returns the driver's text; `deleteImage` was
+     called once with that path.
+   - **privacy/always-delete**: when the driver's `recognise` throws, the call
+     surfaces `OcrError` **and** `deleteImage` was still called (the `finally`).
+   - a non-`OcrError` thrown by the driver is wrapped as `OcrError`; an
+     `OcrError` from the driver is rethrown unchanged.
+   - `dispose()` forwards to the driver.
+
+### Hard constraints (always apply)
+
+- No new dependencies — `camera`, `google_mlkit_text_recognition`,
+  `permission_handler` are already in pubspec.
+- Do not touch `lib/ocr/ocr_scanner.dart`, `pubspec.yaml`, the Android
+  manifest, or iOS `Info.plist`. Do not touch backend, firmware, or `.claude/`.
+- No image bytes logged/persisted; no recognised text logged. Counts/states
+  only if you must log.
+- Keep it `setState`-simple; no state-management library (see mobile/CLAUDE.md).
+- Branch + PR only; never push to `main`. No `Co-Authored-By` trailers.
+
+### Verification (paste RAW output into PR)
+
+```
+cd mobile
+flutter pub get
+flutter test
+flutter analyze   # only the 2 known pre-existing warnings are allowed
+```
+
+### PR description template
+
+## Summary
+## Files added / modified
+## Verification output  (raw, full)
+## Open questions for review
+## Time spent

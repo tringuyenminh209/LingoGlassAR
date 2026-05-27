@@ -3,7 +3,10 @@
                      android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <!-- S3 OCR: camera is used to capture a still image; not required to install. -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
     <application
         android:label="lingoglass_mobile"
         android:name="${applicationName}"

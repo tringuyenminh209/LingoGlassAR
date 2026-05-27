@@ -26,6 +26,8 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>LingoGlass needs the microphone to translate speech in real time.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>LingoGlass uses the camera to capture signs and menus for on-device text recognition. Images stay on your device.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
