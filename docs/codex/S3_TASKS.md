@@ -119,8 +119,14 @@ Android unbundled JP model is still a [device-confirm] APK-size item (probe).
 | Owner | Task | Verify | Status |
 |---|---|---|---|
 | **Claude (prep+impl)** [DONE 2026-05-27] | Add `camera` + `google_mlkit_text_recognition` to pubspec. Implement `lib/ocr/ocr_scanner.dart` (`OcrScanner.recognise` + `OcrDriver` + `_MlKitOcrDriver` + `OcrError`). Camera permission: Android `CAMERA` + `uses-feature`, iOS `NSCameraUsageDescription`. | `flutter pub get` ok; `flutter analyze` clean (2 pre-existing warnings only). | DONE |
-| **Codex** | Build the capture UI screen (CameraPreview + tap-to-capture button -> `OcrScanner.recognise(path)`) + `test/ocr/ocr_scanner_test.dart` per PROMPTS.md "S3 Day 3". Do NOT touch `ocr_scanner.dart` impl. | `flutter test` + `flutter analyze` clean. | pending |
-| **Claude** | Review + merge. | n/a | pending |
+| **Codex** [DONE 2026-05-27, PR #17] | Build the capture UI screen (CameraPreview + tap-to-capture button -> `OcrScanner.recognise(path)`) + `test/ocr/ocr_scanner_test.dart` per PROMPTS.md "S3 Day 3". Do NOT touch `ocr_scanner.dart` impl. | `flutter test` + `flutter analyze` clean. | DONE |
+| **Claude** [DONE 2026-05-27] | Review + merge. | n/a | DONE |
+
+Day 3 closed on `main` (merge `20a5ab1`, PR #17). `lib/screens/ocr_screen.dart`
+(permission-gated camera preview, tap-to-capture, button disabled in flight,
+disposes controller + scanner, no image/text logged) + 4 `OcrScanner` unit
+tests (incl. always-delete + error mapping). Local verify on the branch: 48
+`flutter test` pass, `flutter analyze` 2 pre-existing warnings only.
 
 Commit subject: `feat(mobile): S3 on-device OCR capture`.
 
