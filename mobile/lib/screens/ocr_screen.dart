@@ -117,13 +117,25 @@ class _OcrScreenState extends State<OcrScreen> {
       );
       controller = CameraController(
         camera,
-        ResolutionPreset.high,
+        // veryHigh (~1080p) over high (~720p): small menu/signage glyphs need
+        // the extra pixels for ML Kit to resolve them. max is avoided — full
+        // sensor frames are slow to capture and inflate OCR time with no
+        // readability gain at arm's length.
+        ResolutionPreset.veryHigh,
         enableAudio: false,
       );
       await controller.initialize();
       if (!mounted) {
         await controller.dispose();
         return;
+      }
+      // Continuous autofocus + auto-exposure so a steady frame is sharp before
+      // capture. Not every device exposes both; ignore unsupported modes.
+      try {
+        await controller.setFocusMode(FocusMode.auto);
+        await controller.setExposureMode(ExposureMode.auto);
+      } on CameraException {
+        // Device without controllable focus/exposure — fall back to defaults.
       }
       setState(() {
         _controller = controller;
@@ -443,8 +455,31 @@ class _OcrScreenState extends State<OcrScreen> {
     return Center(
       child: AspectRatio(
         aspectRatio: controller.value.aspectRatio,
-        child: CameraPreview(controller),
+        child: LayoutBuilder(
+          builder: (context, constraints) => GestureDetector(
+            onTapDown: (details) => _focusOnTap(details, constraints),
+            child: CameraPreview(controller),
+          ),
+        ),
       ),
     );
+  }
+
+  /// Point autofocus + metering at the tapped spot so the operator can sharpen
+  /// the exact line of text before capturing. No-op on devices that don't
+  /// support point-of-interest control.
+  Future<void> _focusOnTap(TapDownDetails details, BoxConstraints box) async {
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) return;
+    final point = Offset(
+      (details.localPosition.dx / box.maxWidth).clamp(0.0, 1.0),
+      (details.localPosition.dy / box.maxHeight).clamp(0.0, 1.0),
+    );
+    try {
+      await controller.setFocusPoint(point);
+      await controller.setExposurePoint(point);
+    } on CameraException {
+      // Point-of-interest unsupported on this device; ignore.
+    }
   }
 }

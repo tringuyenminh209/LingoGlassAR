@@ -165,8 +165,34 @@ warnings only. Scope clean (2 test files, 0 impl change).
 
 | Owner | Task | Verify | Status |
 |---|---|---|---|
-| **User (operator)** | Capture real JP signage/menu on device; confirm recognised text translates and renders on the glasses (MTU safe). | smoke pass/fail logged. | pending |
-| **Claude** | Triage smoke results; fix or file follow-ups. | n/a | pending |
+| **User (operator)** | Capture real JP signage/menu on device; confirm recognised text translates and renders on the glasses (MTU safe). | smoke pass/fail logged. | DONE 2026-05-29 |
+| **Claude** | Triage smoke results; fix or file follow-ups. | n/a | DONE 2026-05-29 |
+
+First on-device smoke (Galaxy S10) surfaced three defects, all fixed:
+
+1. **App crash at first capture** — `ClassNotFoundException:
+   JapaneseTextRecognizerOptions$Builder`. The `google_mlkit_text_recognition`
+   plugin bundles only the Latin model and declares JP/CN/KR/Devanagari as
+   `compileOnly`; the app must add the runtime model itself. Fixed by adding
+   `implementation("com.google.mlkit:text-recognition-japanese:16.0.1")` to
+   `mobile/android/app/build.gradle.kts` (bundled model → also removes the
+   first-run model-download risk flagged on Day 1; recognition stays on-device).
+
+2. **"Translation failed"** — `POST /v1/translate` → 404 on the live host while
+   `/healthz` was 200. Triage: endpoint present on `main` (`main.py` mounts
+   `translate_router`; `7ad32f0`/`731d425`), so the EC2 backend was running a
+   pre-Day-2 build. **No code fix** — operator redeployed (`git pull` + `docker
+   compose up -d --build`); endpoint verified live (200 + translatedText).
+
+3. **Capture too soft for small glyphs** — camera was `ResolutionPreset.high`
+   (~720p) with no active focus. Fixed in `ocr_screen.dart`: bumped to
+   `veryHigh` (~1080p), enabled `setFocusMode(auto)` + `setExposureMode(auto)`
+   after init, and added tap-to-focus (`setFocusPoint`+`setExposurePoint`) on
+   the preview. Re-capture confirmed sharper by the operator.
+
+Smoke verdict: **PASS** — recognise → translate → OLED render works end-to-end
+on device. Commit `feat(mobile): S3 Day 5 smoke fixes`. MTU 23/185/247 spot
+checks + latency CSV roll into the Day 6 bench.
 
 ## Day 6 — OCR quality + latency bench
 

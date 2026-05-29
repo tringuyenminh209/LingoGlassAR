@@ -48,3 +48,14 @@ android {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // S3 OCR: the google_mlkit_text_recognition plugin bundles only the Latin
+    // model and declares the Japanese/Chinese/Korean/Devanagari scripts as
+    // `compileOnly` to keep app size down. We use TextRecognitionScript.japanese
+    // (lib/ocr/ocr_scanner.dart), so the app must add the Japanese runtime model
+    // itself — without this the APK compiles but throws ClassNotFoundException
+    // for JapaneseTextRecognizerOptions$Builder at first capture. Version pinned
+    // to match the plugin's own dependency (text-recognition:16.0.1).
+    implementation("com.google.mlkit:text-recognition-japanese:16.0.1")
+}
