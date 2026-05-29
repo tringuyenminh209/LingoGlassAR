@@ -15,6 +15,12 @@ class Settings(BaseSettings):
     redis_pool_size: int = 10
     version: str = "0.1.0"
 
+    # S3 OCR translate model. The OCR path is one-shot text->text, so it uses
+    # chat completions (a single HTTP request) instead of the Realtime WS the
+    # speech path uses - opening a Realtime WS per capture cost ~4 s of
+    # handshake and blew the OCR latency gate (S3 Day 6 bench).
+    translate_model: str = "gpt-4o-mini"
+
     # S1 Day 8 cost logger / daily cap. Per-million-token rates for the
     # ``gpt-realtime`` GA model, captured 2026-05-22 from OpenAI's
     # pricing page. Setting daily_usd_cap to 0 disables the cap check

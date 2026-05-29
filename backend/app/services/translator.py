@@ -130,9 +130,10 @@ class TextResult:
     """The full result of a one-shot text translation (S3 OCR path).
 
     Unlike :class:`TextDelta` (incremental, for the streaming audio path),
-    this is the single value returned by :meth:`Translator.translate_text`
-    once the model has finished. OCR has the whole source text up front, so
-    there is nothing to stream — the renderer paints the final line in one go.
+    this is the single value returned by the one-shot OCR translate
+    (:meth:`ChatTranslator.translate` in ``text_translator``) once the model
+    has finished. OCR has the whole source text up front, so there is nothing
+    to stream — the renderer paints the final line in one go.
 
     Attributes
     ----------
@@ -387,83 +388,6 @@ class Translator:
             # the consumer's loop terminates cleanly; usage stays ``None``.
             if output_text_done and not finalized:
                 yield TextDelta(text="", final=True)
-        except TranslatorError:
-            raise
-        except Exception as exc:
-            raise TranslatorError(
-                f"OpenAI Realtime WebSocket failed: {type(exc).__name__}: {exc}"
-            ) from exc
-        finally:
-            self._streaming = False
-
-    async def translate_text(self, text: str) -> TextResult:
-        """Translate one block of text (S3 OCR path). One-shot, not streamed.
-
-        The OCR pipeline already holds the full recognised text, so there is
-        no audio to append and no input buffer to commit. We push a single
-        ``conversation.item.create`` (``input_text``) then ``response.create``
-        and drain the same ``response.output_text.*`` / ``response.done``
-        events the audio path uses, returning the joined text plus usage.
-
-        Reuses the open session from :meth:`connect` (same model, same
-        :data:`SYSTEM_INSTRUCTIONS`, same usage parsing) so the JP<->VN prompt
-        stays single-sourced with the speech path.
-
-        Raises
-        ------
-        TranslatorError
-            If OpenAI emits an ``error`` event or the WebSocket fails.
-        RuntimeError
-            If called before :meth:`connect` or while a stream is active.
-        """
-        if self._ws is None:
-            raise RuntimeError("Translator is not connected")
-        if self._streaming:
-            raise RuntimeError("Translator already has an active stream")
-
-        self._streaming = True
-        try:
-            await self._send_json(
-                {
-                    "type": "conversation.item.create",
-                    "item": {
-                        "type": "message",
-                        "role": "user",
-                        "content": [{"type": "input_text", "text": text}],
-                    },
-                }
-            )
-            await self._send_json(
-                {
-                    "type": "response.create",
-                    "response": {
-                        "output_modalities": ["text"],
-                    },
-                }
-            )
-
-            parts: list[str] = []
-            async for raw_event in self._ws:
-                event = _decode_event(raw_event)
-                event_type = event.get("type")
-
-                if event_type in (
-                    "response.output_text.delta",
-                    "response.text.delta",
-                ):
-                    parts.append(str(event.get("delta", "")))
-                elif event_type == "response.done":
-                    usage = _extract_usage(event)
-                    # Counts only, no content - same paper trail as the
-                    # audio path (see translate_stream).
-                    logger.info("realtime.usage %s", usage)
-                    return TextResult("".join(parts), usage)
-                elif event_type == "error":
-                    raise TranslatorError(_error_message(event))
-
-            # Stream ended without ``response.done``; return what we have so
-            # the caller terminates cleanly. Usage stays None.
-            return TextResult("".join(parts), None)
         except TranslatorError:
             raise
         except Exception as exc:

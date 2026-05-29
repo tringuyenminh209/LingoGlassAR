@@ -78,25 +78,19 @@ def patch_translator(
 ) -> list[object]:
     instances: list[object] = []
 
-    class FakeTranslator:
-        def __init__(self, api_key: str) -> None:
+    class FakeChatTranslator:
+        def __init__(self, *, api_key: str, model: str) -> None:
             self.api_key = api_key
-            self.closed = False
+            self.model = model
             instances.append(self)
 
-        async def connect(self) -> None:
-            return None
-
-        async def translate_text(self, text: str) -> TextResult:
+        async def translate(self, text: str) -> TextResult:
             if error is not None:
                 raise error
             assert result is not None
             return result
 
-        async def close(self) -> None:
-            self.closed = True
-
-    monkeypatch.setattr(translate_api, "Translator", FakeTranslator)
+    monkeypatch.setattr(translate_api, "ChatTranslator", FakeChatTranslator)
     return instances
 
 
@@ -136,7 +130,7 @@ async def test_translate_returns_daily_cap_exceeded_when_cap_is_reached() -> Non
 
 
 @pytest.mark.asyncio
-async def test_translate_returns_translator_error_and_closes_translator(
+async def test_translate_maps_translator_error_to_502(
     monkeypatch,
 ) -> None:
     instances = patch_translator(
@@ -151,7 +145,6 @@ async def test_translate_returns_translator_error_and_closes_translator(
     assert response.status_code == 502
     assert response.json()["error"]["code"] == "translator_error"
     assert len(instances) == 1
-    assert instances[0].closed is True
 
 
 @pytest.mark.asyncio

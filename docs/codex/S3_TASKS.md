@@ -200,9 +200,30 @@ checks + latency CSV roll into the Day 6 bench.
 |---|---|---|---|
 | **User (operator)** | Run the curated OCR image set on device; export the OCR latency CSV. | CSV captured. | pending |
 | **Claude (prep)** | Add an `--s3` (or extend) report mode to `tools/latency_report.py`: OCR recognition % + `p95(ocr_system_latency_ms)` against the locked gates. Tests. | tests green; renders. | DONE 2026-05-29 |
+| **Claude (prep+impl)** | Fix the translate transport (chat completions, not Realtime WS) after the device pre-bench found ~4 s/capture handshake. Tests. | `pytest backend` + `ruff` green. | DONE 2026-05-29 |
+| **User (operator)** | Redeploy backend (`git pull` + `docker compose up -d --build`); rebuild phone app; re-run the curated set with glasses connected. | full CSV captured. | pending |
 | **Claude** | Render the OCR bench report. | `docs/reports/S3_ocr_<date>.md`. | pending |
 
-Commit subjects: `feat(tools): S3 OCR report mode`, `docs(s3): OCR bench`.
+Commit subjects: `feat(tools): S3 OCR report mode`, `fix(backend): S3 OCR translate via chat completions`, `docs(s3): OCR bench`.
+
+**Device pre-bench finding (2026-05-29).** First on-device captures (BLE
+connected on the 3rd) showed: recognise warms to ~890 ms (first ~2.9 s is JP
+model load), BLE leg ~116 ms — both fine — but the **translate leg held
+~3.7–4.6 s on every capture**, pushing total `ocr_system_latency_ms` to ~5.6 s
+vs the 1500 ms gate. Root cause: `POST /v1/translate` opened a **fresh OpenAI
+Realtime WebSocket per request** (`Translator.connect()` handshake from EC2
+Osaka → OpenAI ≈ 4 s). The speech path amortises that handshake across an
+utterance (session opened at PTT press); OCR has no warm session, so each
+capture paid it in full — exactly the risk flagged in the Day 1 probe.
+**Fix:** the OCR path now translates via `ChatTranslator` (chat completions, a
+single stateless HTTP request) in `app/services/text_translator.py`, model from
+`Settings.translate_model` (default `gpt-4o-mini`). Prompt stays single-sourced
+(`SYSTEM_INSTRUCTIONS`); `TextResult`/`TranslatorError`/`CostUsage` reused so the
+502 mapping + cost logging are unchanged. The now-dead Realtime
+`Translator.translate_text()` + its 5 tests were removed (no-dead-code).
+Note: the daily-cost rates stay the `gpt-realtime` text rates, so a cheaper chat
+model is over-estimated — intentionally conservative for the cap. `pytest
+backend` = 38 pass, ruff clean. **Re-bench is gated on the operator redeploy.**
 
 `--s3` mode added to `tools/latency_report.py` (`render_s3_markdown`): consumes
 the `OcrLatencyRecord` CSV ("Copy OCR latency CSV"), reports criterion #1

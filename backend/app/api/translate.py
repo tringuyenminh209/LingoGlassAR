@@ -5,12 +5,17 @@ translate. OCR is different: the phone recognises the Japanese text on-device
 (ML Kit) and only the recognised **text** crosses the wire — never image bytes.
 So OCR needs a one-shot text->text translate, which this endpoint provides.
 
-Design (locked S3 Day 2, see docs/codex/S3_TASKS.md + docs/reports/S3_ocr_probe.md):
+Design (S3 Day 2 locked REST; transport revised S3 Day 6 - see
+docs/codex/S3_TASKS.md + docs/reports/S3_ocr_*.md):
 - REST, not a new WS message type. OCR has the full text up front, so a
   one-shot request/response fits and keeps OCR fully isolated from the
   latency-gated speech WS state machine (zero regression risk).
-- Reuses the Realtime `Translator` via `translate_text()` (same model, same
-  JP<->VN prompt, same usage parsing) rather than a second OpenAI surface.
+- Translates via `ChatTranslator` (chat completions, one stateless HTTP
+  request) rather than the Realtime `Translator`. Day 2 reused the Realtime
+  session to keep one prompt source, but the Day 6 device bench showed opening
+  a Realtime WS per capture cost ~4 s of handshake and blew the OCR latency
+  gate. The JP<->VN prompt stays single-sourced via `SYSTEM_INSTRUCTIONS`,
+  which `ChatTranslator` imports from the same module.
 - Privacy: the request `text` (OCR'd source) and the response `translatedText`
   are NEVER logged or persisted. Counts/durations only, same as the audio path.
 """
@@ -30,7 +35,8 @@ from app.api.sessions import ApiError, ApiFail, get_cost_logger
 from app.core.config import Settings, get_settings
 from app.core.redis import get_redis
 from app.services.cost_logger import CostLogger, DailyCapExceeded, enforce_daily_cap
-from app.services.translator import Translator, TranslatorError
+from app.services.text_translator import ChatTranslator
+from app.services.translator import TranslatorError
 
 router = APIRouter()
 
@@ -87,10 +93,12 @@ async def translate_text(
         )
 
     started_at = _utc_now()
-    translator = Translator(api_key=settings.openai_api_key)
+    translator = ChatTranslator(
+        api_key=settings.openai_api_key,
+        model=settings.translate_model,
+    )
     try:
-        await translator.connect()
-        result = await translator.translate_text(payload.text)
+        result = await translator.translate(payload.text)
     except TranslatorError as exc:
         return JSONResponse(
             status_code=502,
@@ -99,8 +107,6 @@ async def translate_text(
                 error=ApiError(code="translator_error", message=str(exc)),
             ).model_dump(),
         )
-    finally:
-        await translator.close()
 
     duration_ms = int((_utc_now() - started_at).total_seconds() * 1000)
     if result.usage is not None:

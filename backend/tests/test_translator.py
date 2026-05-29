@@ -1,15 +1,11 @@
-import asyncio
 import json
 from collections.abc import AsyncIterator
-from contextlib import suppress
 
 import pytest
 
-from app.services.cost_logger import CostUsage
 from app.services.translator import (
     STTConfig,
     TextDelta,
-    TextResult,
     Translator,
     TranslatorError,
 )
@@ -181,135 +177,3 @@ async def test_translate_stream_raises_translator_error_on_error_event(
     async with Translator(api_key="test-key") as translator:
         with pytest.raises(TranslatorError, match="bad audio frame"):
             _ = [delta async for delta in translator.translate_stream(audio_chunks())]
-
-
-@pytest.mark.asyncio
-async def test_translate_text_joins_deltas_and_parses_usage(monkeypatch) -> None:
-    fake_ws = FakeWebSocket(
-        [
-            {"type": "response.output_text.delta", "delta": "Xin "},
-            {"type": "response.output_text.delta", "delta": "chao"},
-            {
-                "type": "response.done",
-                "response": {
-                    "usage": {
-                        "total_tokens": 19,
-                        "input_token_details": {
-                            "audio_tokens": 0,
-                            "text_tokens": 12,
-                            "cached_tokens_details": {
-                                "audio_tokens": 0,
-                                "text_tokens": 3,
-                            },
-                        },
-                        "output_token_details": {
-                            "audio_tokens": 0,
-                            "text_tokens": 7,
-                        },
-                    }
-                },
-            },
-        ]
-    )
-
-    async def fake_connect(*args, **kwargs) -> FakeWebSocket:
-        return fake_ws
-
-    monkeypatch.setattr("app.services.translator.websockets.connect", fake_connect)
-
-    async with Translator(api_key="test-key") as translator:
-        result = await translator.translate_text("source text")
-
-    assert result == TextResult(
-        translated_text="Xin chao",
-        usage=CostUsage(
-            audio_input_tokens=0,
-            text_input_tokens=12,
-            cached_audio_input_tokens=0,
-            cached_text_input_tokens=3,
-            text_output_tokens=7,
-            audio_output_tokens=0,
-            total_tokens=19,
-        ),
-    )
-    assert [event["type"] for event in fake_ws.sent] == [
-        "session.update",
-        "conversation.item.create",
-        "response.create",
-    ]
-
-
-@pytest.mark.asyncio
-async def test_translate_text_returns_joined_text_without_response_done(
-    monkeypatch,
-) -> None:
-    fake_ws = FakeWebSocket(
-        [
-            {"type": "response.output_text.delta", "delta": "Xin "},
-            {"type": "response.output_text.delta", "delta": "chao"},
-        ]
-    )
-
-    async def fake_connect(*args, **kwargs) -> FakeWebSocket:
-        return fake_ws
-
-    monkeypatch.setattr("app.services.translator.websockets.connect", fake_connect)
-
-    async with Translator(api_key="test-key") as translator:
-        result = await translator.translate_text("source text")
-
-    assert result == TextResult(translated_text="Xin chao", usage=None)
-
-
-@pytest.mark.asyncio
-async def test_translate_text_raises_translator_error_on_error_event(
-    monkeypatch,
-) -> None:
-    fake_ws = FakeWebSocket([{"type": "error", "error": {"message": "text rejected"}}])
-
-    async def fake_connect(*args, **kwargs) -> FakeWebSocket:
-        return fake_ws
-
-    monkeypatch.setattr("app.services.translator.websockets.connect", fake_connect)
-
-    async with Translator(api_key="test-key") as translator:
-        with pytest.raises(TranslatorError, match="text rejected"):
-            await translator.translate_text("source text")
-
-
-@pytest.mark.asyncio
-async def test_translate_text_requires_connection() -> None:
-    translator = Translator(api_key="test-key")
-
-    with pytest.raises(RuntimeError, match="not connected"):
-        await translator.translate_text("source text")
-
-
-@pytest.mark.asyncio
-async def test_translate_text_rejects_call_while_audio_stream_active(
-    monkeypatch,
-) -> None:
-    fake_ws = FakeWebSocket([])
-    release_audio = asyncio.Event()
-
-    async def fake_connect(*args, **kwargs) -> FakeWebSocket:
-        return fake_ws
-
-    async def blocked_audio() -> AsyncIterator[bytes]:
-        await release_audio.wait()
-        yield b"a" * 16
-
-    monkeypatch.setattr("app.services.translator.websockets.connect", fake_connect)
-
-    async with Translator(api_key="test-key") as translator:
-        stream = translator.translate_stream(blocked_audio())
-        pending_delta = asyncio.create_task(anext(stream))
-        await asyncio.sleep(0)
-        try:
-            with pytest.raises(RuntimeError, match="active stream"):
-                await translator.translate_text("source text")
-        finally:
-            pending_delta.cancel()
-            with suppress(asyncio.CancelledError):
-                await pending_delta
-            await stream.aclose()
