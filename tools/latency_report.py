@@ -26,6 +26,16 @@ Two modes, selected by the input CSV's column shape (or by the explicit
   retry rate are always computed (the Day 9 live gates while accuracy is
   deferred to S3).
 
+* **S3 (--s3)**: S3 Day 6 OCR quality + latency report from the
+  `OcrLatencyRecord` CSV produced by the Flutter "Copy OCR latency CSV"
+  button. Reports criterion #1 key-line recognition `% pass` (by domain,
+  from an operator-appended `recognised_pass` column) and criterion #2
+  `p95(ocr_system_latency_ms)` with a recognise/translate/ble leg
+  breakdown. Gates: recognition >= 80% AND
+  `p95(ocr_system_latency_ms) <= 1500 ms` (provisional). Recognition stays
+  PENDING until the operator fills `recognised_pass`; latency is always
+  computed.
+
 Usage:
     python tools/latency_report.py path/to/latency.csv         # Phase F
     python tools/latency_report.py - < latency.csv             # stdin
@@ -84,6 +94,23 @@ S2_ACCURACY_GOOD = 4  # a translation is "good" if scored >= 4 out of 5
 # per 18 attempts). Target: <= 20%. (Definition locked 2026-05-26 against the
 # Day 9 trace, which had 0 aborts but 10 clean re-runs.)
 S2_RETRY_RATE_MAX_PCT = 20.0
+
+# S3 Day 6 — OCR quality + latency. Latency is anchored at CAPTURE (not a PTT
+# release), so `ocr_system_latency_ms == ble_ack_ms` is the gate value directly
+# — there is no audio-hold to subtract. The 1500 ms gate is provisional:
+# tighter than speech's 2000 ms because there is no audio upload and no STT;
+# device-confirm on Galaxy S10 before locking. Recognition is criterion #1 —
+# key-line pass/fail scored by eye, gate >= 80% of images pass.
+S3_TARGET_OCR_SYSTEM_MS = 1500.0
+S3_RECOGNITION_MIN_PCT = 80.0
+
+# OCR latency legs. Stage fields are cumulative from capture (capture = 0), so
+# a leg is end - start; the recognise leg measures straight off capture.
+S3_LEGS: list[tuple[str, str | None, str]] = [
+    ("recognise", None, "recognise_ms"),
+    ("translate", "recognise_ms", "translate_ms"),
+    ("ble", "translate_ms", "ble_ack_ms"),
+]
 
 
 def percentile(sorted_values: list[float], p: float) -> float:
@@ -673,6 +700,247 @@ def render_s2_markdown(rows: list[dict[str, str]]) -> str:
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------------
+# S3 Day 6 — OCR quality + latency report
+# ---------------------------------------------------------------------------
+#
+# Input CSV header (OcrLatencyRecord.csvHeader in latency_logger.dart):
+#   capture_id,recognise_ms,translate_ms,ble_ack_ms,
+#   ocr_system_latency_ms,recognised_chars,ble_seq_id,error
+# All *_ms columns are deltas off the CAPTURE instant, so
+# ocr_system_latency_ms == ble_ack_ms is the gate value directly.
+#
+# Two operator annotations are added in a spreadsheet AFTER the run (same
+# discipline as --s2 accuracy — nothing extra is stored on device):
+#   * `recognised_pass` (appended column) — criterion #1 key-line pass/fail by
+#     eye. 1/pass/yes/true/ok -> pass; 0/fail/no/false -> fail; blank ->
+#     unscored. The recognised TEXT is never stored; only pass/fail + the char
+#     count cross into the bench.
+#   * `capture_id` relabelled from the on-device `ocr-NNN` to the curated image
+#     id (`sign-01`..`label-05`) so recognition groups by domain. Un-relabelled
+#     rows fall into a single `ocr` group and still tally.
+
+_PASS_TRUE = {"1", "pass", "y", "yes", "true", "ok"}
+_PASS_FALSE = {"0", "fail", "n", "no", "false"}
+
+
+def _ocr_domain(capture_id: str) -> str:
+    """Domain prefix of a curated image id (`sign-01` -> `sign`). Un-relabelled
+    `ocr-NNN` rows return `ocr`; an empty id returns `?`."""
+    cid = capture_id.strip()
+    if not cid:
+        return "?"
+    return cid.split("-")[0]
+
+
+def _ocr_pass_cell(row: dict[str, str]) -> bool | None:
+    """Parsed key-line pass/fail, or None if the operator left it blank."""
+    raw = row.get("recognised_pass", "").strip().lower()
+    if raw in _PASS_TRUE:
+        return True
+    if raw in _PASS_FALSE:
+        return False
+    return None
+
+
+def _pct_pass(flags: list[bool]) -> float:
+    if not flags:
+        return float("nan")
+    return 100.0 * sum(1 for f in flags if f) / len(flags)
+
+
+def render_s3_markdown(rows: list[dict[str, str]]) -> str:
+    """Build the S3 Day 6 OCR quality + latency report.
+
+    Sections: run summary, recognition by domain (criterion #1), OCR system
+    latency + recognise/translate/ble leg breakdown (criterion #2), verdict,
+    failures. Latency is always computed over completed captures; recognition
+    is PENDING until the operator fills `recognised_pass` (mirrors --s2
+    accuracy). A capture is "completed" iff `error` is blank AND
+    `ocr_system_latency_ms` is present — `ble_unavailable`/`no_text` rows are
+    aborts, so they count as attempts but are excluded from the latency tally.
+    """
+    completed = [
+        r
+        for r in rows
+        if not r.get("error", "").strip()
+        and _float_cell(r, "ocr_system_latency_ms") is not None
+    ]
+    failures: dict[str, int] = defaultdict(int)
+    for row in rows:
+        error = row.get("error", "").strip()
+        if error:
+            failures[error] += 1
+    aborted_rows = sum(failures.values())
+
+    # Recognition (criterion #1) — scored over any row carrying a pass/fail.
+    pass_by_domain: dict[str, list[bool]] = defaultdict(list)
+    all_pass: list[bool] = []
+    for row in rows:
+        flag = _ocr_pass_cell(row)
+        if flag is None:
+            continue
+        pass_by_domain[_ocr_domain(row.get("capture_id", ""))].append(flag)
+        all_pass.append(flag)
+
+    # Latency (criterion #2) + per-leg, over completed captures only.
+    system_lat: list[float] = []
+    leg_values: dict[str, list[float]] = defaultdict(list)
+    chars: list[float] = []
+    for row in completed:
+        sys_lat = _float_cell(row, "ocr_system_latency_ms")
+        if sys_lat is not None and sys_lat >= 0:
+            system_lat.append(sys_lat)
+        for label, start_col, end_col in S3_LEGS:
+            end = _float_cell(row, end_col)
+            start = 0.0 if start_col is None else _float_cell(row, start_col)
+            if end is None or start is None:
+                continue
+            leg = end - start
+            if leg >= 0:
+                leg_values[label].append(leg)
+        c = _float_cell(row, "recognised_chars")
+        if c is not None:
+            chars.append(c)
+    system_lat.sort()
+
+    lines: list[str] = [
+        "# S3 OCR Quality + Latency Report",
+        "",
+        (
+            f"Gates: recognition `>= {S3_RECOGNITION_MIN_PCT:.0f}% key-line "
+            f"pass` AND latency `p95(ocr_system_latency_ms) <= "
+            f"{S3_TARGET_OCR_SYSTEM_MS:.0f} ms` (provisional)."
+        ),
+        "",
+        "`recognised_pass` is scored by eye after the run (key line, "
+        "meaning-preserving). Recognised text is never stored — privacy rule.",
+        "",
+        "## Run summary",
+        "",
+        "| metric | value |",
+        "|--------|------:|",
+        f"| total rows | {len(rows)} |",
+        f"| completed captures | {len(completed)} |",
+        f"| aborted attempts | {aborted_rows} |",
+        f"| recognition-scored rows | {len(all_pass)} |",
+    ]
+
+    # Recognition by domain.
+    lines.extend(
+        [
+            "",
+            "## Recognition by domain (criterion #1)",
+            "",
+            "| domain | n_scored | % pass |",
+            "|--------|---------:|-------:|",
+        ]
+    )
+    if all_pass:
+        for domain in sorted(pass_by_domain):
+            flags = pass_by_domain[domain]
+            lines.append(f"| {domain} | {len(flags)} | {_pct_pass(flags):.0f}% |")
+        lines.append(
+            f"| **overall** | {len(all_pass)} | {_pct_pass(all_pass):.0f}% |"
+        )
+    else:
+        lines.append("| - | 0 | - |")
+
+    # OCR system latency.
+    lines.extend(
+        [
+            "",
+            "## OCR system latency (criterion #2)",
+            "",
+            "| n_ok / n_total | p50 | p90 | p95 | p99 | min | max |",
+            "|---------------:|----:|----:|----:|----:|----:|----:|",
+        ]
+    )
+    if system_lat:
+        lines.append(
+            f"| {len(system_lat)} / {len(rows)} | "
+            f"{percentile(system_lat, 0.50):.0f} | "
+            f"{percentile(system_lat, 0.90):.0f} | "
+            f"{percentile(system_lat, 0.95):.0f} | "
+            f"{percentile(system_lat, 0.99):.0f} | "
+            f"{system_lat[0]:.0f} | {system_lat[-1]:.0f} |"
+        )
+    else:
+        lines.append(f"| 0 / {len(rows)} | - | - | - | - | - | - |")
+
+    # Per-leg breakdown.
+    lines.extend(
+        [
+            "",
+            "## Per-leg latency (ms, completed captures)",
+            "",
+            "| leg | n | p50 | p90 | p95 |",
+            "|-----|--:|----:|----:|----:|",
+        ]
+    )
+    for label, _, _ in S3_LEGS:
+        values = sorted(leg_values.get(label, []))
+        if values:
+            lines.append(
+                f"| {label} | {len(values)} | "
+                f"{percentile(values, 0.50):.0f} | "
+                f"{percentile(values, 0.90):.0f} | "
+                f"{percentile(values, 0.95):.0f} |"
+            )
+        else:
+            lines.append(f"| {label} | 0 | - | - | - |")
+
+    if chars:
+        lines.extend(
+            [
+                "",
+                f"Recognised chars (info): median {statistics.median(chars):.0f}, "
+                f"max {max(chars):.0f} over {len(chars)} completed captures.",
+            ]
+        )
+
+    # Verdict.
+    lines.extend(["", "## Verdict", ""])
+    if system_lat:
+        lat_p95 = percentile(system_lat, 0.95)
+        lat_pass = lat_p95 <= S3_TARGET_OCR_SYSTEM_MS
+        lines.append(
+            f"- Latency: p95 {lat_p95:.0f} ms vs {S3_TARGET_OCR_SYSTEM_MS:.0f} ms "
+            f"-> **{'PASS' if lat_pass else 'FAIL'}**"
+        )
+    else:
+        lat_pass = False
+        lines.append("- Latency: **NO DATA**")
+
+    if not all_pass:
+        lines.append(
+            "- Recognition: **PENDING** (fill `recognised_pass` and rerun)"
+        )
+        if not lat_pass:
+            lines.append("- Result: **NO-GO** (latency gate failed)")
+        else:
+            lines.append("- Result: **PENDING — recognition not scored**")
+    else:
+        rec_pct = _pct_pass(all_pass)
+        rec_pass = rec_pct >= S3_RECOGNITION_MIN_PCT
+        lines.append(
+            f"- Recognition: {rec_pct:.0f}% vs {S3_RECOGNITION_MIN_PCT:.0f}% "
+            f"-> **{'PASS' if rec_pass else 'FAIL'}**"
+        )
+        decision = "GO" if (rec_pass and lat_pass) else "NO-GO"
+        lines.append(f"- Result: **{decision}**")
+
+    if failures:
+        lines.extend(
+            ["", "## Failures", "", "| error | rows |", "|-------|-----:|"]
+        )
+        for error, count in sorted(failures.items()):
+            lines.append(f"| {error} | {count} |")
+
+    lines.append("")
+    return "\n".join(lines)
+
+
 def _system_latency_ms(row: dict[str, str]) -> float | None:
     """Post-PTT-release latency: ble_ack_ms - audio_ms. None if either cell
     is missing. Negative results are real clock skew / reordering and are
@@ -700,12 +968,16 @@ def _s1_median_cell(values: Iterable[float]) -> str:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) == 3 and argv[1] in ("--s1", "--s2"):
+    if len(argv) == 3 and argv[1] in ("--s1", "--s2", "--s3"):
         rows = load_rows(argv[2])
         if not rows:
             print("no rows in input CSV", file=sys.stderr)
             return 1
-        renderer = render_s1_markdown if argv[1] == "--s1" else render_s2_markdown
+        renderer = {
+            "--s1": render_s1_markdown,
+            "--s2": render_s2_markdown,
+            "--s3": render_s3_markdown,
+        }[argv[1]]
         print(renderer(rows))
         return 0
     if len(argv) != 2:

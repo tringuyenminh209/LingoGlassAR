@@ -1,4 +1,8 @@
-from tools.latency_report import render_s1_markdown, render_s2_markdown
+from tools.latency_report import (
+    render_s1_markdown,
+    render_s2_markdown,
+    render_s3_markdown,
+)
 
 
 def _row(
@@ -244,3 +248,134 @@ def test_s2_retry_rate_fail_blocks_go() -> None:
     report = render_s2_markdown(rows)
     assert "Retry rate: 2/4 = 50% vs <= 20% -> **FAIL**" in report
     assert "Result: **NO-GO** (latency/retry gate failed)" in report
+
+
+def _s3_row(
+    capture_id: str,
+    *,
+    recognise: str = "",
+    translate: str = "",
+    ble: str = "",
+    system: str = "",
+    chars: str = "",
+    error: str = "",
+    recognised_pass: str = "",
+) -> dict[str, str]:
+    # OcrLatencyRecord CSV row + the operator-appended `recognised_pass` column.
+    # A capture is "completed" iff error is blank AND `system` is present.
+    return {
+        "capture_id": capture_id,
+        "recognise_ms": recognise,
+        "translate_ms": translate,
+        "ble_ack_ms": ble,
+        "ocr_system_latency_ms": system,
+        "recognised_chars": chars,
+        "ble_seq_id": "",
+        "error": error,
+        "recognised_pass": recognised_pass,
+    }
+
+
+def test_s3_pending_when_unscored() -> None:
+    # No recognised_pass: latency is computed (PASS), recognition is PENDING.
+    # system_lat sorted [900, 1100], n=2 -> p95 idx round(1*0.95)=1 -> 1100.
+    report = render_s3_markdown(
+        [
+            _s3_row("sign-01", system="900"),
+            _s3_row("sign-02", system="1100"),
+        ]
+    )
+    assert "Latency: p95 1100 ms vs 1500 ms -> **PASS**" in report
+    assert "Recognition: **PENDING**" in report
+    assert "Result: **PENDING — recognition not scored**" in report
+
+
+def test_s3_go_when_recognition_and_latency_pass() -> None:
+    # 4/5 key-line pass = 80% (meets gate), latency p95 900 ms -> GO.
+    rows = [
+        _s3_row(
+            "sign-0%d" % i,
+            system="900",
+            recognised_pass="pass" if i < 4 else "fail",
+        )
+        for i in range(5)
+    ]
+    report = render_s3_markdown(rows)
+    assert "| sign | 5 | 80% |" in report
+    assert "| **overall** | 5 | 80% |" in report
+    assert "- Recognition: 80% vs 80% -> **PASS**" in report
+    assert "Result: **GO**" in report
+
+
+def test_s3_no_go_when_recognition_below_gate() -> None:
+    # 2/5 pass = 40% < 80% -> NO-GO even though latency is fine.
+    rows = [
+        _s3_row(
+            "menu-0%d" % i,
+            system="900",
+            recognised_pass="1" if i < 2 else "0",
+        )
+        for i in range(5)
+    ]
+    report = render_s3_markdown(rows)
+    assert "| **overall** | 5 | 40% |" in report
+    assert "- Recognition: 40% vs 80% -> **FAIL**" in report
+    assert "Result: **NO-GO**" in report
+
+
+def test_s3_latency_fail_blocks_go() -> None:
+    # Recognition perfect, but p95 latency 2000 > 1500 -> NO-GO.
+    rows = [
+        _s3_row("sign-01", system="2000", recognised_pass="pass"),
+        _s3_row("sign-02", system="2000", recognised_pass="pass"),
+    ]
+    report = render_s3_markdown(rows)
+    assert "- Recognition: 100% vs 80% -> **PASS**" in report
+    assert "Latency: p95 2000 ms vs 1500 ms -> **FAIL**" in report
+    assert "Result: **NO-GO**" in report
+
+
+def test_s3_per_leg_breakdown_from_cumulative_deltas() -> None:
+    # Cumulative deltas off capture: recognise 400, translate 700, ble 900.
+    # Legs: recognise 400, translate 700-400=300, ble 900-700=200.
+    report = render_s3_markdown(
+        [
+            _s3_row(
+                "sign-01",
+                recognise="400",
+                translate="700",
+                ble="900",
+                system="900",
+                chars="12",
+            )
+        ]
+    )
+    assert "| recognise | 1 | 400 | 400 | 400 |" in report
+    assert "| translate | 1 | 300 | 300 | 300 |" in report
+    assert "| ble | 1 | 200 | 200 | 200 |" in report
+
+
+def test_s3_aborted_excluded_from_latency() -> None:
+    # ble_unavailable carries no ble ack: an attempt + a failure, but not a
+    # completed capture and not in the latency tally.
+    report = render_s3_markdown(
+        [
+            _s3_row("sign-01", system="900"),
+            _s3_row("sign-02", error="ble_unavailable"),
+        ]
+    )
+    assert "| completed captures | 1 |" in report
+    assert "| aborted attempts | 1 |" in report
+    assert "| ble_unavailable | 1 |" in report
+    assert "| 1 / 2 |" in report  # n_ok / n_total in the latency table
+
+
+def test_s3_recognition_groups_by_domain() -> None:
+    report = render_s3_markdown(
+        [
+            _s3_row("sign-01", system="900", recognised_pass="pass"),
+            _s3_row("menu-01", system="900", recognised_pass="fail"),
+        ]
+    )
+    assert "| menu | 1 | 0% |" in report
+    assert "| sign | 1 | 100% |" in report

@@ -199,10 +199,27 @@ checks + latency CSV roll into the Day 6 bench.
 | Owner | Task | Verify | Status |
 |---|---|---|---|
 | **User (operator)** | Run the curated OCR image set on device; export the OCR latency CSV. | CSV captured. | pending |
-| **Claude (prep)** | Add an `--s3` (or extend) report mode to `tools/latency_report.py`: OCR recognition % + `p95(ocr_system_latency_ms)` against the locked gates. Tests. | tests green; renders. | pending |
+| **Claude (prep)** | Add an `--s3` (or extend) report mode to `tools/latency_report.py`: OCR recognition % + `p95(ocr_system_latency_ms)` against the locked gates. Tests. | tests green; renders. | DONE 2026-05-29 |
 | **Claude** | Render the OCR bench report. | `docs/reports/S3_ocr_<date>.md`. | pending |
 
 Commit subjects: `feat(tools): S3 OCR report mode`, `docs(s3): OCR bench`.
+
+`--s3` mode added to `tools/latency_report.py` (`render_s3_markdown`): consumes
+the `OcrLatencyRecord` CSV ("Copy OCR latency CSV"), reports criterion #1
+key-line recognition `% pass` by domain (from an operator-appended
+`recognised_pass` column; `capture_id` relabelled `ocr-NNN` -> `sign-01`.. for
+grouping) and criterion #2 `p95(ocr_system_latency_ms)` with a
+recognise/translate/ble leg breakdown (legs derived from the cumulative
+from-capture deltas). Gates: recognition >= 80% AND p95 <= 1500 ms
+(provisional). Recognition is PENDING until `recognised_pass` is filled;
+latency + legs always compute, so the timing can be read immediately. 7 tests
+added (pending/GO/recognition-fail/latency-fail/per-leg/aborted-excluded/
+domain-grouping); `python -m pytest tools/test_latency_report.py` = 19 pass,
+ruff clean. Operator next: run the curated ~20-image set, score
+`recognised_pass` by eye, paste the CSV; then the render-report row produces
+`docs/reports/S3_ocr_<date>.md`. **Reminder**: run the tool with
+`PYTHONIOENCODING=utf-8` (report strings use em-dash; cp932 stdout otherwise
+errors — see root CLAUDE.md).
 
 ## Day 7 — accuracy gate #4 (S2 carry-over, native-VN reviewer)
 
