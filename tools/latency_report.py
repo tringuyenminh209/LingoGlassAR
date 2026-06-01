@@ -32,7 +32,8 @@ Two modes, selected by the input CSV's column shape (or by the explicit
   from an operator-appended `recognised_pass` column) and criterion #2
   `p95(ocr_system_latency_ms)` with a recognise/translate/ble leg
   breakdown. Gates: recognition >= 80% AND
-  `p95(ocr_system_latency_ms) <= 1500 ms` (provisional). Recognition stays
+  `p95(ocr_system_latency_ms) <= 2500 ms` (re-locked 2026-06-01 after S10
+  device-confirm; see S3_TARGET_OCR_SYSTEM_MS). Recognition stays
   PENDING until the operator fills `recognised_pass`; latency is always
   computed.
 
@@ -97,11 +98,14 @@ S2_RETRY_RATE_MAX_PCT = 20.0
 
 # S3 Day 6 — OCR quality + latency. Latency is anchored at CAPTURE (not a PTT
 # release), so `ocr_system_latency_ms == ble_ack_ms` is the gate value directly
-# — there is no audio-hold to subtract. The 1500 ms gate is provisional:
-# tighter than speech's 2000 ms because there is no audio upload and no STT;
-# device-confirm on Galaxy S10 before locking. Recognition is criterion #1 —
-# key-line pass/fail scored by eye, gate >= 80% of images pass.
-S3_TARGET_OCR_SYSTEM_MS = 1500.0
+# — there is no audio-hold to subtract. The provisional 1500 ms guess was
+# re-locked to 2500 ms after device-confirm on Galaxy S10 (2026-06-01): on-device
+# recognise alone is ~900 ms on the S10 and translate (chat completions) has an
+# OpenAI tail that spikes to ~3.5 s, so a 1500 ms p95 is unreachable by any code
+# lever. 2500 ms matches the conversational go/no-go band (1.5-2.5s) and OCR is
+# read-at-leisure, not real-time. Recognition is criterion #1 — key-line
+# pass/fail scored by eye, gate >= 80% of images pass.
+S3_TARGET_OCR_SYSTEM_MS = 2500.0
 S3_RECOGNITION_MIN_PCT = 80.0
 
 # OCR latency legs. Stage fields are cumulative from capture (capture = 0), so

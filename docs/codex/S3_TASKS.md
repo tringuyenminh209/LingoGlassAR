@@ -36,9 +36,12 @@ gate (#4)** with a paid native-VN reviewer over the full catalog.
    on-device ML Kit recognises the key text correctly on **>= 80%** of images
    (provisional; **lock the metric + threshold on Day 1** after the probe — char
    accuracy vs "key info usable" line accuracy).
-2. **OCR end-to-end latency**: `p95(ocr_system_latency_ms) <= 1500 ms`
-   (provisional; tighter than speech because there is no audio upload or STT —
-   **lock on Day 1**). Define `ocr_system_latency_ms = ble_ack_ms - capture_ms`.
+2. **OCR end-to-end latency**: `p95(ocr_system_latency_ms) <= 2500 ms`
+   (re-locked 2026-06-01 from the provisional 1500 ms after S10 device-confirm:
+   recognise alone is ~900 ms on the S10 and the chat-completions translate has
+   an OpenAI tail that spikes to ~3.5 s, so 1500 ms is unreachable; 2500 ms
+   matches the conversational go/no-go band and OCR is read-at-leisure).
+   Define `ocr_system_latency_ms = ble_ack_ms - capture_ms`.
 3. **Translation accuracy (S2 #4 carried over)**: native-VN reviewer scores
    `>= 80%` at `>= 4/5` in BOTH directions over the full 60-phrase catalog,
    using the ready `--s2` scorer. Closes the recurring 10-phrase coverage gap.
@@ -201,10 +204,25 @@ checks + latency CSV roll into the Day 6 bench.
 | **User (operator)** | Run the curated OCR image set on device; export the OCR latency CSV. | CSV captured. | pending |
 | **Claude (prep)** | Add an `--s3` (or extend) report mode to `tools/latency_report.py`: OCR recognition % + `p95(ocr_system_latency_ms)` against the locked gates. Tests. | tests green; renders. | DONE 2026-05-29 |
 | **Claude (prep+impl)** | Fix the translate transport (chat completions, not Realtime WS) after the device pre-bench found ~4 s/capture handshake. Tests. | `pytest backend` + `ruff` green. | DONE 2026-05-29 |
-| **User (operator)** | Redeploy backend (`git pull` + `docker compose up -d --build`); rebuild phone app; re-run the curated set with glasses connected. | full CSV captured. | pending |
-| **Claude** | Render the OCR bench report. | `docs/reports/S3_ocr_<date>.md`. | pending |
+| **User (operator)** | Redeploy backend (`git pull` + `docker compose up -d --build`); rebuild phone app; re-run the curated set with glasses connected. | full CSV captured. | DONE 2026-06-01 (redeploy live) |
+| **Claude** | Re-lock latency gate #2 from device-confirmed numbers (1500 -> 2500 ms). | `latency_report.py` + tests + docs updated; 19 pass. | DONE 2026-06-01 |
+| **Claude** | Render the OCR bench report. | `docs/reports/S3_ocr_<date>.md`. | pending (full scored CSV) |
 
-Commit subjects: `feat(tools): S3 OCR report mode`, `fix(backend): S3 OCR translate via chat completions`, `docs(s3): OCR bench`.
+Commit subjects: `feat(tools): S3 OCR report mode`, `fix(backend): S3 OCR translate via chat completions`, `chore(s3): re-lock OCR latency gate to 2500ms`, `docs(s3): OCR bench`.
+
+**Post-redeploy bench + gate re-lock (2026-06-01).** After the redeploy, the
+chat-completions translate confirmed working: server-side `durationMs` (the
+OpenAI chat call) measured **median ~500-800 ms** over repeated probes (down from
+the ~4 s Realtime handshake), so `total ≈ durationMs + ~150 ms network` — the
+whole leg is now the OpenAI call. But that call has an **OpenAI-side tail** that
+spikes to ~3.5 s intermittently (one of six probes), NOT a fixed network cost, so
+a warm client pool would not fix it. Budget on the Galaxy S10: recognise ~900 ms
+(on-device floor) + translate median ~600 ms + BLE ~200 ms ≈ **~1700 ms median**,
+with p95 dragged up by the OpenAI tail. The 1500 ms gate was therefore
+**unreachable by any code lever** — it was provisional/device-confirm for exactly
+this reason. **Gate #2 re-locked to `p95 <= 2500 ms`** (matches the conversational
+go/no-go band; OCR is read-at-leisure, not real-time). Updated
+`S3_TARGET_OCR_SYSTEM_MS` + the two affected tests (19 pass).
 
 **Device pre-bench finding (2026-05-29).** First on-device captures (BLE
 connected on the 3rd) showed: recognise warms to ~890 ms (first ~2.9 s is JP
@@ -231,8 +249,8 @@ key-line recognition `% pass` by domain (from an operator-appended
 `recognised_pass` column; `capture_id` relabelled `ocr-NNN` -> `sign-01`.. for
 grouping) and criterion #2 `p95(ocr_system_latency_ms)` with a
 recognise/translate/ble leg breakdown (legs derived from the cumulative
-from-capture deltas). Gates: recognition >= 80% AND p95 <= 1500 ms
-(provisional). Recognition is PENDING until `recognised_pass` is filled;
+from-capture deltas). Gates: recognition >= 80% AND p95 <= 2500 ms
+(re-locked 2026-06-01; was 1500 ms provisional). Recognition is PENDING until `recognised_pass` is filled;
 latency + legs always compute, so the timing can be read immediately. 7 tests
 added (pending/GO/recognition-fail/latency-fail/per-leg/aborted-excluded/
 domain-grouping); `python -m pytest tools/test_latency_report.py` = 19 pass,
@@ -277,9 +295,11 @@ Commit subject: `docs(s3): close S3 with Go/No-Go verdict`.
 1. **OCR metric**: per-character accuracy vs "key info usable" per line/image.
    Char accuracy is objective but punishes minor noise; key-info is closer to
    user value but more subjective. Lock against the probe set on Day 1.
-2. **OCR latency gate**: 1500 ms is provisional. Measure the on-device OCR step
-   on the target phone (Galaxy S10) first; the gate must be achievable with
-   margin like the speech path (~550 ms cushion at S2 close).
+2. **OCR latency gate**: ~~1500 ms is provisional.~~ **RESOLVED 2026-06-01:
+   re-locked to `p95 <= 2500 ms`** after S10 device-confirm — recognise ~900 ms +
+   translate median ~600 ms (OpenAI tail to ~3.5 s) + BLE ~200 ms make 1500 ms
+   unreachable; 2500 ms keeps margin and matches the conversational band. See the
+   Day 6 section.
 3. **Translate-only transport**: ~~REST POST vs new WS message type.~~
    **RESOLVED Day 2 (2026-05-27): REST `POST /v1/translate`.** Least churn
    (no speech WS surgery, WS schema untouched), reuses the Realtime translator

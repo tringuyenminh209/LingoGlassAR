@@ -285,7 +285,7 @@ def test_s3_pending_when_unscored() -> None:
             _s3_row("sign-02", system="1100"),
         ]
     )
-    assert "Latency: p95 1100 ms vs 1500 ms -> **PASS**" in report
+    assert "Latency: p95 1100 ms vs 2500 ms -> **PASS**" in report
     assert "Recognition: **PENDING**" in report
     assert "Result: **PENDING — recognition not scored**" in report
 
@@ -324,14 +324,14 @@ def test_s3_no_go_when_recognition_below_gate() -> None:
 
 
 def test_s3_latency_fail_blocks_go() -> None:
-    # Recognition perfect, but p95 latency 2000 > 1500 -> NO-GO.
+    # Recognition perfect, but p95 latency 3000 > 2500 -> NO-GO.
     rows = [
-        _s3_row("sign-01", system="2000", recognised_pass="pass"),
-        _s3_row("sign-02", system="2000", recognised_pass="pass"),
+        _s3_row("sign-01", system="3000", recognised_pass="pass"),
+        _s3_row("sign-02", system="3000", recognised_pass="pass"),
     ]
     report = render_s3_markdown(rows)
     assert "- Recognition: 100% vs 80% -> **PASS**" in report
-    assert "Latency: p95 2000 ms vs 1500 ms -> **FAIL**" in report
+    assert "Latency: p95 3000 ms vs 2500 ms -> **FAIL**" in report
     assert "Result: **NO-GO**" in report
 
 
